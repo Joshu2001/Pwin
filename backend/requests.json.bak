@@ -1,0 +1,167 @@
+[
+  {
+    "id": "req_1767178295712",
+    "title": "Why does everything feel more overwhelming now?",
+    "description": "Life feels faster and heavier than before, even without obvious reasons. I’m curious if others feel this too and what might be driving it.",
+    "likes": 0,
+    "comments": 0,
+    "boosts": 0,
+    "funding": 0,
+    "isTrending": false,
+    "isSponsored": false,
+    "company": "@joshua",
+    "companyInitial": "@",
+    "companyColor": "bg-gray-400",
+    "imageUrl": "",
+    "createdAt": "2025-12-31T10:51:35.712Z",
+    "meta": {
+      "selectedTones": [],
+      "selectedVideoLength": "long-form",
+      "selectedPrivacy": "public"
+    }
+  },
+  {
+    "id": "req_1767177668622",
+    "title": "Why does everything feel more overwhelming now?",
+    "description": "Life feels faster and heavier than before, even without obvious reasons. I’m curious if others feel this too and what might be driving it.",
+    "likes": 0,
+    "comments": 0,
+    "boosts": 0,
+    "funding": 0,
+    "isTrending": false,
+    "isSponsored": false,
+    "company": "@john",
+    "companyInitial": "@",
+    "companyColor": "bg-gray-400",
+    "imageUrl": "",
+    "createdAt": "2025-12-31T10:41:08.623Z",
+    "meta": {
+      "selectedTones": [],
+      "selectedVideoLength": "long-form",
+      "selectedPrivacy": "public"
+    }
+  },
+  {
+    "id": "req_1767177359888",
+    "title": "Why does everything feel more overwhelming now?",
+    "description": "Life feels faster and heavier than before, even without obvious reasons. I’m curious if others feel this too and what might be driving it.",
+    "likes": 0,
+    "comments": 0,
+    "boosts": 0,
+    "funding": 0,
+    "isTrending": false,
+    "isSponsored": false,
+    "company": "@john",
+    "companyInitial": "@",
+    "companyColor": "bg-gray-400",
+    "imageUrl": "",
+    "createdAt": "2025-12-31T10:35:59.889Z",
+    "meta": {
+      "selectedTones": [
+        "professional",
+        "casual"
+      ],
+      "selectedVideoLength": "extended",
+      "selectedPrivacy": "public"
+    }
+  },
+  {
+    "id": "req_1767176689754",
+    "title": "Why does everything feel more overwhelming now?",
+    "description": "Life feels faster and heavier than before, even without obvious reasons. I’m curious if others feel this too and what might be driving it.",
+    "likes": 0,
+    "comments": 0,
+    "boosts": 0,
+    "funding": 0,
+    "isTrending": false,
+    "isSponsored": false,
+    "company": "@john",
+    "companyInitial": "@",
+    "companyColor": "bg-gray-400",
+    "imageUrl": "",
+    "createdAt": "2025-12-31T10:24:49.754Z",
+    "meta": {
+      "selectedTones": [
+        "professional"
+      ],
+      "selectedVideoLength": "long-form",
+      "selectedPrivacy": "public"
+    }
+  },
+  {
+    "id": "req_1767175815075",
+    "title": "Why do smart people still make obvious mistakes?",
+    "description": "Maybe it’s just me, but I’ve noticed this a lot. Some of the smartest people I know still make really basic mistakes, like stuff that seems obvious in hindsight. Is there a psychology reason for this? I’d love a proper video from someone who’s actually studied psychology breaking this down.",
+    "likes": 0,
+    "comments": 0,
+    "boosts": 0,
+    "funding": 0,
+    "isTrending": false,
+    "isSponsored": false,
+    "company": "@john",
+    "companyInitial": "@",
+    "companyColor": "bg-gray-400",
+    "imageUrl": "",
+    "createdAt": "2025-12-31T10:10:15.075Z",
+    "meta": {
+      "selectedTones": [
+        "analytical"
+      ],
+      "selectedVideoLength": "extended",
+      "selectedPrivacy": "public"
+    }
+  },
+  {
+    "id": "req_1767175504378",
+    "title": "iaksncipsncn",
+    "description": "knonninnunou",
+    "likes": 0,
+    "comments": 0,
+    "boosts": 0,
+    "funding": 0,
+    "isTrending": false,
+    "isSponsored": false,
+    "company": "@john",
+    "companyInitial": "@",
+    "companyColor": "bg-gray-400",
+    "imageUrl": "",
+    "createdAt": "2025-12-31T10:05:04.378Z",
+    "meta": {
+      "selectedTones": [
+        "inspirational"
+      ],
+      "selectedVideoLength": "short-form",
+      "selectedPrivacy": "public"
+    }
+  },
+  {
+    "id": 1,
+    "title": "Unknown",
+    "claimed": true,
+    "claimedBy": {
+      "id": "user-1766857658728",
+      "name": "Joshua"
+    },
+    "claimedAt": "2025-12-31T03:52:18.484Z"
+  },
+  {
+    "id": 2,
+    "title": "Unknown",
+    "claimed": true,
+    "claimedBy": {
+      "id": "user-1766857658728",
+      "name": "Joshua"
+    },
+    "claimedAt": "2025-12-31T05:02:26.425Z"
+  },
+  {
+    "id": 4,
+    "title": "Unknown",
+    "claimed": true,
+    "claimedBy": {
+      "id": "user-1767159330204",
+      "name": "js"
+    },
+    "claimedAt": "2025-12-31T06:05:56.009Z"
+  }
+]

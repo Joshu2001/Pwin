@@ -1,0 +1,35 @@
+[
+  {
+    "id": "sponsor-1766914519270",
+    "ownerId": "user-1766857658728",
+    "name": "Sponsor-1766914519261",
+    "brief": "",
+    "assets": {
+      "logo": null,
+      "brandGuide": null
+    },
+    "createdAt": "2025-12-28T09:35:19.270Z"
+  },
+  {
+    "id": "sponsor-1766915044955",
+    "ownerId": "user-1766857658728",
+    "name": "Sponsor-1766915044881",
+    "brief": "",
+    "assets": {
+      "logo": null,
+      "brandGuide": null
+    },
+    "createdAt": "2025-12-28T09:44:04.955Z"
+  },
+  {
+    "id": "sponsor-1768196613141",
+    "ownerId": "user-1767585399609",
+    "name": "Sponsor-1768196613083",
+    "brief": "",
+    "assets": {
+      "logo": null,
+      "brandGuide": null
+    },
+    "createdAt": "2026-01-12T05:43:33.141Z"
+  }
+]

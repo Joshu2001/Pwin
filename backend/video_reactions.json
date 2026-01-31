@@ -1,0 +1,14 @@
+{
+  "likes": {
+    "http://localhost:4000/uploads/intro-1767691091782-875706.mp4": {
+      "user-1767585399609": true
+    },
+    "http://localhost:4000/uploads/intro-1768318508169-486426.mp4": {}
+  },
+  "dislikes": {
+    "http://localhost:4000/uploads/intro-1767691091782-875706.mp4": {},
+    "http://localhost:4000/uploads/intro-1768318508169-486426.mp4": {
+      "user-1766857658728": true
+    }
+  }
+}

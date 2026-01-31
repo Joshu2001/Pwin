@@ -1,0 +1,16 @@
+{
+  "appId": "com.regaarder.app",
+  "appName": "regaarder",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true
+  },
+  "android": {
+    "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  }
+}
