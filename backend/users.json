@@ -8,14 +8,14 @@
     "token": "65d79fe4c4d4c361802ea7ab88eee331",
     "isCreator": true,
     "creatorSince": "2026-01-27T23:46:58.866Z",
-    "image": "http://localhost:4000/uploads/intro-1768835099597-749836.png",
+    "image": "https://pwin.onrender.com/uploads/intro-1768835099597-749836.png",
     "price": "788",
     "bio": "Christ is King",
     "tagline": "",
     "following": [
       "user-1767585399609"
     ],
-    "introVideo": "http://localhost:4000/uploads/intro-1768835099796-529216.mp4",
+    "introVideo": "https://pwin.onrender.com/uploads/intro-1768835099796-529216.mp4",
     "streak": 6,
     "lastStreakDate": "2026-01-19",
     "lastClaimReset": "2026-01-15",
@@ -59,7 +59,7 @@
     "token": "413b511b09ae758ef51f04acd8a12703",
     "isCreator": true,
     "creatorSince": "2026-01-28T02:33:15.385Z",
-    "image": "http://localhost:4000/uploads/intro-1769567593224-795236.jpg",
+    "image": "https://pwin.onrender.com/uploads/intro-1769567593224-795236.jpg",
     "following": [
       "user-1767585399609",
       "user-1766857658728"
@@ -90,7 +90,7 @@
           },
           {
             "id": 2,
-            "text": "Your idea → {creator}'s next video",
+            "text": "Your idea ??{creator}'s next video",
             "selected": false
           }
         ]
@@ -98,7 +98,7 @@
       {
         "id": "premium",
         "name": "Premium & Elegant",
-        "emoji": "🎩",
+        "emoji": "?��",
         "description": "Sophisticated, refined tone for artistic creators",
         "isOpen": false,
         "templates": [
@@ -110,7 +110,7 @@
           },
           {
             "id": "p2",
-            "label": "Your idea → {creator}'s next video",
+            "label": "Your idea ??{creator}'s next video",
             "text": "Inspire {creator}'s next creation",
             "selected": false
           },
@@ -129,7 +129,7 @@
       {
         "id": "personal",
         "name": "Personal & Ownership",
-        "emoji": "🤝",
+        "emoji": "??",
         "description": "Triggers co-creation feelings and influence",
         "isOpen": false,
         "templates": [
@@ -172,12 +172,12 @@
           },
           {
             "id": "ao2",
-            "text": "Start your request — {creator} is taking ideas",
+            "text": "Start your request ??{creator} is taking ideas",
             "selected": false
           },
           {
             "id": "ao3",
-            "text": "Send your idea — {creator} might make it next!",
+            "text": "Send your idea ??{creator} might make it next!",
             "selected": false
           },
           {
@@ -187,7 +187,7 @@
           },
           {
             "id": "ao5",
-            "text": "Pitch your idea — watch {creator} bring it to life",
+            "text": "Pitch your idea ??watch {creator} bring it to life",
             "selected": false
           }
         ]
@@ -195,7 +195,7 @@
       {
         "id": "weekend",
         "name": "Weekend / Emotional",
-        "emoji": "🌅",
+        "emoji": "??",
         "description": "Netflix-like, entertainment-focused prompts",
         "isOpen": false,
         "templates": [
@@ -221,7 +221,7 @@
           },
           {
             "id": "w5",
-            "text": "Your weekend idea — {creator}'s next creation",
+            "text": "Your weekend idea ??{creator}'s next creation",
             "selected": false
           },
           {
@@ -275,7 +275,7 @@
           },
           {
             "id": "c6",
-            "text": "Tell {creator} your idea — they'll make it happen",
+            "text": "Tell {creator} your idea ??they'll make it happen",
             "selected": false
           },
           {
@@ -293,7 +293,7 @@
       {
         "id": "playful",
         "name": "Playful & Light",
-        "emoji": "🪄",
+        "emoji": "??",
         "description": "Fun, softly persuasive approach",
         "isOpen": false,
         "templates": [
@@ -304,7 +304,7 @@
           },
           {
             "id": "pl2",
-            "text": "Give {creator} a challenge — what should they make?",
+            "text": "Give {creator} a challenge ??what should they make?",
             "selected": false
           },
           {
@@ -314,7 +314,7 @@
           },
           {
             "id": "pl4",
-            "text": "Go on, make {creator} work for it 😉",
+            "text": "Go on, make {creator} work for it ??",
             "selected": false
           },
           {
@@ -343,7 +343,7 @@
       {
         "id": "entertainment",
         "name": "Entertainment",
-        "emoji": "🎬",
+        "emoji": "?��",
         "description": "Fun, engaging content for everyone",
         "isOpen": false,
         "templates": [
@@ -362,7 +362,7 @@
       {
         "id": "educational",
         "name": "Educational",
-        "emoji": "📚",
+        "emoji": "??",
         "description": "Perfect for educators and explainers",
         "isOpen": false,
         "templates": [
@@ -383,7 +383,7 @@
           },
           {
             "id": "t4",
-            "text": "Your question → {creator}'s next tech deep dive",
+            "text": "Your question ??{creator}'s next tech deep dive",
             "selected": false
           },
           {
@@ -413,7 +413,7 @@
           },
           {
             "id": "t10",
-            "text": "Give {creator} a tech challenge — what should they test?",
+            "text": "Give {creator} a tech challenge ??what should they test?",
             "selected": false
           }
         ]
@@ -421,7 +421,7 @@
       {
         "id": "diy",
         "name": "DIY / Science",
-        "emoji": "🧬",
+        "emoji": "?��",
         "description": "Curiosity + excitement + creation for makers",
         "isOpen": false,
         "templates": [
@@ -442,7 +442,7 @@
           },
           {
             "id": "d4",
-            "text": "Your curiosity → {creator}'s next experiment",
+            "text": "Your curiosity ??{creator}'s next experiment",
             "selected": false
           },
           {
@@ -467,7 +467,7 @@
           },
           {
             "id": "d9",
-            "text": "Your idea might just explode — in a good way",
+            "text": "Your idea might just explode ??in a good way",
             "subtext": "Share with {creator}",
             "selected": false
           },
@@ -481,7 +481,7 @@
       {
         "id": "debates",
         "name": "Debates / Philosophy",
-        "emoji": "🗣️",
+        "emoji": "?���?,
         "description": "Thought leadership + perspective + dialogue",
         "isOpen": false,
         "templates": [
@@ -497,7 +497,7 @@
           },
           {
             "id": "db3",
-            "text": "Join the conversation — what should {creator} discuss?",
+            "text": "Join the conversation ??what should {creator} discuss?",
             "selected": false
           },
           {
@@ -527,12 +527,12 @@
           },
           {
             "id": "db9",
-            "text": "Your question → {creator}'s next discussion",
+            "text": "Your question ??{creator}'s next discussion",
             "selected": false
           },
           {
             "id": "db10",
-            "text": "Challenge {creator} — what should they debate?",
+            "text": "Challenge {creator} ??what should they debate?",
             "selected": false
           }
         ]
@@ -540,7 +540,7 @@
       {
         "id": "creative",
         "name": "Creative / Art",
-        "emoji": "🎨",
+        "emoji": "?��",
         "description": "Inspiration + collaboration + beauty",
         "isOpen": false,
         "templates": [
@@ -551,12 +551,12 @@
           },
           {
             "id": "cr2",
-            "text": "Tell {creator} what to create next — song, sketch, or scene",
+            "text": "Tell {creator} what to create next ??song, sketch, or scene",
             "selected": false
           },
           {
             "id": "cr3",
-            "text": "Your vision → {creator}'s next masterpiece",
+            "text": "Your vision ??{creator}'s next masterpiece",
             "selected": false
           },
           {
@@ -581,7 +581,7 @@
           },
           {
             "id": "cr8",
-            "text": "Your emotion → {creator}'s next piece",
+            "text": "Your emotion ??{creator}'s next piece",
             "selected": false
           },
           {
@@ -599,7 +599,7 @@
       {
         "id": "academic",
         "name": "Educational / Academic",
-        "emoji": "🎓",
+        "emoji": "??",
         "description": "Clarity + curiosity + learning satisfaction",
         "isOpen": false,
         "templates": [
@@ -659,7 +659,7 @@
       {
         "id": "travel",
         "name": "Travel / Culture",
-        "emoji": "🌍",
+        "emoji": "??",
         "description": "Discovery + immersion + wonder",
         "count": 2,
         "isOpen": false,
@@ -676,7 +676,7 @@
           },
           {
             "id": "tr3",
-            "text": "Your curiosity → {creator}'s next destination",
+            "text": "Your curiosity ??{creator}'s next destination",
             "selected": false
           },
           {
@@ -719,7 +719,7 @@
       {
         "id": "motivation",
         "name": "Motivation / Lifestyle",
-        "emoji": "❤️",
+        "emoji": "?��?",
         "description": "Inspiration + empathy + relatability",
         "isOpen": false,
         "templates": [
@@ -730,7 +730,7 @@
           },
           {
             "id": "m2",
-            "text": "Your idea → {creator}'s next motivation video",
+            "text": "Your idea ??{creator}'s next motivation video",
             "selected": false
           },
           {
@@ -778,7 +778,7 @@
       {
         "id": "podcasts",
         "name": "Podcasts & Conversations",
-        "emoji": "🎙️",
+        "emoji": "??�?,
         "description": "Curiosity + intimacy + authenticity",
         "isOpen": false,
         "templates": [
@@ -799,7 +799,7 @@
           },
           {
             "id": "pc4",
-            "text": "Your question → {creator}'s next podcast episode",
+            "text": "Your question ??{creator}'s next podcast episode",
             "selected": false
           },
           {
@@ -837,7 +837,7 @@
       {
         "id": "journalistic",
         "name": "Journalistic Investigations",
-        "emoji": "🕵️",
+        "emoji": "?���?,
         "description": "Intrigue + justice + curiosity",
         "isOpen": false,
         "templates": [
@@ -863,7 +863,7 @@
           },
           {
             "id": "j5",
-            "text": "Your curiosity → {creator}'s next investigation",
+            "text": "Your curiosity ??{creator}'s next investigation",
             "selected": false
           },
           {
@@ -896,13 +896,13 @@
       {
         "id": "entrepreneurship",
         "name": "Entrepreneurship & Success",
-        "emoji": "💼",
+        "emoji": "?��",
         "description": "Ambition + inspiration + insight",
         "isOpen": false,
         "templates": [
           {
             "id": "e1",
-            "text": "Your curiosity → {creator}'s next business story",
+            "text": "Your curiosity ??{creator}'s next business story",
             "selected": false
           },
           {
@@ -955,7 +955,7 @@
       {
         "id": "business_history",
         "name": "Business History",
-        "emoji": "🏛️",
+        "emoji": "??�?,
         "description": "Curiosity + admiration + intelligence",
         "isOpen": false,
         "templates": [
@@ -976,7 +976,7 @@
           },
           {
             "id": "bh4",
-            "text": "Your curiosity → {creator}'s next company deep dive",
+            "text": "Your curiosity ??{creator}'s next company deep dive",
             "selected": false
           },
           {
@@ -1014,7 +1014,7 @@
       {
         "id": "fashion",
         "name": "Modeling & Fashion",
-        "emoji": "👠",
+        "emoji": "??",
         "description": "Aspiration + artistry + self-expression",
         "isOpen": false,
         "templates": [
@@ -1030,7 +1030,7 @@
           },
           {
             "id": "f3",
-            "text": "Your style idea → {creator}'s next photo or video",
+            "text": "Your style idea ??{creator}'s next photo or video",
             "selected": false
           },
           {
@@ -1073,7 +1073,7 @@
       {
         "id": "psychology",
         "name": "Psychology & Behavior",
-        "emoji": "🧩",
+        "emoji": "?��",
         "description": "Curiosity + relatability + intellect",
         "isOpen": false,
         "templates": [
@@ -1099,7 +1099,7 @@
           },
           {
             "id": "psy5",
-            "text": "Your thought → {creator}'s next mind experiment",
+            "text": "Your thought ??{creator}'s next mind experiment",
             "selected": false
           },
           {
@@ -1114,7 +1114,7 @@
           },
           {
             "id": "psy8",
-            "text": "Your idea → {creator}'s next psychological breakdown",
+            "text": "Your idea ??{creator}'s next psychological breakdown",
             "selected": false
           },
           {
@@ -1132,7 +1132,7 @@
       {
         "id": "health",
         "name": "Health & Fitness",
-        "emoji": "🧬",
+        "emoji": "?��",
         "description": "Motivation + trust + self-improvement",
         "isOpen": false,
         "templates": [
@@ -1173,7 +1173,7 @@
           },
           {
             "id": "h8",
-            "text": "Your idea → {creator}'s next fitness experiment",
+            "text": "Your idea ??{creator}'s next fitness experiment",
             "selected": false
           },
           {
@@ -1189,7 +1189,7 @@
         ]
       }
     ],
-    "introVideo": "http://localhost:4000/uploads/intro-1769337727265-229504.mp4",
+    "introVideo": "https://pwin.onrender.com/uploads/intro-1769337727265-229504.mp4",
     "lastClaimReset": "2026-01-14",
     "dailyClaimCount": 1,
     "dailyClaimEarnings": 133,
