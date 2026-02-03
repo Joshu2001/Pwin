@@ -9,9 +9,56 @@ const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const WEB_URL = process.env.WEB_URL || 'https://regaarder.com';
 
 app.use(cors());
 app.use(bodyParser.json());
+
+const escapeHtml = (value) => {
+  try {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  } catch { return ''; }
+};
+
+const buildShareHtml = ({ title, description, image, url, redirectUrl, type = 'website' }) => {
+  const safeTitle = escapeHtml(title || 'Regaarder');
+  const safeDesc = escapeHtml(description || 'Watch on Regaarder');
+  const safeUrl = escapeHtml(url || WEB_URL);
+  const safeRedirect = escapeHtml(redirectUrl || WEB_URL);
+  const safeImage = image ? escapeHtml(image) : '';
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${safeTitle}</title>
+    <meta name="description" content="${safeDesc}" />
+    <meta property="og:title" content="${safeTitle}" />
+    <meta property="og:description" content="${safeDesc}" />
+    <meta property="og:type" content="${type}" />
+    <meta property="og:url" content="${safeUrl}" />
+    <meta property="og:site_name" content="Regaarder" />
+    ${safeImage ? `<meta property="og:image" content="${safeImage}" />` : ''}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${safeTitle}" />
+    <meta name="twitter:description" content="${safeDesc}" />
+    ${safeImage ? `<meta name="twitter:image" content="${safeImage}" />` : ''}
+    <meta http-equiv="refresh" content="0; url=${safeRedirect}" />
+  </head>
+  <body style="font-family: Arial, sans-serif; background: #0b0b0b; color: #fff;">
+    <main style="max-width: 680px; margin: 40px auto; padding: 20px; text-align: center;">
+      <h1 style="font-size: 22px; margin: 0 0 12px;">${safeTitle}</h1>
+      <p style="font-size: 14px; opacity: 0.8;">${safeDesc}</p>
+      <p style="font-size: 12px; opacity: 0.7; margin-top: 16px;">Opening Regaarder… If nothing happens, <a href="${safeRedirect}" style="color: #8ab4ff;">tap here</a>.</p>
+    </main>
+  </body>
+</html>`;
+};
 
 // DEBUG LOGGER
 app.use((req, res, next) => {
@@ -246,6 +293,10 @@ function writeProducts(products) {
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Regaarder backend running' });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 // Get all marketplace products
@@ -1095,7 +1146,7 @@ app.delete('/bookmarks/requests', (req, res) => {
     });
 
 // POST /staff/send-promotion - send promotion and create notifications for recipients
-app.post('/staff/send-promotion', (req, res) => {
+app.post('/staff/send-promotion', async (req, res) => {
   try {
     const body = req.body || {};
     const { employeeId, title, message, promotionType, recipientType, selectedUsers, ctaText, ctaIcon, ctaColor, ctaUrl } = body;
@@ -2013,6 +2064,87 @@ app.delete('/requests/:id', authMiddleware, (req, res) => {
 
 // Serve uploaded static files
 app.use('/uploads', express.static(UPLOAD_DIR));
+
+// --- Share / Open Graph endpoints ---
+app.get('/share/video/:id', (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const t = req.query.t ? String(req.query.t) : '';
+    const videos = readVideos();
+    const video = videos.find(v => String(v.id) === id) || null;
+    const title = video?.title || 'Watch a video on Regaarder';
+    const description = video?.requester ? `Requested by ${video.requester}` : 'Watch on Regaarder';
+    const image = video?.imageUrl || video?.thumbnail || '';
+    const redirectUrl = `${WEB_URL}/videoplayer?v=${encodeURIComponent(id)}${t ? `&t=${encodeURIComponent(t)}` : ''}`;
+    const url = `${WEB_URL}/share/video/${encodeURIComponent(id)}${t ? `?t=${encodeURIComponent(t)}` : ''}`;
+    res.set('Content-Type', 'text/html');
+    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'video.other' }));
+  } catch (e) {
+    res.set('Content-Type', 'text/html');
+    return res.status(200).send(buildShareHtml({
+      title: 'Regaarder',
+      description: 'Watch on Regaarder',
+      url: `${WEB_URL}/share/video`,
+      redirectUrl: WEB_URL
+    }));
+  }
+});
+
+app.get('/share/request/:id', (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const requests = readRequests();
+    const request = requests.find(r => String(r.id) === id) || null;
+    const title = request?.title || 'View this request on Regaarder';
+    const description = request?.description || 'Support this request on Regaarder';
+    const image = request?.imageUrl || '';
+    const redirectUrl = `${WEB_URL}/requests?id=${encodeURIComponent(id)}`;
+    const url = `${WEB_URL}/share/request/${encodeURIComponent(id)}`;
+    res.set('Content-Type', 'text/html');
+    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'website' }));
+  } catch (e) {
+    res.set('Content-Type', 'text/html');
+    return res.status(200).send(buildShareHtml({
+      title: 'Regaarder',
+      description: 'Explore requests on Regaarder',
+      url: `${WEB_URL}/share/request`,
+      redirectUrl: `${WEB_URL}/requests`
+    }));
+  }
+});
+
+app.get('/share/profile/:key', (req, res) => {
+  try {
+    const key = String(req.params.key || '').trim();
+    const users = readUsers();
+    const lower = key.toLowerCase();
+    const user = users.find(u =>
+      String(u.id) === key ||
+      (u.handle && String(u.handle).toLowerCase() === lower) ||
+      (u.email && String(u.email).toLowerCase() === lower) ||
+      (u.name && String(u.name).toLowerCase() === lower) ||
+      (u.name && `@${String(u.name).toLowerCase()}` === lower)
+    ) || null;
+
+    const name = user?.name || 'Creator';
+    const title = `${name} on Regaarder`;
+    const description = user?.bio || user?.tagline || 'View this creator profile on Regaarder';
+    const image = user?.image || '';
+    const handle = user?.handle || key;
+    const redirectUrl = `${WEB_URL}/@${encodeURIComponent(handle)}`;
+    const url = `${WEB_URL}/share/profile/${encodeURIComponent(handle)}`;
+    res.set('Content-Type', 'text/html');
+    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'profile' }));
+  } catch (e) {
+    res.set('Content-Type', 'text/html');
+    return res.status(200).send(buildShareHtml({
+      title: 'Regaarder',
+      description: 'Discover creators on Regaarder',
+      url: `${WEB_URL}/share/profile`,
+      redirectUrl: WEB_URL
+    }));
+  }
+});
 
 // Upload overlay media (video/image/gif) - for staff dashboard
 app.post('/staff/upload-overlay-media', (req, res) => {
@@ -5739,5 +5871,5 @@ app.get('/staff/onboarding-info', (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Regaarder backend listening on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Regaarder backend listening on ${PORT}`));
 
