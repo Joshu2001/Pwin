@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 8080;
 const WEB_URL = process.env.WEB_URL || 'https://regaarder.com';
 
 app.use(cors());

@@ -11,6 +11,7 @@ COPY backend ./backend
 
 WORKDIR /app/backend
 ENV NODE_ENV=production
+ENV PORT=8080
 
 # Railway sets PORT automatically
 EXPOSE 8080
