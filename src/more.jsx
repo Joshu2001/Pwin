@@ -214,7 +214,7 @@ const MorePage = () => {
                   // Mark user as creator locally and attempt to persist to backend, then navigate to creator profile
                   try {
                     const token = localStorage.getItem('regaarder_token');
-                    const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                     // Try to persist minimal creator flag server-side
                     try {
                       await fetch(`${BACKEND}/creator/complete`, {
@@ -253,7 +253,10 @@ const MorePage = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
       <div className="w-full max-w-xl flex flex-col flex-1" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-        <header className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20 flex-shrink-0">
+        <header
+          className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20 flex-shrink-0"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))', marginBottom: '4px' }}
+        >
           <div className="flex items-center space-x-4">
             <ChevronLeft
               className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900"

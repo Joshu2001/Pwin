@@ -4,6 +4,8 @@ import { ListPlus, Lightbulb, MoreHorizontal, Home, FileText, Pencil, Bookmark, 
 import { useAppNavigate } from './navigation.js';
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations.js';
+import { WEB_URL } from './config.js';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Storage helpers
 const STORAGE_KEY = 'playlists_v1';
@@ -138,10 +140,19 @@ export default function PlaylistPage() {
   return (
     <div className="flex justify-center min-h-screen w-full bg-white relative">
       <div className="w-full flex flex-col bg-white overflow-hidden">
-        <header className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20">
+        <header
+          className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center space-x-4 justify-between">
             <div className="flex items-center space-x-4">
-              <ChevronLeft className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900" onClick={() => navigate(-1)} />
+              <ChevronLeft
+                className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900"
+                onClick={() => {
+                  try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch (e) { }
+                  try { navigate('/home', { replace: true }); } catch (e) { }
+                }}
+              />
               <h1 className="text-xl font-semibold text-gray-800">{t('Playlist')}</h1>
             </div>
             <button onClick={create} className="text-sm font-medium hover:opacity-80 transition" style={{ color: '#FFFFFF', backgroundColor: 'var(--color-gold)', padding: '6px 12px', borderRadius: '6px' }}>{t('New')}</button>
@@ -212,7 +223,7 @@ export default function PlaylistPage() {
                       <div className="text-xs text-gray-500 mt-0.5">{it.author}{it.author && it.requester ? ' • ' : ''}{it.requester}</div>
                       <div className="text-xs text-gray-500 mt-0.5">Added • {new Date(it.addedAt).toLocaleString()}</div>
                     </div>
-                    <button className="p-2 text-gray-600 hover:text-gray-900" aria-label="Share" onClick={(e)=>{ e.stopPropagation(); const link = it.url ? `${window.location.origin}/videoplayer?src=${encodeURIComponent(it.url)}&title=${encodeURIComponent(it.title||'')}` : window.location.href; const payload = { title: it.title||'Watch this', text: it.title||'Watch this', url: link }; if (navigator.share) { navigator.share(payload).catch(()=>{}); } else { try { navigator.clipboard && navigator.clipboard.writeText(link); alert(t('Share link copied')); } catch {} } }}>
+                    <button className="p-2 text-gray-600 hover:text-gray-900" aria-label="Share" onClick={(e)=>{ e.stopPropagation(); const id = it.id || it.videoId; const link = id ? `${WEB_URL}/share/video/${encodeURIComponent(id)}` : (it.url ? `${WEB_URL}/videoplayer?src=${encodeURIComponent(it.url)}&title=${encodeURIComponent(it.title||'')}` : window.location.href); const payload = { title: it.title||'Watch this', text: it.title||'Watch this', url: link }; if (navigator.share) { navigator.share(payload).catch(()=>{}); } else { try { navigator.clipboard && navigator.clipboard.writeText(link); alert(t('Share link copied')); } catch {} } }}>
                       <MoreHorizontal className="w-5 h-5" />
                     </button>
                   </div>
@@ -236,7 +247,7 @@ export default function PlaylistPage() {
           )}
         </main>
 
-        <BottomBar />
+        <SharedBottomBar selectedLanguage={selectedLanguage} />
       </div>
 
       {showCreate && (
@@ -259,50 +270,6 @@ export default function PlaylistPage() {
     </div>
   );
 }
-
-// Bottom bar (copied from watchhistory)
-const BottomBar = () => {
-  const selectedLanguage = (typeof window !== 'undefined') ? window.localStorage.getItem('regaarder_language') || 'English' : 'English';
-  const t = (key) => getTranslation(key, selectedLanguage);
-
-  const [activeTab, setActiveTab] = useState(null);
-  const navigatedRef = useRef(false);
-  const tabs = [ { id: 'Home', name: t('Home'), icon: Home }, { id: 'Requests', name: t('Requests'), icon: FileText }, { id: 'Ideas', name: t('Ideas'), icon: Pencil }, { id: 'More', name: t('More'), icon: MoreHorizontal } ];
-  const inactiveColor = 'rgb(107 114 128)';
-  const navigateToTab = (tabId) => {
-    try {
-      if (tabId === 'Home') { window.location.href = '/home.jsx'; return; }
-      if (tabId === 'Requests') { window.location.href = '/requests.jsx'; return; }
-      if (tabId === 'Ideas') { window.location.href = '/ideas'; return; }
-      if (tabId === 'More') { window.location.href = '/more.jsx'; return; }
-    } catch (e) { console.warn('Navigation failed', e); }
-  };
-  return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50" style={{ paddingTop: '10px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', minHeight: '70px' }}>
-      <div className="w-full flex justify-around items-center px-2">
-        {tabs.map((tab) => {
-          const isSelected = tab.id === activeTab;
-          const activeColorStyle = isSelected ? { color: 'var(--color-gold)' } : { color: inactiveColor };
-          const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-          const IconComp = tab.icon;
-          return (
-            <div key={tab.id} className="relative flex flex-col items-center w-1/4 focus:outline-none">
-              <button className="flex flex-col items-center w-full"
-                onMouseDown={() => { setActiveTab(tab.id); if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.id); } }}
-                onTouchStart={() => { setActiveTab(tab.id); if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.id); } }}
-                onClick={(e) => { if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; } setActiveTab(tab.id); navigateToTab(tab.id); }}>
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                  <IconComp size={24} strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                </div>
-                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>{tab.name}</span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
 
 // Lightweight helper for adding via prompt from other places
 export async function promptAddToPlaylist(video) {

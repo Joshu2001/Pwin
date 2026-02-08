@@ -2,6 +2,26 @@ import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Search, Users, Clock, Trash, Trash2, Ban, Crown, Gift, Megaphone, Filter, Plus, Copy, Home, Image as ImageIcon, AlertCircle, Maximize2, CheckCircle, AlertTriangle, Star } from 'lucide-react';
 import SupportTicketPanel from './SupportTicketPanel.jsx';
 
+const STAFF_BACKEND_PLACEHOLDER = (typeof window !== 'undefined' && window.__BACKEND_URL__)
+  || import.meta.env.VITE_BACKEND_URL
+  || import.meta.env.VITE_BACKEND
+  || 'https://pwin.onrender.com';
+const getStaffBackendBaseUrl = () => {
+  if (typeof window !== 'undefined' && window.__BACKEND_URL__) return window.__BACKEND_URL__;
+  return STAFF_BACKEND_PLACEHOLDER;
+};
+
+const nativeFetch = (...args) => globalThis.fetch(...args);
+const staffFetch = (input, init) => {
+  const base = getStaffBackendBaseUrl();
+  const resolvedUrl = typeof input === 'string'
+    ? input.replace(STAFF_BACKEND_PLACEHOLDER, base)
+    : input;
+  return nativeFetch(resolvedUrl, init);
+};
+
+const fetch = staffFetch;
+
 // Utility: convert hex color to rgba string
 function hexToRgba(hex, alpha = 1) {
   if (!hex) return `rgba(0,0,0,${alpha})`;
@@ -325,7 +345,7 @@ export default function StaffDashboard() {
   // Fetch templates from backend (with localStorage fallback)
   const fetchBottomAdTemplates = async () => {
     try {
-      const res = await fetch('http://localhost:4000/templates/bottom');
+      const res = await fetch(`${getStaffBackendBaseUrl()}/templates/bottom`);
       if (res.ok) {
         const data = await res.json();
         setBottomAdTemplates(data.templates || []);
@@ -364,7 +384,7 @@ export default function StaffDashboard() {
       assets: adAssets
     };
     try {
-      const res = await fetch('http://localhost:4000/templates/bottom', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tpl) });
+      const res = await fetch(`${getStaffBackendBaseUrl()}/templates/bottom`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tpl) });
       if (res.ok) {
         const saved = await res.json();
         const list = [saved.template, ...(bottomAdTemplates || [])];
@@ -392,7 +412,7 @@ export default function StaffDashboard() {
 
   const updateBottomAdTemplate = async (id, updated) => {
     try {
-      const res = await fetch(`http://localhost:4000/templates/bottom/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
+      const res = await fetch(`${getStaffBackendBaseUrl()}/templates/bottom/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
       if (res.ok) {
         const j = await res.json();
         const list = (bottomAdTemplates || []).map(t => t.id === id ? j.template : t);
@@ -415,7 +435,7 @@ export default function StaffDashboard() {
 
   const deleteBottomAdTemplate = async (id) => {
     try {
-      const res = await fetch(`http://localhost:4000/templates/bottom/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${getStaffBackendBaseUrl()}/templates/bottom/${id}`, { method: 'DELETE' });
       if (res.ok) {
         const list = (bottomAdTemplates || []).filter(t => t.id !== id);
         setBottomAdTemplates(list);
@@ -456,7 +476,7 @@ export default function StaffDashboard() {
   // Function to remove ads from a video
   const handleRemoveAdsFromVideo = async (videoId, adType, adId = null) => {
     try {
-      const res = await fetch('http://localhost:4000/staff/remove-ad-from-video', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/remove-ad-from-video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -869,21 +889,21 @@ export default function StaffDashboard() {
       setError('');
 
       // Load staff notifications
-      const notificationsRes = await fetch(`http://localhost:4000/staff/notifications?employeeId=${employee.id}`);
+      const notificationsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/notifications?employeeId=${employee.id}`);
       if (notificationsRes.ok) {
         const data = await notificationsRes.json();
         setStaffNotifications(data.notifications || []);
       }
 
       // Load reports
-      const reportsRes = await fetch(`http://localhost:4000/staff/reports?employeeId=${employee.id}`);
+      const reportsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/reports?employeeId=${employee.id}`);
       if (reportsRes.ok) {
         const data = await reportsRes.json();
         setReports(data.reports || []);
       }
 
       // Load videos
-      const videosRes = await fetch(`http://localhost:4000/staff/videos?employeeId=${employee.id}`);
+      const videosRes = await fetch(`${getStaffBackendBaseUrl()}/staff/videos?employeeId=${employee.id}`);
       if (videosRes.ok) {
         const data = await videosRes.json();
         // Parse time string to duration in seconds
@@ -895,7 +915,7 @@ export default function StaffDashboard() {
       }
 
       // Load users
-      const usersRes = await fetch(`http://localhost:4000/staff/users?employeeId=${employee.id}`);
+      const usersRes = await fetch(`${getStaffBackendBaseUrl()}/staff/users?employeeId=${employee.id}`);
       if (usersRes.ok) {
         const data = await usersRes.json();
         setUsers(data.users || []);
@@ -905,7 +925,7 @@ export default function StaffDashboard() {
       }
 
       // Load user activity metrics for promotion filtering
-      const metricsRes = await fetch(`http://localhost:4000/staff/user-metrics?employeeId=${employee.id}`);
+      const metricsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/user-metrics?employeeId=${employee.id}`);
       if (metricsRes.ok) {
         const data = await metricsRes.json();
         const metricsMap = {};
@@ -916,21 +936,21 @@ export default function StaffDashboard() {
       }
 
       // Load requests
-      const requestsRes = await fetch(`http://localhost:4000/staff/requests?employeeId=${employee.id}`);
+      const requestsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/requests?employeeId=${employee.id}`);
       if (requestsRes.ok) {
         const data = await requestsRes.json();
         setRequests(data.requests || []);
       }
 
       // Load comments
-      const commentsRes = await fetch(`http://localhost:4000/staff/comments?employeeId=${employee.id}`);
+      const commentsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/comments?employeeId=${employee.id}`);
       if (commentsRes.ok) {
         const data = await commentsRes.json();
         setComments(data.comments || []);
       }
 
       // Load support tickets
-      const supportRes = await fetch(`http://localhost:4000/support/tickets?employeeId=${employee.id}`);
+      const supportRes = await fetch(`${getStaffBackendBaseUrl()}/support/tickets?employeeId=${employee.id}`);
       if (supportRes.ok) {
         const data = await supportRes.json();
         console.log('Support tickets loaded:', data.tickets?.length || 0);
@@ -941,7 +961,7 @@ export default function StaffDashboard() {
       }
 
       // Load onboarding info
-      const onboardingRes = await fetch(`http://localhost:4000/staff/onboarding-info?employeeId=${employee.id}`);
+      const onboardingRes = await fetch(`${getStaffBackendBaseUrl()}/staff/onboarding-info?employeeId=${employee.id}`);
       if (onboardingRes.ok) {
         const data = await onboardingRes.json();
         setOnboardingList(data.onboardingInfo || []);
@@ -949,14 +969,14 @@ export default function StaffDashboard() {
 
       // Load pending accounts (admin only)
       if (employee.role === 'administrator') {
-        const pendingRes = await fetch(`http://localhost:4000/staff/pending-accounts?employeeId=${employee.id}`);
+        const pendingRes = await fetch(`${getStaffBackendBaseUrl()}/staff/pending-accounts?employeeId=${employee.id}`);
         if (pendingRes.ok) {
           const data = await pendingRes.json();
           setPendingAccounts(data.pendingAccounts || []);
         }
 
         // Load staff members (admin only)
-        const staffRes = await fetch(`http://localhost:4000/staff/all?employeeId=${employee.id}`);
+        const staffRes = await fetch(`${getStaffBackendBaseUrl()}/staff/all?employeeId=${employee.id}`);
         if (staffRes.ok) {
           const data = await staffRes.json();
           setStaffMembers(data.members || []);
@@ -986,7 +1006,7 @@ export default function StaffDashboard() {
     console.log(`Click registered: ${approve ? 'Approve' : 'Deny'} for ${account.name}`);
     
     try {
-      const res = await fetch('http://localhost:4000/staff/approve-account', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/approve-account`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1016,7 +1036,7 @@ export default function StaffDashboard() {
     if (!approvalInstructionsModal.account) return;
 
     try {
-      const res = await fetch('http://localhost:4000/staff/approve-account', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/approve-account`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1056,7 +1076,7 @@ export default function StaffDashboard() {
     try {
       const finalMessage = denyModal.customMessage.trim() || denyModal.selectedReason;
 
-      const res = await fetch('http://localhost:4000/staff/approve-account', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/approve-account`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1152,7 +1172,7 @@ export default function StaffDashboard() {
         updateData.newPassword = myProfileEdit.newPassword;
       }
 
-      const res = await fetch('http://localhost:4000/staff/update-profile', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/update-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)
@@ -1200,7 +1220,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch(`http://localhost:4000/staff/delete-video/${videoId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/delete-video/${videoId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1233,7 +1253,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch(`http://localhost:4000/staff/hide-video/${videoId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/hide-video/${videoId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1266,7 +1286,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch(`http://localhost:4000/staff/delete-request/${requestId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/delete-request/${requestId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1299,7 +1319,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch(`http://localhost:4000/staff/hide-request/${requestId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/hide-request/${requestId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1332,7 +1352,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch(`http://localhost:4000/staff/delete-comment/${commentId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/delete-comment/${commentId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1365,7 +1385,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch(`http://localhost:4000/staff/hide-comment/${commentId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/hide-comment/${commentId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1393,7 +1413,7 @@ export default function StaffDashboard() {
   // Undo handlers
   const handleUndoHideVideo = async (videoId) => {
     try {
-      const res = await fetch(`http://localhost:4000/staff/undo-hide-video/${videoId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/undo-hide-video/${videoId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1418,7 +1438,7 @@ export default function StaffDashboard() {
 
   const handleUndoDeleteVideo = async (videoId) => {
     try {
-      const res = await fetch(`http://localhost:4000/staff/undo-delete-video/${videoId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/undo-delete-video/${videoId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1444,7 +1464,7 @@ export default function StaffDashboard() {
   // Request undo handlers
   const handleUndoHideRequest = async (requestId) => {
     try {
-      const res = await fetch(`http://localhost:4000/staff/undo-hide-request/${requestId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/undo-hide-request/${requestId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1469,7 +1489,7 @@ export default function StaffDashboard() {
 
   const handleUndoDeleteRequest = async (requestId) => {
     try {
-      const res = await fetch(`http://localhost:4000/staff/undo-delete-request/${requestId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/undo-delete-request/${requestId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1495,7 +1515,7 @@ export default function StaffDashboard() {
   // Comment undo handlers
   const handleUndoHideComment = async (commentId) => {
     try {
-      const res = await fetch(`http://localhost:4000/staff/undo-hide-comment/${commentId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/undo-hide-comment/${commentId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1520,7 +1540,7 @@ export default function StaffDashboard() {
 
   const handleUndoDeleteComment = async (commentId) => {
     try {
-      const res = await fetch(`http://localhost:4000/staff/undo-delete-comment/${commentId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/undo-delete-comment/${commentId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1562,11 +1582,11 @@ export default function StaffDashboard() {
       };
       
       console.log('Sending user action request:', {
-        url: `http://localhost:4000/staff/user-action/${userActionModal.userId}`,
+        url: `${getStaffBackendBaseUrl()}/staff/user-action/${userActionModal.userId}`,
         payload
       });
 
-      const res = await fetch(`http://localhost:4000/staff/user-action/${userActionModal.userId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/user-action/${userActionModal.userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1619,7 +1639,7 @@ export default function StaffDashboard() {
 
   const handleUndoUserAction = async () => {
     try {
-      const res = await fetch(`http://localhost:4000/staff/undo-user-action/${userActionFeedback.userId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/undo-user-action/${userActionFeedback.userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1651,7 +1671,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch('http://localhost:4000/staff/send-promotion', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/send-promotion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1679,10 +1699,11 @@ export default function StaffDashboard() {
         } catch (e) { /* Ignore template save errors */ }
         // Keep the modal open (do not auto-close) so staff can send more or edit
         // Provide success toast and keep current fields
+        const delivered = data.created || (promotionModal.selectedUsers ? promotionModal.selectedUsers.length : 0);
         setToast({
           type: 'success',
           title: 'Promotion Sent',
-          message: `Delivered to ${data.created || (promotionModal.selectedUsers ? promotionModal.selectedUsers.length : 0)} recipient(s)`,
+          message: `Delivered to ${delivered} recipient(s)`,
           icon: 'gift',
           position: 'top'
         });
@@ -1708,7 +1729,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch('http://localhost:4000/staff/apply-overlay-ad', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/apply-overlay-ad`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1812,7 +1833,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch('http://localhost:4000/staff/apply-bottom-ad', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/apply-bottom-ad`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1865,7 +1886,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const res = await fetch('http://localhost:4000/staff/apply-default2-ad', {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/apply-default2-ad`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1950,9 +1971,9 @@ export default function StaffDashboard() {
 
   return (
     <>
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', paddingBottom: '80px' }}>
+    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}>
       {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
+      <div style={{ marginBottom: '24px', paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0' }}>Staff Admin Dashboard</h1>
         <p style={{ color: '#666', margin: '8px 0 0 0' }}>Welcome, {staffSession.name} ({staffSession.role})</p>
       </div>
@@ -4624,7 +4645,7 @@ export default function StaffDashboard() {
                                   {report.evidenceFiles.map((file, idx) => (
                                     <a 
                                       key={idx}
-                                      href={`http://localhost:4000/${file.path}`}
+                                      href={`${getStaffBackendBaseUrl()}/${file.path}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       style={{
@@ -4705,7 +4726,7 @@ export default function StaffDashboard() {
                                     e.stopPropagation();
                                     const deleteVideo = async () => {
                                       try {
-                                        await fetch(`http://localhost:4000/staff/shadow-delete/${reportedVideo.id}`, {
+                                        await fetch(`${getStaffBackendBaseUrl()}/staff/shadow-delete/${reportedVideo.id}`, {
                                           method: 'POST',
                                           headers: { 'Content-Type': 'application/json' },
                                           body: JSON.stringify({ employeeId: staffSession?.id || 1000, reason: `Report action: ${report.reason}` })
@@ -7482,7 +7503,7 @@ export default function StaffDashboard() {
                                 if (file) {
                                   const formData = new FormData();
                                   formData.append('media', file);
-                                  fetch('http://localhost:4000/staff/upload-overlay-media', {
+                                  fetch(`${getStaffBackendBaseUrl()}/staff/upload-overlay-media`, {
                                     method: 'POST',
                                     body: formData
                                   })
@@ -10527,26 +10548,20 @@ export default function StaffDashboard() {
 
     <footer style={{
       position: 'fixed',
-      bottom: footerPosition.y,
-      left: footerPosition.x,
-      height: '60px',
+      bottom: 0,
+      left: 0,
+      right: 0,
       borderTop: '1px solid #e5e7eb',
-      background: 'linear-gradient(to top, #fafafa, #ffffff)',
+      background: 'white',
       display: 'flex',
-      justifyContent: 'center',
+      justifyContent: 'space-around',
       alignItems: 'center',
-      gap: '24px',
+      gap: '8px',
       zIndex: 40,
       boxShadow: '0 -4px 12px rgba(0, 0, 0, 0.08)',
-      cursor: isDraggingFooter ? 'grabbing' : 'grab',
-      userSelect: 'none',
-      minWidth: '300px'
-    }}
-    onMouseDown={(e) => {
-      if (e.button === 0) {
-        setIsDraggingFooter(true);
-        setFooterDragStart({ x: e.clientX - footerPosition.x, y: e.clientY - footerPosition.y });
-      }
+      paddingTop: '10px',
+      paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+      minHeight: '70px'
     }}>
       <button
         onClick={() => window.location.href = '/'}
@@ -12033,7 +12048,7 @@ export default function StaffDashboard() {
             <button
               onClick={async () => {
                 try {
-                  const res = await fetch('http://localhost:4000/staff/update-permissions', {
+                  const res = await fetch(`${getStaffBackendBaseUrl()}/staff/update-permissions`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -12056,7 +12071,7 @@ export default function StaffDashboard() {
                         : `Permissions updated for ${memberName}` 
                     });
                     // Reload staff members list
-                    const staffRes = await fetch(`http://localhost:4000/staff/all?employeeId=${staffSession.id}`);
+                    const staffRes = await fetch(`${getStaffBackendBaseUrl()}/staff/all?employeeId=${staffSession.id}`);
                     if (staffRes.ok) {
                       const data = await staffRes.json();
                       setStaffMembers(data.members || []);
@@ -12348,7 +12363,7 @@ export default function StaffDashboard() {
                   if (staffProfileModal.newPassword2) passwords.push(staffProfileModal.newPassword2);
                   if (staffProfileModal.newPassword3) passwords.push(staffProfileModal.newPassword3);
 
-                  const res = await fetch('http://localhost:4000/staff/update-profile', {
+                  const res = await fetch(`${getStaffBackendBaseUrl()}/staff/update-profile`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

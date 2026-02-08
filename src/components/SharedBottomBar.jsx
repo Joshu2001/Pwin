@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Home, FileText, Pencil, MoreHorizontal } from 'lucide-react';
 import { getTranslation } from '../translations.js';
 
@@ -8,6 +9,7 @@ import { getTranslation } from '../translations.js';
  * Includes proper safe area handling for Android/iOS system navigation
  */
 const SharedBottomBar = ({ selectedLanguage = 'English', activeTabOverride = null }) => {
+    const navigate = useNavigate();
     // Map lowercase tab keys to capitalized names
     const tabKeyToName = {
         'home': 'Home',
@@ -65,6 +67,9 @@ const SharedBottomBar = ({ selectedLanguage = 'English', activeTabOverride = nul
             'More': 'more'
         };
         const tabKey = tabMap[tabName];
+        if (tabKey) {
+            navigate(`/${tabKey}`);
+        }
         if (window.setFooterTab) {
             window.setFooterTab(tabKey);
         }

@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Home, FileText, Pencil, MoreHorizontal, Gift, Zap, TrendingUp, Lock, CheckCircle2, Users, Copy, Share2, X, ChevronLeft } from 'lucide-react';
+import { Users, Gift, Zap, TrendingUp, Lock, CheckCircle2, Copy, Share2, X, ChevronLeft } from 'lucide-react';
 import { getTranslation } from './translations.js';
+import { WEB_URL } from './config.js';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 const getCssVar = (name, fallback) => {
     try { 
@@ -14,106 +16,6 @@ const getCssVar = (name, fallback) => {
 const ACCENT_COLOR = getCssVar('--color-accent', '#CA8A04');
 const HIGHLIGHT_COLOR = getCssVar('--color-accent-soft', 'rgba(202, 138, 4, 0.12)');
 const ICON_BACKGROUND = getCssVar('--color-gold-light-bg', 'rgba(202, 138, 4, 0.1)');
-
-// Bottom navigation bar component
-const BottomBar = () => {
-    const [activeTab, setActiveTab] = useState(null);
-    const navigatedRef = useRef(false);
-
-    const tabs = [
-        { name: 'Home', Icon: Home },
-        { name: 'Requests', Icon: FileText },
-        { name: 'Ideas', Icon: Pencil },
-        { name: 'More', Icon: MoreHorizontal },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{ 
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.name === activeTab;
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold)' }
-                        : { color: inactiveColor };
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                    const navigateToTab = (tabName) => {
-                        try {
-                            if (tabName === 'Home') {
-                                window.location.href = '/home.jsx';
-                                return;
-                            }
-                            if (tabName === 'Requests') {
-                                window.location.href = '/requests.jsx';
-                                return;
-                            }
-                            if (tabName === 'Ideas') {
-                                window.location.href = '/ideas';
-                                return;
-                            }
-                            if (tabName === 'More') {
-                                window.location.href = '/more.jsx';
-                                return;
-                            }
-                        } catch (e) {
-                            console.warn('Navigation failed', e);
-                        }
-                    };
-
-                    return (
-                        <div
-                            key={tab.name}
-                            className="relative flex flex-col items-center justify-center flex-1 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full h-full justify-center"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { 
-                                        navigatedRef.current = true; 
-                                        navigateToTab(tab.name); 
-                                    }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { 
-                                        navigatedRef.current = true; 
-                                        navigateToTab(tab.name); 
-                                    }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { 
-                                        navigatedRef.current = false; 
-                                        e.preventDefault(); 
-                                        return; 
-                                    }
-                                    setActiveTab(tab.name);
-                                    navigateToTab(tab.name);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    <tab.Icon className="w-6 h-6" strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {tab.name}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
 
 const Referrals = () => {
     const [selectedLanguage, setSelectedLanguage] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('regaarder_language') : 'English') || 'English');
@@ -144,7 +46,7 @@ const Referrals = () => {
                     return;
                 }
 
-                const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 const response = await fetch(`${BACKEND}/users/me`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -166,7 +68,7 @@ const Referrals = () => {
 
     const getReferralLink = () => {
         if (!userInfo) return '';
-        return `${window.location.origin}/join?code=${userInfo.referralCode || userInfo.id}`;
+        return `${WEB_URL}/join?code=${userInfo.referralCode || userInfo.id}`;
     };
 
     const getReferralCode = () => {
@@ -201,7 +103,7 @@ const Referrals = () => {
                 
                 {/* Back Button */}
                 <button
-                    onClick={() => window.location.href = '/home'}
+                    onClick={() => window.setFooterTab('Home')}
                     className="absolute top-6 left-4 p-2 hover:bg-gray-100 rounded-full transition"
                 >
                     <ChevronLeft className="w-6 h-6" style={{ color: ACCENT_COLOR }} />
@@ -341,8 +243,8 @@ const Referrals = () => {
                 />
             )}
 
-            {/* Bottom Navigation Bar */}
-            <BottomBar />
+            {/* Shared Bottom Navigation Bar */}
+            <SharedBottomBar selectedLanguage={selectedLanguage} />
         </div>
     );
 };

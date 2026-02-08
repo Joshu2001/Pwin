@@ -5,8 +5,10 @@ import { Home, FileText, File as FileIcon, Pencil, MoreHorizontal, MoreVertical,
 import RequestsFeed from './requests.jsx';
 import VideoOverlayEditor from './VideoOverlayEditor.jsx';
 import FeedbackModal from './FeedbackModal.jsx'; // Feedback Modal
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 import { useAuth } from './AuthContext.jsx';
 import { getTranslation, translations } from './translations.js';
+import { WEB_URL } from './config.js';
 
 // No per-page CSS vars here — let the page inherit the global :root variables
 const customStyle = {};
@@ -475,7 +477,8 @@ const ClaimStatusPanel = ({
     // Fetch categories from backend
     const fetchCategories = useCallback(async () => {
         try {
-            const res = await fetch('http://localhost:4000/categories');
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const res = await fetch(`${BACKEND}/categories`);
             if (res.ok) {
                 const data = await res.json();
                 console.log('Fetched categories:', data);
@@ -512,7 +515,8 @@ const ClaimStatusPanel = ({
 
         try {
             const raw = newCategoryName.trim();
-            const res = await fetch('http://localhost:4000/categories', {
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const res = await fetch(`${BACKEND}/categories`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ category: raw })
@@ -819,11 +823,11 @@ const ClaimStatusPanel = ({
 
     const computeShareLink = () => {
         try {
-            const base = window && window.location ? window.location.origin : 'https://app.example.com';
+            const base = WEB_URL;
             const slug = (videoTitle || title || 'your-video').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'your-video';
             return `${base}/videos/${slug}`;
         } catch (e) {
-            return 'https://app.example.com/videos/your-video';
+            return `${WEB_URL}/videos/your-video`;
         }
     };
 
@@ -1205,7 +1209,7 @@ const ClaimStatusPanel = ({
             </div>
             {/* Modal: Advance Request Status */}
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                <div className="fixed inset-0 z-[80] flex items-center justify-center">
                     <div className="absolute inset-0 bg-black opacity-60" onClick={() => setShowModal(false)} />
 
                     {/* Modal container */}
@@ -1991,14 +1995,14 @@ const ClaimStatusPanel = ({
                                                         format: pd.format || videoFormat,
                                                         changeNote: changeNote || null,
                                                         appearance: appearance,
-                                                        privateLink: appearance === 'private' ? `${window.location.origin}/?vid=${Date.now().toString() + '-' + Math.random().toString(36).slice(2)}` : null,
+                                                        privateLink: appearance === 'private' ? `${WEB_URL}/?vid=${Date.now().toString() + '-' + Math.random().toString(36).slice(2)}` : null,
                                                         overlays: videoOverlays && Array.isArray(videoOverlays) ? videoOverlays : [],
                                                     };
 
                                                     // POST to backend to save video
                                                     // Upload video and thumbnail files to server first
                                                     try {
-                                                        const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                                                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                                                         const token = localStorage.getItem('regaarder_token');
 
                                                         console.log('Uploading files to backend:', {
@@ -2338,7 +2342,7 @@ const ClaimStatusPanel = ({
                                     onClick={async () => {
                                         try {
                                             const token = localStorage.getItem('regaarder_token');
-                                            const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                                            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                                             if (token) {
                                                 const response = await fetch(`${BACKEND}/claims`, {
                                                     method: 'DELETE',
@@ -2438,107 +2442,6 @@ const ClaimStatusPanel = ({
 
 
 
-
-// Bottom navigation bar — copied from `home.jsx` footer to match exact styling
-const BottomBar = ({ selectedLanguage = 'English' }) => {
-    const [activeTab, setActiveTab] = useState('Home');
-    const navigatedRef = useRef(false);
-
-    // The Requests tab should always be available in the footer. Tooltip
-    // visibility for the Requested badge is handled at the App/ContentCard level
-    // via the `hasSeenRequests` localStorage flag — do not hide the footer tab.
-    const tabs = [
-        { name: 'Home', icon: 'home' },
-        { name: 'Requests', icon: 'requests' },
-        // Changed 'Ideas' to 'Pencil' icon
-        { name: 'Ideas', icon: 'pencil' },
-        { name: 'More', icon: 'more' },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.name === activeTab;
-
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold)' }
-                        : { color: inactiveColor };
-
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                    const navigateToTab = (tabName) => {
-                        try {
-                            if (tabName === 'Home') {
-                                window.location.href = '/home.jsx';
-                                return;
-                            }
-                            if (tabName === 'Requests') {
-                                window.location.href = '/requests.jsx';
-                                return;
-                            }
-                            if (tabName === 'Ideas') {
-                                window.location.href = '/ideas';
-                                return;
-                            }
-                            if (tabName === 'More') {
-                                window.location.href = '/more.jsx';
-                                return;
-                            }
-                        } catch (e) {
-                            console.warn('Navigation failed', e);
-                        }
-                    };
-
-                    return (
-                        <div
-                            key={tab.name}
-                            className="relative flex flex-col items-center justify-center flex-1 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full h-full justify-center"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; }
-                                    setActiveTab(tab.name);
-                                    navigateToTab(tab.name);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    {(() => {
-                                        const IconMap = { home: Home, requests: FileText, pencil: Pencil, more: MoreHorizontal };
-                                        const IconComp = IconMap[tab.icon] || Home;
-                                        const iconStyle = isSelected ? { color: 'var(--color-gold)' } : { color: inactiveColor };
-                                        return <IconComp size={24} strokeWidth={isSelected ? 2 : 1.5} style={iconStyle} />;
-                                    })()}
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {getTranslation(tab.name, selectedLanguage)}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
 
 // Main pixel-perfect dashboard
 const App = () => {
@@ -2650,7 +2553,8 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const response = await fetch('http://localhost:4000/users/me', {
+                const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+                const response = await fetch(`${BACKEND}/users/me`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 
@@ -2676,7 +2580,8 @@ const App = () => {
              // Fallback default list
             const defaults = ['Travel', 'Education', 'Entertainment', 'Music', 'Sports'];
 
-            const res = await fetch('http://localhost:4000/categories');
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const res = await fetch(`${BACKEND}/categories`);
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data) && data.length > 0) {
@@ -2709,7 +2614,8 @@ const App = () => {
 
         try {
             const raw = newCategoryName.trim();
-            const res = await fetch('http://localhost:4000/categories', {
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const res = await fetch(`${BACKEND}/categories`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ category: raw })
@@ -3057,7 +2963,7 @@ const App = () => {
             const token = localStorage.getItem('regaarder_token');
             const rid = requestId;
             if (token && rid) {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 fetch(`${BACKEND}/requests/${rid}/status`, {
                     method: 'POST',
                     headers: {
@@ -3224,7 +3130,18 @@ const App = () => {
             style={{ ...customStyle, paddingBottom: 'calc(115px + env(safe-area-inset-bottom))' }}
         >
             {/* Page Selector Dropdown */}
-            <div className="-mx-6 -mt-6 pt-10 pb-10" style={{ background: 'var(--color-purple)', borderTop: '3px solid var(--color-purple)', borderLeft: '3px solid var(--color-purple)', borderRight: '3px solid var(--color-purple)', borderTopLeftRadius: '16px', borderTopRightRadius: '16px' }}>
+            <div
+                className="-mx-6 -mt-6 pt-10 pb-10"
+                style={{
+                    background: 'var(--color-purple)',
+                    borderTop: '3px solid var(--color-purple)',
+                    borderLeft: '3px solid var(--color-purple)',
+                    borderRight: '3px solid var(--color-purple)',
+                    borderTopLeftRadius: '16px',
+                    borderTopRightRadius: '16px',
+                    paddingTop: 'calc(40px + env(safe-area-inset-top, 0px))'
+                }}
+            >
                 <div className="relative px-6">
                     <button
                         onClick={() => setShowDropdown(!showDropdown)}
@@ -3923,7 +3840,7 @@ const App = () => {
                 ]}
             />
             {/* Footer */}
-            <BottomBar selectedLanguage={selectedLanguage} />
+            <SharedBottomBar selectedLanguage={selectedLanguage} />
 
         </div>
     );

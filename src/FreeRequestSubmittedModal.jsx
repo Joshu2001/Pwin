@@ -1,7 +1,7 @@
 import { X, CheckCircle } from 'lucide-react';
 import { getTranslation } from './translations.js';
 
-export default function FreeRequestSubmittedModal({ onClose, onBoostRequest, onInviteContributors, selectedLanguage, requestData }) {
+export default function FreeRequestSubmittedModal({ onClose, onBoostRequest, onInviteContributors, onViewDetails, selectedLanguage, requestData }) {
   const handleInviteContributors = async () => {
     try {
       const shareMessage = `${getTranslation('Check out this request on Regaarder!', selectedLanguage)}\n\n${getTranslation('Title', selectedLanguage)}: ${requestData?.title || 'Request'}\n${getTranslation('Requester', selectedLanguage)}: ${requestData?.requesterName || 'Unknown'}\n\n${getTranslation('Help boost this request and earn rewards by contributing! Visit Regaarder to see more.', selectedLanguage)}`;
@@ -69,9 +69,17 @@ export default function FreeRequestSubmittedModal({ onClose, onBoostRequest, onI
         {/* Secondary CTA - Invite Contributors */}
         <button
           onClick={handleInviteContributors}
-          className="w-full bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold py-3 rounded-lg transition-colors"
+          className="w-full bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold py-3 rounded-lg transition-colors mb-3"
         >
           {getTranslation('Invite Contributors', selectedLanguage)}
+        </button>
+
+        {/* Tertiary CTA - View Request Details */}
+        <button
+          onClick={onViewDetails || onClose}
+          className="w-full text-gray-500 hover:text-gray-700 font-medium py-2 rounded-lg transition-colors text-sm"
+        >
+          {getTranslation('View Request Details', selectedLanguage)}
         </button>
       </div>
     </div>

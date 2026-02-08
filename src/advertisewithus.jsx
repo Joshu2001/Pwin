@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAuth } from './AuthContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations.js';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Lightweight event-bus inlined here to avoid module resolution issues.
 // Exposed on `window.__eventBus` so other modules can use it if present.
@@ -345,7 +346,7 @@ const StickyHeader = ({ ACCENT_COLOR, setCurrentPage, visible }) => {
     `;
 
     return (
-        <div className={headerClass}>
+        <div className={headerClass} style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
             {/* Header Content Container, centered and max-w matched to main content */}
             <div className="max-w-md mx-auto flex justify-between items-center px-4 py-3">
                 <p className="text-sm font-medium text-gray-800">{t('Ready to start collaborating?')}</p>
@@ -361,99 +362,6 @@ const StickyHeader = ({ ACCENT_COLOR, setCurrentPage, visible }) => {
         </div>
     );
 };
-
-// Footer component matching `home.jsx`'s BottomBar exactly
-const BottomBar = () => {
-    const [activeTab, setActiveTab] = useState('Home');
-    const navigatedRef = useRef(false);
-
-    const tabs = [
-        { name: 'Home', Icon: Home },
-        { name: 'Requests', Icon: FileText },
-        { name: 'Ideas', Icon: Pencil },
-        { name: 'More', Icon: MoreHorizontal },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.name === activeTab;
-
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold)' }
-                        : { color: inactiveColor };
-
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                    const navigateToTab = (tabName) => {
-                        try {
-                            if (tabName === 'Home') {
-                                window.location.href = '/home.jsx';
-                                return;
-                            }
-                            if (tabName === 'Requests') {
-                                window.location.href = '/requests.jsx';
-                                return;
-                            }
-                            if (tabName === 'Ideas') {
-                                window.location.href = '/ideas';
-                                return;
-                            }
-                            if (tabName === 'More') {
-                                window.location.href = '/more.jsx';
-                                return;
-                            }
-                        } catch (e) {
-                            console.warn('Navigation failed', e);
-                        }
-                    };
-
-                    return (
-                        <div
-                            key={tab.name}
-                            className="relative flex flex-col items-center justify-center flex-1 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full h-full justify-center"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; }
-                                    setActiveTab(tab.name);
-                                    navigateToTab(tab.name);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    <tab.Icon className="w-6 h-6" strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {tab.name}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
-
 
 // --- HOMEPAGE COMPONENTS ---
 
@@ -1118,7 +1026,7 @@ const BrandLogoPage = ({ setCurrentPage, ACCENT_COLOR, ICON_BACKGROUND, uploaded
             // (brief is optional at signup; sponsors can add it later)
 
             const token = localStorage.getItem('regaarder_token');
-            const resp = await fetch('http://localhost:4000/sponsors', {
+            const resp = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/sponsors`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1279,7 +1187,7 @@ const AdvertiserDashboard = ({ setCurrentPage, ACCENT_COLOR, previewUrl, uploade
                     return;
                 }
                 const token = localStorage.getItem('regaarder_token');
-                const res = await fetch('http://localhost:4000/advertiser/dashboard', {
+                const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/advertiser/dashboard`, {
                     headers: { 'Authorization': token ? `Bearer ${token}` : '' }
                 });
                 if (!res.ok) {
@@ -4027,7 +3935,7 @@ const App = () => {
                 }
 
                 const token = localStorage.getItem('regaarder_token');
-                const res = await fetch('http://localhost:4000/sponsors/me', {
+                const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/sponsors/me`, {
                     headers: { 'Authorization': token ? `Bearer ${token}` : '' }
                 });
                 if (!res.ok) {
@@ -4227,7 +4135,7 @@ const App = () => {
         </div>
         
         {/* Bottom Mobile Navigation */}
-        <BottomBar />
+        <SharedBottomBar selectedLanguage={(typeof window !== 'undefined') ? (localStorage.getItem('regaarder_language') || 'English') : 'English'} activeTabOverride="Home" />
         </div>
     );
 };

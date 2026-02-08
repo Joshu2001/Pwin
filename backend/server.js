@@ -3,11 +3,9 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
-const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -20,242 +18,6 @@ const PUBLIC_BACKEND_URL =
 
 app.use(cors());
 app.use(bodyParser.json());
-
-const DATABASE_URL = process.env.DATABASE_URL || null;
-const DB_ENABLED = Boolean(DATABASE_URL);
-const dbPool = DB_ENABLED
-  ? new Pool({
-      connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
-    })
-  : null;
-
-const dbQuery = async (text, params = []) => {
-  if (!DB_ENABLED || !dbPool) throw new Error('Database not configured');
-  return dbPool.query(text, params);
-};
-
-const initDb = async () => {
-  if (!DB_ENABLED) return;
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS users (
-      id text PRIMARY KEY,
-      email text UNIQUE NOT NULL,
-      name text,
-      password_hash text NOT NULL,
-      token text,
-      referral_code text,
-      referrer_id text,
-      referral_count integer DEFAULT 0,
-      created_at timestamptz DEFAULT now(),
-      password_changed_at timestamptz,
-      handle text,
-      tag text,
-      bio text,
-      interests jsonb,
-      image text,
-      social jsonb,
-      is_creator boolean DEFAULT false,
-      creator_since timestamptz,
-      intro_video text,
-      document text,
-      price numeric,
-      tagline text,
-      pricing_type text,
-      categories jsonb,
-      user_plan text
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS requests (
-      id text PRIMARY KEY,
-      title text NOT NULL,
-      description text NOT NULL,
-      likes integer DEFAULT 0,
-      comments integer DEFAULT 0,
-      boosts integer DEFAULT 0,
-      amount numeric DEFAULT 0,
-      funding numeric DEFAULT 0,
-      is_trending boolean DEFAULT false,
-      is_sponsored boolean DEFAULT false,
-      company text,
-      company_initial text,
-      company_color text,
-      image_url text,
-      creator_id text,
-      creator_name text,
-      creator_email text,
-      created_by text,
-      created_at timestamptz DEFAULT now(),
-      updated_at timestamptz,
-      current_step integer,
-      claimed boolean DEFAULT false,
-      claimed_by text,
-      claimed_at timestamptz,
-      meta jsonb
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS request_reactions (
-      request_id text NOT NULL,
-      user_id text NOT NULL,
-      is_liked boolean DEFAULT false,
-      is_disliked boolean DEFAULT false,
-      created_at timestamptz DEFAULT now(),
-      updated_at timestamptz DEFAULT now(),
-      PRIMARY KEY (request_id, user_id)
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS request_bookmarks (
-      id text PRIMARY KEY,
-      user_id text NOT NULL,
-      request_id text NOT NULL,
-      title text,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS videos (
-      id text PRIMARY KEY,
-      payload jsonb NOT NULL,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS request_comments (
-      id text PRIMARY KEY,
-      request_id text,
-      payload jsonb NOT NULL,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS watch_history (
-      video_id text NOT NULL,
-      user_id text NOT NULL,
-      payload jsonb NOT NULL,
-      updated_at timestamptz DEFAULT now(),
-      PRIMARY KEY (video_id, user_id)
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS sponsors (
-      id text PRIMARY KEY,
-      owner_id text,
-      payload jsonb NOT NULL,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS support_tickets (
-      id text PRIMARY KEY,
-      payload jsonb NOT NULL,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS notifications (
-      id text PRIMARY KEY,
-      to_id text,
-      from_id text,
-      type text,
-      read boolean DEFAULT false,
-      payload jsonb NOT NULL,
-      created_at timestamptz DEFAULT now()
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS video_reactions (
-      video_id text NOT NULL,
-      user_id text NOT NULL,
-      is_liked boolean DEFAULT false,
-      is_disliked boolean DEFAULT false,
-      updated_at timestamptz DEFAULT now(),
-      PRIMARY KEY (video_id, user_id)
-    );
-  `);
-
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS comment_reactions (
-      comment_id text NOT NULL,
-      user_id text NOT NULL,
-      is_liked boolean DEFAULT false,
-      is_disliked boolean DEFAULT false,
-      updated_at timestamptz DEFAULT now(),
-      PRIMARY KEY (comment_id, user_id)
-    );
-  `);
-};
-
-initDb().catch((err) => {
-  console.error('Database init error', err);
-});
-
-const toPublicUser = (user) => {
-  if (!user) return null;
-  const { password_hash, token, ...rest } = user;
-  return rest;
-};
-
-const mapUserRow = (row) => {
-  if (!row) return null;
-  return {
-    id: row.id,
-    email: row.email,
-    name: row.name,
-    password_hash: row.password_hash,
-    token: row.token,
-    referral_code: row.referral_code,
-    referrer_id: row.referrer_id,
-    referral_count: row.referral_count,
-    created_at: row.created_at,
-    password_changed_at: row.password_changed_at,
-    handle: row.handle,
-    tag: row.tag,
-    bio: row.bio,
-    interests: row.interests,
-    image: row.image,
-    social: row.social,
-    is_creator: row.is_creator,
-    creator_since: row.creator_since,
-    introVideo: row.intro_video,
-    document: row.document,
-    price: row.price,
-    tagline: row.tagline,
-    pricingType: row.pricing_type,
-    categories: row.categories,
-    userPlan: row.user_plan
-  };
-};
-
-const getUserFromAuthHeader = async (req) => {
-  try {
-    const auth = req.headers.authorization || '';
-    if (!auth.startsWith('Bearer ')) return null;
-    const token = auth.slice(7).trim();
-    if (!token) return null;
-    if (DB_ENABLED) {
-      const { rows } = await dbQuery('SELECT * FROM users WHERE token = $1 LIMIT 1', [token]);
-      return rows[0] ? mapUserRow(rows[0]) : null;
-    }
-    const users = readUsers();
-    const user = users.find(u => u.token === token);
-    return user || null;
-  } catch {
-    return null;
-  }
-};
 
 const isRewritableHost = (hostname) => {
   if (!hostname) return false;
@@ -439,11 +201,31 @@ function fileFilter(req, file, cb) {
 
 const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_BYTES }, fileFilter });
 
+function normalizeUserFields(u) {
+  if (!u || typeof u !== 'object') return u;
+  return {
+    ...u,
+    isCreator: u.isCreator === true || u.is_creator === true || false,
+    referralCode: u.referralCode || u.referral_code || null,
+    createdAt: u.createdAt || u.created_at || null,
+    passwordChangedAt: u.passwordChangedAt || u.password_changed_at || null,
+    creatorSince: u.creatorSince || u.creator_since || null,
+    referralCount: u.referralCount || u.referral_count || 0,
+    referrerId: u.referrerId || u.referrer_id || null,
+  };
+}
+
 function readUsers() {
   try {
     if (!fs.existsSync(DATA_FILE)) return [];
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    return JSON.parse(raw || '[]');
+    const parsed = JSON.parse(raw || '[]');
+    if (!Array.isArray(parsed)) {
+      console.error('readUsers: DATA_FILE is not an array, got', typeof parsed);
+      return [];
+    }
+    // Normalize snake_case fields to camelCase for consistency
+    return parsed.map(normalizeUserFields);
   } catch (err) {
     console.error('readUsers error', err);
     return [];
@@ -468,44 +250,6 @@ function readSponsors() {
 function writeSponsors(sponsors) {
   fs.writeFileSync(SPONSORS_FILE, JSON.stringify(sponsors, null, 2), 'utf8');
 }
-
-const loadSponsors = async () => {
-  if (!DB_ENABLED) return readSponsors();
-  const { rows } = await dbQuery('SELECT payload FROM sponsors ORDER BY created_at DESC');
-  return rows.map(row => row.payload);
-};
-
-const saveSponsors = async (sponsors) => {
-  if (!DB_ENABLED) {
-    writeSponsors(sponsors);
-    return;
-  }
-  const client = await dbPool.connect();
-  const ids = sponsors.map(s => String(s.id));
-  try {
-    await client.query('BEGIN');
-    for (const sponsor of sponsors) {
-      const createdAt = sponsor.createdAt ? new Date(sponsor.createdAt) : new Date();
-      await client.query(
-        `INSERT INTO sponsors (id, owner_id, payload, created_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (id) DO UPDATE SET owner_id = EXCLUDED.owner_id, payload = EXCLUDED.payload`,
-        [String(sponsor.id), sponsor.ownerId || null, sponsor, createdAt]
-      );
-    }
-    if (ids.length > 0) {
-      await client.query('DELETE FROM sponsors WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
-    } else {
-      await client.query('DELETE FROM sponsors');
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
 
 function updateStreak(userId) {
   if (!userId || userId === 'anonymous') return;
@@ -575,44 +319,6 @@ function writeComments(comments) {
   try { fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2), 'utf8'); } catch (err) { console.error('writeComments error', err); }
 }
 
-const loadComments = async () => {
-  if (!DB_ENABLED) return readComments();
-  const { rows } = await dbQuery('SELECT payload FROM request_comments ORDER BY created_at DESC');
-  return rows.map(row => row.payload);
-};
-
-const saveComments = async (comments) => {
-  if (!DB_ENABLED) {
-    writeComments(comments);
-    return;
-  }
-  const client = await dbPool.connect();
-  const ids = comments.map(c => String(c.id));
-  try {
-    await client.query('BEGIN');
-    for (const comment of comments) {
-      const createdAt = comment.createdAt ? new Date(comment.createdAt) : new Date();
-      await client.query(
-        `INSERT INTO request_comments (id, request_id, payload, created_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (id) DO UPDATE SET request_id = EXCLUDED.request_id, payload = EXCLUDED.payload`,
-        [String(comment.id), comment.requestId || null, comment, createdAt]
-      );
-    }
-    if (ids.length > 0) {
-      await client.query('DELETE FROM request_comments WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
-    } else {
-      await client.query('DELETE FROM request_comments');
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
 function readVideos() {
   try {
     if (!fs.existsSync(VIDEOS_FILE)) return [];
@@ -631,44 +337,6 @@ function writeVideos(videos) {
     console.error('writeVideos error', err);
   }
 }
-
-const loadVideos = async () => {
-  if (!DB_ENABLED) return readVideos();
-  const { rows } = await dbQuery('SELECT payload FROM videos ORDER BY created_at DESC');
-  return rows.map(row => row.payload);
-};
-
-const saveVideos = async (videos) => {
-  if (!DB_ENABLED) {
-    writeVideos(videos);
-    return;
-  }
-  const client = await dbPool.connect();
-  const ids = videos.map(v => String(v.id));
-  try {
-    await client.query('BEGIN');
-    for (const video of videos) {
-      const createdAt = video.createdAt ? new Date(video.createdAt) : new Date();
-      await client.query(
-        `INSERT INTO videos (id, payload, created_at)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`,
-        [String(video.id), video, createdAt]
-      );
-    }
-    if (ids.length > 0) {
-      await client.query('DELETE FROM videos WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
-    } else {
-      await client.query('DELETE FROM videos');
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
 
 const PRODUCTS_FILE = path.join(__dirname, 'products.json');
 function readProducts() {
@@ -690,78 +358,11 @@ function writeProducts(products) {
   }
 }
 
-const NOTIFICATIONS_FILE = path.join(__dirname, 'suggestions.json');
-const readNotifications = () => {
-  try {
-    if (!fs.existsSync(NOTIFICATIONS_FILE)) return [];
-    const raw = fs.readFileSync(NOTIFICATIONS_FILE, 'utf8');
-    return JSON.parse(raw || '[]');
-  } catch (err) {
-    console.error('readNotifications error', err);
-    return [];
-  }
-};
-
-const writeNotifications = (list) => {
-  try {
-    fs.writeFileSync(NOTIFICATIONS_FILE, JSON.stringify(list, null, 2), 'utf8');
-  } catch (err) {
-    console.error('writeNotifications error', err);
-  }
-};
-
-const loadNotifications = async () => {
-  if (!DB_ENABLED) return readNotifications();
-  const { rows } = await dbQuery('SELECT payload FROM notifications ORDER BY created_at DESC');
-  return rows.map(row => row.payload);
-};
-
-const saveNotifications = async (list) => {
-  if (!DB_ENABLED) {
-    writeNotifications(list);
-    return;
-  }
-  const client = await dbPool.connect();
-  const ids = list.map(n => String(n.id));
-  try {
-    await client.query('BEGIN');
-    for (const notif of list) {
-      if (!notif || !notif.id) continue;
-      const createdAt = notif.createdAt ? new Date(notif.createdAt) : new Date();
-      const toId = notif.to?.id || notif.userId || null;
-      const fromId = notif.from?.id || null;
-      const type = notif.type || null;
-      const isRead = Boolean(notif.read);
-      await client.query(
-        `INSERT INTO notifications (id, to_id, from_id, type, read, payload, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (id) DO UPDATE SET to_id = EXCLUDED.to_id, from_id = EXCLUDED.from_id, type = EXCLUDED.type, read = EXCLUDED.read, payload = EXCLUDED.payload`,
-        [String(notif.id), toId, fromId, type, isRead, notif, createdAt]
-      );
-    }
-    if (ids.length > 0) {
-      await client.query('DELETE FROM notifications WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
-    } else {
-      await client.query('DELETE FROM notifications');
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Regaarder backend running' });
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
-app.get('/healthz', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
@@ -821,13 +422,47 @@ app.put('/templates/bottom/:id', (req, res) => {
     const body = req.body || {};
     const list = readBottomTemplates();
     const idx = list.findIndex(t => Number(t.id) === id);
-    if (idx === -1) return res.status(404).json({ error: 'Template not found' });
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
     const updated = { ...list[idx], ...body, id: list[idx].id };
     list[idx] = updated;
     writeBottomTemplates(list);
     return res.json({ success: true, template: updated });
   } catch (err) {
-    console.error('update bottom template error', err);
+    console.error('put bottom template error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/templates/bottom/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const list = readBottomTemplates();
+    const newList = list.filter(t => Number(t.id) !== id);
+    writeBottomTemplates(newList);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('delete bottom template error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add a new product to marketplace
+app.post('/products', authMiddleware, (req, res) => {
+  try {
+    const body = req.body || {};
+    const products = readProducts();
+    const newProduct = {
+      ...body,
+      id: Date.now(),
+      createdAt: new Date().toISOString(),
+      creatorId: req.user.id,
+      creatorName: req.user.name || 'Anonymous'
+    };
+    products.unshift(newProduct);
+    writeProducts(products);
+    return res.json({ success: true, product: newProduct });
+  } catch (err) {
+    console.error('add product error', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -838,44 +473,6 @@ app.post('/signup', async (req, res) => {
   const emailLower = String(email).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) return res.status(400).json({ error: 'Invalid email format' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-
-  if (DB_ENABLED) {
-    try {
-      const existing = await dbQuery('SELECT id FROM users WHERE email = $1 LIMIT 1', [emailLower]);
-      if (existing.rows.length) return res.status(409).json({ error: 'Account already exists for this email' });
-
-      let referrerUser = null;
-      if (referralCode && referralCode.trim()) {
-        const trimmedCode = referralCode.trim().toUpperCase();
-        const refRes = await dbQuery('SELECT id, referral_code FROM users WHERE UPPER(referral_code) = $1 LIMIT 1', [trimmedCode]);
-        referrerUser = refRes.rows[0] || null;
-        if (!referrerUser) return res.status(400).json({ error: 'Invalid referral code' });
-      }
-
-      const hash = await bcrypt.hash(password, 10);
-      const token = crypto.randomBytes(16).toString('hex');
-      const newReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 8);
-      const userId = `user-${Date.now()}`;
-      const now = new Date().toISOString();
-
-      await dbQuery(
-        `INSERT INTO users
-          (id, email, name, password_hash, referral_code, referrer_id, referral_count, created_at, password_changed_at, token)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [userId, emailLower, name, hash, newReferralCode, referrerUser ? referrerUser.id : null, 0, now, now, token]
-      );
-
-      if (referrerUser) {
-        await dbQuery('UPDATE users SET referral_count = COALESCE(referral_count, 0) + 1 WHERE id = $1', [referrerUser.id]);
-      }
-
-      const { rows } = await dbQuery('SELECT * FROM users WHERE id = $1', [userId]);
-      return res.json({ user: toPublicUser(mapUserRow(rows[0])), token });
-    } catch (err) {
-      console.error('signup db error', err);
-      return res.status(500).json({ error: 'Server error' });
-    }
-  }
 
   const users = readUsers();
   if (users.find(u => u.email === emailLower)) return res.status(409).json({ error: 'Account already exists for this email' });
@@ -927,25 +524,6 @@ app.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
   const emailLower = String(email).toLowerCase();
 
-  if (DB_ENABLED) {
-    try {
-      const { rows } = await dbQuery('SELECT * FROM users WHERE email = $1 LIMIT 1', [emailLower]);
-      const user = rows[0] ? mapUserRow(rows[0]) : null;
-      if (!user) return res.status(404).json({ error: 'No account found for this email' });
-
-      const ok = await bcrypt.compare(password, user.password_hash || user.passwordHash);
-      if (!ok) return res.status(401).json({ error: 'Incorrect password' });
-
-      const token = crypto.randomBytes(16).toString('hex');
-      await dbQuery('UPDATE users SET token = $1 WHERE id = $2', [token, user.id]);
-      const refreshed = await dbQuery('SELECT * FROM users WHERE id = $1', [user.id]);
-      return res.json({ user: toPublicUser(mapUserRow(refreshed.rows[0])), token });
-    } catch (err) {
-      console.error('login db error', err);
-      return res.status(500).json({ error: 'Server error' });
-    }
-  }
-
   const users = readUsers();
   const user = users.find(u => u.email === emailLower);
   if (!user) return res.status(404).json({ error: 'No account found for this email' });
@@ -960,26 +538,16 @@ app.post('/login', async (req, res) => {
   if (idx !== -1) users[idx] = updated;
   writeUsers(users);
 
-  const { passwordHash: _ph, ...publicUser } = updated;
+  const { passwordHash: _ph2, ...publicUser } = updated;
   res.json({ user: publicUser, token });
 });
 
-// Simple auth middleware that validates Bearer token
-async function authMiddleware(req, res, next) {
+// Simple auth middleware that validates Bearer token against users.json
+function authMiddleware(req, res, next) {
   try {
     const auth = req.headers.authorization || '';
     if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
     const token = auth.slice(7).trim();
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-
-    if (DB_ENABLED) {
-      const { rows } = await dbQuery('SELECT id, email, name FROM users WHERE token = $1 LIMIT 1', [token]);
-      const user = rows[0];
-      if (!user) return res.status(401).json({ error: 'Invalid token' });
-      req.user = { id: user.id, email: user.email, name: user.name };
-      return next();
-    }
-
     const users = readUsers();
     const user = users.find(u => u.token === token);
     if (!user) return res.status(401).json({ error: 'Invalid token' });
@@ -1326,13 +894,13 @@ app.get('/creator-plan', authMiddleware, (req, res) => {
 });
 
 // Create sponsor profile (protected). Links sponsor to current user (1:Many)
-app.post('/sponsors', authMiddleware, async (req, res) => {
+app.post('/sponsors', authMiddleware, (req, res) => {
   try {
     const body = req.body || {};
     const { name, brief, assets } = body;
     if (!name) return res.status(400).json({ error: 'Missing sponsor name' });
 
-    const sponsors = await loadSponsors();
+    const sponsors = readSponsors();
     const id = `sponsor-${Date.now()}`;
     const sponsor = {
       id,
@@ -1343,7 +911,7 @@ app.post('/sponsors', authMiddleware, async (req, res) => {
       createdAt: new Date().toISOString()
     };
     sponsors.push(sponsor);
-    await saveSponsors(sponsors);
+    writeSponsors(sponsors);
 
     return res.json({ success: true, sponsor });
   } catch (err) {
@@ -1353,9 +921,9 @@ app.post('/sponsors', authMiddleware, async (req, res) => {
 });
 
 // Get sponsors for current authenticated user
-app.get('/sponsors/me', authMiddleware, async (req, res) => {
+app.get('/sponsors/me', authMiddleware, (req, res) => {
   try {
-    const sponsors = (await loadSponsors()).filter(s => s.ownerId === req.user.id);
+    const sponsors = readSponsors().filter(s => s.ownerId === req.user.id);
     return res.json({ sponsors });
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
@@ -1363,9 +931,9 @@ app.get('/sponsors/me', authMiddleware, async (req, res) => {
 });
 
 // Advertiser dashboard endpoint: only owner can access their dashboard data
-app.get('/advertiser/dashboard', authMiddleware, async (req, res) => {
+app.get('/advertiser/dashboard', authMiddleware, (req, res) => {
   try {
-    const sponsors = (await loadSponsors()).filter(s => s.ownerId === req.user.id);
+    const sponsors = readSponsors().filter(s => s.ownerId === req.user.id);
     // For demo purposes, also include recent campaigns from local file if present
     let campaigns = [];
     const campaignsFile = path.join(__dirname, 'advertiser_campaigns.json');
@@ -1379,10 +947,10 @@ app.get('/advertiser/dashboard', authMiddleware, async (req, res) => {
 });
 
 // Get a sponsor by id and ensure only owner can access
-app.get('/sponsors/:id', authMiddleware, async (req, res) => {
+app.get('/sponsors/:id', authMiddleware, (req, res) => {
   try {
     const id = req.params.id;
-    const sponsors = await loadSponsors();
+    const sponsors = readSponsors();
     const s = sponsors.find(x => x.id === id);
     if (!s) return res.status(404).json({ error: 'Sponsor not found' });
     if (s.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
@@ -1425,25 +993,11 @@ app.post('/bookmark', authMiddleware, (req, res) => {
 });
 
 // Add request bookmark (auth optional; uses token if present, else anonymous)
-app.post('/bookmarks/requests', async (req, res) => {
+app.post('/bookmarks/requests', (req, res) => {
   try {
-    const user = await getUserFromAuthHeader(req);
-    const userId = user ? user.id : 'anonymous';
+    const userId = getUserIdOrAnon(req);
     const { requestId, title } = req.body || {};
     if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
-
-    if (DB_ENABLED) {
-      const exists = await dbQuery(
-        'SELECT id FROM request_bookmarks WHERE user_id = $1 AND request_id = $2 LIMIT 1',
-        [userId, requestId]
-      );
-      if (!exists.rows.length) {
-        const id = `req_${Date.now()}`;
-        await dbQuery('INSERT INTO request_bookmarks (id, user_id, request_id, title) VALUES ($1,$2,$3,$4)', [id, userId, requestId, title || '']);
-      }
-      return res.json({ success: true, requestId, action: 'add', userId });
-    }
-
     const all = readBookmarks();
     const exists = (all.requests || []).some(b => String(b.userId || 'anonymous') === String(userId) && String(b.requestId) === String(requestId));
     if (!exists) {
@@ -1457,18 +1011,11 @@ app.post('/bookmarks/requests', async (req, res) => {
 });
 
 // Remove request bookmark (auth optional; uses token if present, else anonymous)
-app.delete('/bookmarks/requests', async (req, res) => {
+app.delete('/bookmarks/requests', (req, res) => {
   try {
-    const user = await getUserFromAuthHeader(req);
-    const userId = user ? user.id : 'anonymous';
+    const userId = getUserIdOrAnon(req);
     const { requestId } = req.body || {};
     if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
-
-    if (DB_ENABLED) {
-      const { rowCount } = await dbQuery('DELETE FROM request_bookmarks WHERE user_id = $1 AND request_id = $2', [userId, requestId]);
-      return res.json({ success: true, removed: rowCount, requestId, userId });
-    }
-
     const all = readBookmarks();
     const before = (all.requests || []).length;
     all.requests = (all.requests || []).filter(b => !(String(b.userId || 'anonymous') === String(userId) && String(b.requestId) === String(requestId)));
@@ -1478,7 +1025,7 @@ app.delete('/bookmarks/requests', async (req, res) => {
 });
 
 // Suggestion endpoint: requires authentication (persisted for notifications)
-    app.post('/suggestion', authMiddleware, async (req, res) => {
+    app.post('/suggestion', authMiddleware, (req, res) => {
       try {
         const { requestId, text, targetCreatorId, targetCreatorHandle, videoUrl, videoTitle, type, parentId } = req.body || {};
         if (!text) return res.status(400).json({ error: 'Missing text' });
@@ -1529,9 +1076,12 @@ app.delete('/bookmarks/requests', async (req, res) => {
           createdAt: new Date().toISOString()
         };
     
-        const arr = await loadNotifications();
+        // Persist to suggestions.json
+        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        let arr = [];
+        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         arr.unshift(suggestion);
-        await saveNotifications(arr);
+        try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
     
         return res.json({ success: true, suggestion });
       } catch (err) {
@@ -1541,10 +1091,12 @@ app.delete('/bookmarks/requests', async (req, res) => {
     });
     
     // Get suggestions for a specific request
-    app.get('/requests/:id/suggestions', async (req, res) => {
+    app.get('/requests/:id/suggestions', (req, res) => {
       try {
         const requestId = req.params.id;
-        const arr = await loadNotifications();
+        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        let arr = [];
+        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
         // Filter suggestions for this request
         // Also map to match frontend expectation (userName, timestamp)
@@ -1570,9 +1122,11 @@ app.delete('/bookmarks/requests', async (req, res) => {
     // Modified to return threaded conversations:
     // 1. Get all suggestions where user is sender OR receiver
     // 2. Client will group them
-    app.get('/suggestions/me', authMiddleware, async (req, res) => {
+    app.get('/suggestions/me', authMiddleware, (req, res) => {
       try {
-        const arr = await loadNotifications();
+        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        let arr = [];
+        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
         const mine = arr.filter(s => 
             (s.to && s.to.id === req.user.id) || 
@@ -1586,9 +1140,11 @@ app.delete('/bookmarks/requests', async (req, res) => {
     });
     
     // Alias: notifications for current user (same logic)
-    app.get('/notifications', authMiddleware, async (req, res) => {
+    app.get('/notifications', authMiddleware, (req, res) => {
       try {
-        const arr = await loadNotifications();
+        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        let arr = [];
+        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
         const mine = arr.filter(s => 
             (s.to && s.to.id === req.user.id) || 
@@ -1601,10 +1157,12 @@ app.delete('/bookmarks/requests', async (req, res) => {
     });
 
     // Delete a notification (suggestion)
-    app.delete('/notifications/:id', authMiddleware, async (req, res) => {
+    app.delete('/notifications/:id', authMiddleware, (req, res) => {
       try {
         const id = req.params.id;
-        let arr = await loadNotifications();
+        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        let arr = [];
+        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
         const before = arr.length;
         // Allow deleting if user is sender or receiver
@@ -1615,7 +1173,7 @@ app.delete('/bookmarks/requests', async (req, res) => {
             return !isMine; // Keep if not mine (i.e. remove if mine)
         });
         
-        await saveNotifications(arr);
+        try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
         
         return res.json({ success: true, deleted: before - arr.length });
       } catch (e) {
@@ -1624,10 +1182,12 @@ app.delete('/bookmarks/requests', async (req, res) => {
     });
 
     // Mark notification as read
-    app.post('/notifications/:id/read', authMiddleware, async (req, res) => {
+    app.post('/notifications/:id/read', authMiddleware, (req, res) => {
       try {
         const id = req.params.id;
-        let arr = await loadNotifications();
+        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        let arr = [];
+        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
         // Find and mark notification as read
         let found = false;
@@ -1642,7 +1202,9 @@ app.delete('/bookmarks/requests', async (req, res) => {
           return s;
         });
         
-        if (found) await saveNotifications(arr);
+        if (found) {
+          try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
+        }
         
         return res.json({ success: true, marked: found });
       } catch (e) {
@@ -1659,7 +1221,9 @@ app.post('/staff/send-promotion', async (req, res) => {
     // Simple staff check for demo
     if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
 
-    let arr = await loadNotifications();
+    const SUG_FILE = path.join(__dirname, 'suggestions.json');
+    let arr = [];
+    try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch (e) { arr = []; }
 
     const users = readUsers();
     let targets = [];
@@ -1697,7 +1261,7 @@ app.post('/staff/send-promotion', async (req, res) => {
       created.push(notif);
     });
 
-    await saveNotifications(arr);
+    try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch (e) { console.error('write promotion notifications error', e); }
 
     return res.json({ success: true, created: created.length, notifications: created });
   } catch (err) {
@@ -1707,7 +1271,7 @@ app.post('/staff/send-promotion', async (req, res) => {
 });
 
 // POST /staff/apply-overlay-ad - apply overlay ad to videos with timing
-app.post('/staff/apply-overlay-ad', async (req, res) => {
+app.post('/staff/apply-overlay-ad', (req, res) => {
   try {
     const { employeeId, videoIds, ad } = req.body || {};
     console.log('Apply overlay request:', { employeeId, videoIds, adKeys: ad ? Object.keys(ad) : null });
@@ -1718,7 +1282,7 @@ app.post('/staff/apply-overlay-ad', async (req, res) => {
     }
     if (!ad) return res.status(400).json({ error: 'Ad data missing' });
 
-    const videos = await loadVideos();
+    const videos = readVideos();
     const updated = [];
 
     videos.forEach((v) => {
@@ -1736,8 +1300,13 @@ app.post('/staff/apply-overlay-ad', async (req, res) => {
       }
     });
 
-    await saveVideos(videos);
-    console.log(`Successfully applied overlay to ${updated.length} videos`);
+    try {
+      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
+      console.log(`Successfully applied overlay to ${updated.length} videos`);
+    } catch (e) {
+      console.error('write videos error:', e);
+      return res.status(500).json({ error: 'Failed to save' });
+    }
 
     return res.json({ success: true, applied: updated.length, videos: updated });
   } catch (err) {
@@ -1747,7 +1316,7 @@ app.post('/staff/apply-overlay-ad', async (req, res) => {
 });
 
 // POST /staff/apply-bottom-ad - apply bottom ad to videos with timing
-app.post('/staff/apply-bottom-ad', async (req, res) => {
+app.post('/staff/apply-bottom-ad', (req, res) => {
   try {
     const { employeeId, videoIds, ad } = req.body || {};
     if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
@@ -1756,7 +1325,7 @@ app.post('/staff/apply-bottom-ad', async (req, res) => {
     }
     if (!ad) return res.status(400).json({ error: 'Ad data missing' });
 
-    const videos = await loadVideos();
+    const videos = readVideos();
     const updated = [];
 
     videos.forEach((v) => {
@@ -1780,7 +1349,12 @@ app.post('/staff/apply-bottom-ad', async (req, res) => {
       }
     });
 
-    await saveVideos(videos);
+    try {
+      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
+    } catch (e) {
+      console.error('write videos error:', e);
+      return res.status(500).json({ error: 'Failed to save' });
+    }
 
     return res.json({ success: true, applied: updated.length, videos: updated });
   } catch (err) {
@@ -1789,8 +1363,69 @@ app.post('/staff/apply-bottom-ad', async (req, res) => {
   }
 });
 
+// POST /staff/apply-default2-ad - apply default2 (card-based) ad to videos
+app.post('/staff/apply-default2-ad', (req, res) => {
+  try {
+    const { employeeId, videoIds, ad } = req.body || {};
+    console.log('Apply default2 ad request:', { employeeId, videoIds, adKeys: ad ? Object.keys(ad) : null });
+
+    if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
+    if (!videoIds || !Array.isArray(videoIds) || videoIds.length === 0) {
+      return res.status(400).json({ error: 'No videos selected' });
+    }
+    if (!ad) return res.status(400).json({ error: 'Ad data missing' });
+
+    const videos = readVideos();
+    const updated = [];
+
+    videos.forEach((v) => {
+      if (videoIds.includes(v.id)) {
+        if (!v.ads || Array.isArray(v.ads)) {
+          v.ads = { bottom: [], overlays: [] };
+        }
+        if (!Array.isArray(v.ads.bottom)) {
+          v.ads.bottom = [];
+        }
+        // Store with default2 prefix so the frontend can read them directly
+        v.ads.bottom.push({
+          id: `default2-${Date.now()}-${Math.random().toString(36).substr(2,9)}`,
+          type: 'default2',
+          default2Title: ad.title || '',
+          default2Description: ad.description || '',
+          default2Logo: ad.logo || '',
+          default2Image: ad.image || ad.logo || '',
+          default2Link: ad.link || '',
+          default2BgColor: ad.bgColor || '#ffffff',
+          default2TextColor: ad.textColor || '#111827',
+          default2LineColor: ad.lineColor || '#d946ef',
+          startTime: ad.startTime || 0,
+          duration: ad.duration || 30,
+          displayCount: ad.displayCount || 1,
+          appliedAt: new Date().toISOString(),
+          appliedBy: employeeId
+        });
+        console.log(`Applied default2 ad to video ${v.id}:`, v.ads);
+        updated.push(v);
+      }
+    });
+
+    try {
+      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
+      console.log(`Successfully applied default2 ad to ${updated.length} videos`);
+    } catch (e) {
+      console.error('write videos error:', e);
+      return res.status(500).json({ error: 'Failed to save' });
+    }
+
+    return res.json({ success: true, applied: updated.length, videos: updated });
+  } catch (err) {
+    console.error('apply-default2-ad error', err);
+    return res.status(500).json({ error: 'Server error: ' + err.message });
+  }
+});
+
 // POST /staff/remove-ad-from-video - remove ads from a video
-app.post('/staff/remove-ad-from-video', async (req, res) => {
+app.post('/staff/remove-ad-from-video', (req, res) => {
   try {
     const { employeeId, videoId, adType, adId } = req.body || {};
     if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
@@ -1798,7 +1433,7 @@ app.post('/staff/remove-ad-from-video', async (req, res) => {
       return res.status(400).json({ error: 'videoId and adType are required' });
     }
 
-    const videos = await loadVideos();
+    const videos = readVideos();
     const videoIdx = videos.findIndex(v => String(v.id) === String(videoId));
     
     if (videoIdx === -1) {
@@ -1847,7 +1482,12 @@ app.post('/staff/remove-ad-from-video', async (req, res) => {
       console.log(`Removed ${removed} total ads from video ${videoId}`);
     }
 
-    await saveVideos(videos);
+    try {
+      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
+    } catch (e) {
+      console.error('write videos error:', e);
+      return res.status(500).json({ error: 'Failed to save' });
+    }
 
     return res.json({ success: true, removed: removed, video: video });
   } catch (err) {
@@ -1864,13 +1504,93 @@ app.post('/boost', authMiddleware, (req, res) => {
   return res.json({ success: true, requestId, amount, provider: provider || 'unknown', creditedTo: req.user });
 });
 
+// Reliable creators endpoint: extracts from videos + users to guarantee results
+app.get('/creators', (req, res) => {
+  try {
+    const videos = readVideos();
+    const users = readUsers();
+    const q = (req.query.query || req.query.q || '').trim().toLowerCase();
+
+    // Build creator map from videos (guaranteed data source)
+    const creatorMap = new Map();
+    videos.forEach(v => {
+      const authorId = v.authorId || v.creatorId || v.userId;
+      const authorName = v.author || v.creator || v.channel;
+      if (!authorId && !authorName) return;
+      const key = (authorId || authorName || '').toLowerCase();
+      if (!creatorMap.has(key)) {
+        creatorMap.set(key, {
+          id: authorId || null,
+          name: authorName || 'Unknown',
+          image: v.authorImage || v.creatorImage || null,
+          handle: v.authorHandle || null,
+          email: authorId && authorId.includes('@') ? authorId : null,
+        });
+      }
+    });
+
+    // Enrich with full user data and add users marked as creators
+    const creators = [];
+    const addedIds = new Set();
+
+    creatorMap.forEach((creator) => {
+      const user = users.find(u =>
+        (creator.id && (u.id === creator.id || u.email === creator.id)) ||
+        (creator.name && u.name && u.name.toLowerCase() === creator.name.toLowerCase())
+      );
+      if (user) {
+        const { passwordHash, password_hash, token, ...pub } = user;
+        const merged = {
+          ...pub,
+          isCreator: true,
+          image: pub.image || pub.avatar || creator.image || null,
+          name: pub.name || creator.name,
+          id: pub.id || creator.id,
+        };
+        creators.push(merged);
+        addedIds.add(pub.id);
+        if (pub.email) addedIds.add(pub.email);
+      } else {
+        creators.push({ ...creator, isCreator: true });
+        if (creator.id) addedIds.add(creator.id);
+      }
+    });
+
+    // Also add any users marked as creator who don't have videos yet
+    users.forEach(u => {
+      if ((u.isCreator === true || u.is_creator === true) && !addedIds.has(u.id) && !addedIds.has(u.email)) {
+        const { passwordHash, password_hash, token, ...pub } = u;
+        creators.push({ ...pub, isCreator: true });
+      }
+    });
+
+    // Filter by query if provided
+    let results = creators;
+    if (q) {
+      results = results.filter(c => {
+        const name = (c.name || '').toLowerCase();
+        const handle = (c.handle || c.tag || '').toLowerCase();
+        const email = (c.email || '').toLowerCase();
+        return name.includes(q) || handle.includes(q) || email.includes(q);
+      });
+    }
+
+    console.log(`[GET /creators] returning ${results.length} creators from ${videos.length} videos + ${users.length} users`);
+    return res.json({ creators: results });
+  } catch (err) {
+    console.error('get creators error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/users', (req, res) => {
   try {
     const users = readUsers();
+    console.log(`[GET /users] readUsers returned ${users.length} users`);
     const q = (req.query.query || req.query.q || '').trim().toLowerCase();
     const creatorsOnly = req.query.creatorsOnly === '1' || req.query.creatorsOnly === 'true';
-    let results = users.map(({ passwordHash, token, ...u }) => u);
-    if (creatorsOnly) results = results.filter(u => u.isCreator);
+    let results = users.map(({ passwordHash, password_hash, token, ...u }) => u);
+    if (creatorsOnly) results = results.filter(u => u.isCreator === true || u.is_creator === true);
     if (q) {
       results = results.filter(u => {
         const name = (u.name || '').toLowerCase();
@@ -1879,6 +1599,7 @@ app.get('/users', (req, res) => {
         return name.includes(q) || handle.includes(q) || email.includes(q);
       });
     }
+    console.log(`[GET /users] returning ${results.length} results (creatorsOnly=${creatorsOnly}, q=${q || 'none'})`);
     return res.json({ users: results });
   } catch (err) {
     console.error('get users error', err);
@@ -1889,25 +1610,6 @@ app.get('/users', (req, res) => {
 // Get current authenticated user profile (full details)
 app.get('/users/me', authMiddleware, (req, res) => {
   try {
-    if (DB_ENABLED) {
-      return dbQuery('SELECT * FROM users WHERE id = $1 LIMIT 1', [req.user.id])
-        .then(async ({ rows }) => {
-          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-          const u = mapUserRow(rows[0]);
-          if (!u.referral_code && !u.referralCode) {
-            const newReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 8);
-            await dbQuery('UPDATE users SET referral_code = $1 WHERE id = $2', [newReferralCode, u.id]);
-            const refreshed = await dbQuery('SELECT * FROM users WHERE id = $1', [u.id]);
-            return res.json({ user: toPublicUser(mapUserRow(refreshed.rows[0])) });
-          }
-          return res.json({ user: toPublicUser(u) });
-        })
-        .catch((err) => {
-          console.error('get me db error', err);
-          return res.status(500).json({ error: 'Server error' });
-        });
-    }
-
     const users = readUsers();
     const idx = users.findIndex(x => x.id === req.user.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -1933,60 +1635,6 @@ app.post('/users/update', authMiddleware, (req, res) => {
   try {
     const body = req.body || {};
     const allowed = ['name', 'handle', 'bio', 'interests', 'image', 'email', 'social'];
-    if (DB_ENABLED) {
-      const fieldMap = {
-        name: 'name',
-        handle: 'handle',
-        bio: 'bio',
-        interests: 'interests',
-        image: 'image',
-        email: 'email',
-        social: 'social'
-      };
-
-      const fields = [];
-      const values = [];
-      let i = 1;
-
-      allowed.forEach((k) => {
-        if (typeof body[k] !== 'undefined') {
-          fields.push(`${fieldMap[k]} = $${i}`);
-          values.push(body[k]);
-          i += 1;
-        }
-      });
-
-      if (body.handle) {
-        fields.push(`tag = $${i}`);
-        values.push(body.handle);
-        i += 1;
-      }
-
-      if (!fields.length) {
-        return dbQuery('SELECT * FROM users WHERE id = $1', [req.user.id])
-          .then(({ rows }) => {
-            if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-            return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
-          })
-          .catch((err) => {
-            console.error('user update db error', err);
-            return res.status(500).json({ error: 'Server error' });
-          });
-      }
-
-      values.push(req.user.id);
-      const sql = `UPDATE users SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`;
-      return dbQuery(sql, values)
-        .then(({ rows }) => {
-          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-          return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
-        })
-        .catch((err) => {
-          console.error('user update db error', err);
-          return res.status(500).json({ error: 'Server error' });
-        });
-    }
-
     const users = readUsers();
     const idx = users.findIndex(u => u.id === req.user.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -2019,40 +1667,31 @@ app.get('/users/:id', (req, res) => {
     if (id === 'anonymous') {
          return res.json({ user: { id: 'anonymous', name: 'Anonymous', isAnonymous: true } });
     }
-    if (DB_ENABLED) {
-      return dbQuery('SELECT * FROM users WHERE id = $1 LIMIT 1', [id])
-        .then(async ({ rows }) => {
-          let u = rows[0] ? mapUserRow(rows[0]) : null;
-          if (!u) {
-            const fallback = await dbQuery('SELECT * FROM users WHERE name = $1 OR email = $1 LIMIT 1', [id]);
-            u = fallback.rows[0] ? mapUserRow(fallback.rows[0]) : null;
-          }
-          if (!u) {
-            return res.json({ user: { id: id, name: 'Unknown User', isPlaceholder: true } });
-          }
-          return res.json({ user: toPublicUser(u) });
-        })
-        .catch((err) => {
-          console.error('get user by id db error', err);
-          return res.status(500).json({ error: 'Server error' });
-        });
-    }
-
     const users = readUsers();
+    console.log(`[GET /users/:id] Looking for "${id}" among ${users.length} users`);
     // Also try to match by name roughly if ID is not found (for legacy test data compatibility)
     let u = users.find(x => x.id === id);
     if (!u) {
-       // Fallback: is it a test user ID or name?
+       // Fallback: is it a test user ID or name? Also try case-insensitive match
        u = users.find(x => x.name === id || x.email === id);
+    }
+    if (!u) {
+       // Case-insensitive fallback for names
+       const idLower = String(id).toLowerCase();
+       u = users.find(x => 
+         (x.name && x.name.toLowerCase() === idLower) ||
+         (x.email && x.email.toLowerCase() === idLower) ||
+         (x.handle && x.handle.toLowerCase() === idLower) ||
+         (x.tag && x.tag.toLowerCase() === idLower)
+       );
     }
     
     if (!u) {
          // Return a dummy placeholder instead of 404 to prevent UI crashes for missing users
-         // Only if strict validation is not required
          return res.json({ user: { id: id, name: 'Unknown User', isPlaceholder: true } });
     }
     
-    const { passwordHash, token, ...publicUser } = u;
+    const { passwordHash, password_hash, token, ...publicUser } = u;
     return res.json({ user: publicUser });
   } catch (err) {
     console.error('get user by id error', err);
@@ -2066,25 +1705,6 @@ app.get('/users/handle/:handle', (req, res) => {
     let handle = String(req.params.handle || '').trim();
     if (handle.startsWith('@')) handle = handle.slice(1);
     if (!handle) return res.status(400).json({ error: 'Missing handle' });
-    if (DB_ENABLED) {
-      return dbQuery(
-        `SELECT * FROM users
-         WHERE lower(tag) = lower($1)
-            OR lower(handle) = lower($1)
-            OR lower(name) = lower($1)
-         LIMIT 1`,
-        [handle]
-      )
-        .then(({ rows }) => {
-          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-          return res.json({ user: toPublicUser(mapUserRow(rows[0])) });
-        })
-        .catch((err) => {
-          console.error('get user by handle db error', err);
-          return res.status(500).json({ error: 'Server error' });
-        });
-    }
-
     const users = readUsers();
     const u = users.find(x => (x.tag && String(x.tag).toLowerCase() === handle.toLowerCase()) || (x.handle && String(x.handle).toLowerCase() === handle.toLowerCase()) || (x.name && String(x.name).toLowerCase() === handle.toLowerCase()));
     if (!u) return res.status(404).json({ error: 'User not found' });
@@ -2145,79 +1765,43 @@ app.post('/categories', (req, res) => {
     }
 });
 
-app.get('/requests', async (req, res) => {
+app.get('/requests', (req, res) => {
   try {
-    let requests = [];
-
-    if (DB_ENABLED) {
-      const { rows } = await dbQuery(
-        `SELECT r.*, u.name AS creator_user_name, u.email AS creator_user_email, u.image AS creator_user_image
-         FROM requests r
-         LEFT JOIN users u ON u.id = r.creator_id`
-      );
-      requests = rows.map((row) => {
-        const base = {
-          id: row.id,
-          title: row.title,
-          description: row.description,
-          likes: Number(row.likes || 0),
-          comments: Number(row.comments || 0),
-          boosts: Number(row.boosts || 0),
-          amount: row.amount != null ? Number(row.amount) : 0,
-          funding: row.funding != null ? Number(row.funding) : 0,
-          isTrending: Boolean(row.is_trending),
-          isSponsored: Boolean(row.is_sponsored),
-          company: row.company,
-          companyInitial: row.company_initial,
-          companyColor: row.company_color,
-          imageUrl: row.image_url,
-          creator: row.creator_id || row.creator_user_name
-            ? {
-                id: row.creator_id,
-                name: row.creator_user_name || row.creator_name || 'Anonymous',
-                email: row.creator_user_email || row.creator_email || null,
-                image: row.creator_user_image || null
-              }
-            : null,
-          creatorId: row.creator_id,
-          createdBy: row.created_by,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          currentStep: row.current_step,
-          claimed: row.claimed,
-          claimedBy: row.claimed_by,
-          claimedAt: row.claimed_at,
-          meta: row.meta
-        };
-        if (base.creator && (!base.imageUrl || base.imageUrl === '') && base.creator.image) {
-          base.imageUrl = base.creator.image;
-        }
-        return base;
-      });
-      console.log(`DEBUG /requests: Read ${requests.length} requests from database`);
-    } else {
-      requests = readRequests();
-      console.log(`DEBUG /requests: Read ${requests.length} requests from file`);
-      const users = readUsers();
-      
-      // Enrich first (needed for some scores)
-      requests = requests.map(r => {
-         try {
-           const copy = { ...r };
-           if (copy.creator && copy.creator.id) {
-             const u = users.find(x => x.id === copy.creator.id);
-             if (u) {
-               copy.creator = { id: u.id, name: u.name || 'Anonymous', image: u.image || '' };
-               if ((!copy.imageUrl || copy.imageUrl === '') && u.image) copy.imageUrl = u.image;
-             }
-           } else {
-              // Fallback enrichment
-               if (!copy.creator) copy.creator = { id: null, name: 'Anonymous', image: '' };
+    let requests = readRequests();
+    console.log(`DEBUG /requests: Read ${requests.length} requests from file`);
+    const users = readUsers();
+    
+    // Enrich first (needed for some scores)
+    requests = requests.map(r => {
+       try {
+         const copy = { ...r };
+         // Enrich creator object
+         if (copy.creator && copy.creator.id) {
+           const u = users.find(x => x.id === copy.creator.id);
+           if (u) {
+             copy.creator = { id: u.id, name: u.name || 'Anonymous', image: u.image || u.avatar || u.photoURL || '' };
+             if ((!copy.imageUrl || copy.imageUrl === '') && (u.image || u.avatar || u.photoURL)) copy.imageUrl = u.image || u.avatar || u.photoURL;
            }
-           return copy;
-         } catch (e) { return r; }
-      });
-    }
+         } else {
+            if (!copy.creator) copy.creator = { id: null, name: 'Anonymous', image: '' };
+         }
+         // Also enrich from createdBy user (the person who made the request)
+         if (copy.createdBy && typeof copy.createdBy === 'string') {
+           const requester = users.find(x => x.id === copy.createdBy);
+           if (requester) {
+             const reqImage = requester.image || requester.avatar || requester.photoURL || '';
+             copy.requesterName = copy.requesterName || requester.name || 'Anonymous';
+             copy.requesterAvatar = reqImage;
+             // Also set creator image if creator IS the requester and has no image
+             if (copy.creator && copy.creator.id === copy.createdBy && !copy.creator.image) {
+               copy.creator.image = reqImage;
+             }
+             if ((!copy.imageUrl || copy.imageUrl === '') && reqImage) copy.imageUrl = reqImage;
+           }
+         }
+         return copy;
+       } catch (e) { return r; }
+    });
 
     const feed = req.query.feed || 'recommended';
     
@@ -2324,78 +1908,17 @@ function writeCommentReactions(data) {
 }
 
 // Persist comment reactions and aggregate counts
-app.post('/comments/react', authMiddleware, async (req, res) => {
+app.post('/comments/react', authMiddleware, (req, res) => {
   try {
     const { commentId, action, requestId } = req.body || {};
     if (!commentId || !action) return res.status(400).json({ error: 'Missing commentId or action' });
     
     const userId = req.user.id;
-    const comments = await loadComments();
+    const reactions = readCommentReactions();
+    const comments = readComments();
     const idx = comments.findIndex(c => String(c.id) === String(commentId));
     
     if (idx === -1) return res.status(404).json({ error: 'Comment not found' });
-
-    if (DB_ENABLED) {
-      const { rows } = await dbQuery(
-        'SELECT is_liked, is_disliked FROM comment_reactions WHERE comment_id = $1 AND user_id = $2',
-        [String(commentId), String(userId)]
-      );
-      const prevLiked = Boolean(rows[0]?.is_liked);
-      const prevDisliked = Boolean(rows[0]?.is_disliked);
-
-      let likesCount = Number(comments[idx].likesCount || 0);
-      let dislikesCount = Number(comments[idx].dislikesCount || 0);
-      let nextLiked = prevLiked;
-      let nextDisliked = prevDisliked;
-
-      if (action === 'like') {
-        if (!prevLiked) {
-          nextLiked = true;
-          likesCount += 1;
-        }
-        if (prevDisliked) {
-          nextDisliked = false;
-          dislikesCount = Math.max(0, dislikesCount - 1);
-        }
-      } else if (action === 'unlike') {
-        if (prevLiked) {
-          nextLiked = false;
-          likesCount = Math.max(0, likesCount - 1);
-        }
-      } else if (action === 'dislike') {
-        if (!prevDisliked) {
-          nextDisliked = true;
-          dislikesCount += 1;
-        }
-        if (prevLiked) {
-          nextLiked = false;
-          likesCount = Math.max(0, likesCount - 1);
-        }
-      } else if (action === 'undislike') {
-        if (prevDisliked) {
-          nextDisliked = false;
-          dislikesCount = Math.max(0, dislikesCount - 1);
-        }
-      } else {
-        return res.status(400).json({ error: 'Invalid action' });
-      }
-
-      await dbQuery(
-        `INSERT INTO comment_reactions (comment_id, user_id, is_liked, is_disliked, updated_at)
-         VALUES ($1,$2,$3,$4,now())
-         ON CONFLICT (comment_id, user_id)
-         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
-        [String(commentId), String(userId), nextLiked, nextDisliked]
-      );
-
-      comments[idx].likesCount = likesCount;
-      comments[idx].dislikesCount = dislikesCount;
-      await saveComments(comments);
-
-      return res.json({ success: true, likesCount, dislikesCount });
-    }
-
-    const reactions = readCommentReactions();
     
     // Initialize maps
     reactions.likes[commentId] = reactions.likes[commentId] || {};
@@ -2437,7 +1960,7 @@ app.post('/comments/react', authMiddleware, async (req, res) => {
     comments[idx].likesCount = likesCount;
     comments[idx].dislikesCount = dislikesCount;
     
-    await saveComments(comments);
+    writeComments(comments);
     writeCommentReactions(reactions);
     
     return res.json({ success: true, likesCount, dislikesCount });
@@ -2448,42 +1971,25 @@ app.post('/comments/react', authMiddleware, async (req, res) => {
 });
 
 // Update comments fetch to include reaction state for user
-app.get('/requests/:id/comments', async (req, res) => {
+app.get('/requests/:id/comments', (req, res) => {
   try {
     const requestId = req.params.id;
-    const all = await loadComments();
+    const all = readComments();
     let filtered = (all || []).filter(c => String(c.requestId) === String(requestId)).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
     
     // If user is authenticated, check their reaction status
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
        try {
-         const user = await getUserFromAuthHeader(req);
+         const token = req.headers.authorization.slice(7).trim();
+         const users = readUsers();
+         const user = users.find(u => u.token === token);
          if (user) {
-            if (DB_ENABLED) {
-              const ids = filtered.map(c => String(c.id));
-              let map = {};
-              if (ids.length > 0) {
-                const { rows } = await dbQuery(
-                  'SELECT comment_id, is_liked, is_disliked FROM comment_reactions WHERE user_id = $1 AND comment_id = ANY($2)',
-                  [String(user.id), ids]
-                );
-                rows.forEach(r => {
-                  map[String(r.comment_id)] = { liked: Boolean(r.is_liked), disliked: Boolean(r.is_disliked) };
-                });
-              }
-              filtered = filtered.map(c => ({
+            const reactions = readCommentReactions();
+            filtered = filtered.map(c => ({
                 ...c,
-                likedByUser: !!map[String(c.id)]?.liked,
-                dislikedByUser: !!map[String(c.id)]?.disliked
-              }));
-            } else {
-              const reactions = readCommentReactions();
-              filtered = filtered.map(c => ({
-                  ...c,
-                  likedByUser: !!(reactions.likes[c.id] && reactions.likes[c.id][user.id]),
-                  dislikedByUser: !!(reactions.dislikes[c.id] && reactions.dislikes[c.id][user.id])
-              }));
-            }
+                likedByUser: !!(reactions.likes[c.id] && reactions.likes[c.id][user.id]),
+                dislikedByUser: !!(reactions.dislikes[c.id] && reactions.dislikes[c.id][user.id])
+            }));
          }
        } catch (e) {}
     }
@@ -2492,7 +1998,7 @@ app.get('/requests/:id/comments', async (req, res) => {
   } catch (err) { console.error('GET /requests/:id/comments error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.post('/requests/:id/comments', authMiddleware, async (req, res) => {
+app.post('/requests/:id/comments', authMiddleware, (req, res) => {
   try {
     const requestId = req.params.id;
     const { text, parentId } = req.body || {};
@@ -2510,35 +2016,31 @@ app.post('/requests/:id/comments', authMiddleware, async (req, res) => {
       createdAt: new Date().toISOString()
     };
 
-    const all = await loadComments();
+    const all = readComments();
     all.push(comment);
-    await saveComments(all);
+    writeComments(all);
 
     // increment comment counter on request if present
     try {
-      if (DB_ENABLED) {
-        await dbQuery('UPDATE requests SET comments = COALESCE(comments, 0) + 1 WHERE id = $1', [requestId]);
-      } else {
-        const requests = readRequests();
-        const idx = requests.findIndex(r => String(r.id) === String(requestId));
-        if (idx !== -1) {
-          requests[idx].comments = (Number(requests[idx].comments) || 0) + 1;
-          writeRequests(requests);
-        }
+      const requests = readRequests();
+      const idx = requests.findIndex(r => String(r.id) === String(requestId));
+      if (idx !== -1) {
+        requests[idx].comments = (Number(requests[idx].comments) || 0) + 1;
+        writeRequests(requests);
       }
     } catch (e) {}
 
     // Also increment comment counter on video if present
     try {
-      const videos = await loadVideos();
+      const videos = readVideos();
       const vidIdx = videos.findIndex(v => String(v.id) === String(requestId));
       if (vidIdx !== -1) {
         videos[vidIdx].comments = (Number(videos[vidIdx].comments) || 0) + 1;
-        await saveVideos(videos);
+        writeVideos(videos);
         
         // Also increment the creator's total comments in the user object
         const video = videos[vidIdx];
-        if (!DB_ENABLED && (video.authorId || video.author || video.authorEmail)) {
+        if (video.authorId || video.author || video.authorEmail) {
           const users = readUsers();
           const creatorIdx = users.findIndex(u => 
             u.id === video.authorId || 
@@ -2557,14 +2059,14 @@ app.post('/requests/:id/comments', authMiddleware, async (req, res) => {
   } catch (err) { console.error('POST /requests/:id/comments error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.put('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
+app.put('/requests/:id/comments/:cid', authMiddleware, (req, res) => {
   try {
     const requestId = req.params.id;
     const cid = req.params.cid;
     const { text } = req.body || {};
     if (!text) return res.status(400).json({ error: 'Missing text' });
 
-    const all = await loadComments();
+    const all = readComments();
     const idx = all.findIndex(c => String(c.id) === String(cid) && String(c.requestId) === String(requestId));
     if (idx === -1) return res.status(404).json({ error: 'Comment not found' });
     const comment = all[idx];
@@ -2573,34 +2075,30 @@ app.put('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
     comment.text = String(text).trim();
     comment.updatedAt = new Date().toISOString();
     all[idx] = comment;
-    await saveComments(all);
+    writeComments(all);
     return res.json({ success: true, comment });
   } catch (err) { console.error('PUT /requests/:id/comments/:cid error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.delete('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
+app.delete('/requests/:id/comments/:cid', authMiddleware, (req, res) => {
   try {
     const requestId = req.params.id;
     const cid = req.params.cid;
-    const all = await loadComments();
+    const all = readComments();
     const idx = all.findIndex(c => String(c.id) === String(cid) && String(c.requestId) === String(requestId));
     if (idx === -1) return res.status(404).json({ error: 'Comment not found' });
     const comment = all[idx];
     if (String(comment.userId) !== String(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
     all.splice(idx, 1);
-    await saveComments(all);
+    writeComments(all);
 
     // decrement comment counter on request if present
     try {
-      if (DB_ENABLED) {
-        await dbQuery('UPDATE requests SET comments = GREATEST(COALESCE(comments, 0) - 1, 0) WHERE id = $1', [requestId]);
-      } else {
-        const requests = readRequests();
-        const ridx = requests.findIndex(r => String(r.id) === String(requestId));
-        if (ridx !== -1) {
-          requests[ridx].comments = Math.max(0, (Number(requests[ridx].comments) || 0) - 1);
-          writeRequests(requests);
-        }
+      const requests = readRequests();
+      const ridx = requests.findIndex(r => String(r.id) === String(requestId));
+      if (ridx !== -1) {
+        requests[ridx].comments = Math.max(0, (Number(requests[ridx].comments) || 0) - 1);
+        writeRequests(requests);
       }
     } catch (e) {}
 
@@ -2609,39 +2107,8 @@ app.delete('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
 });
 
 // Get requests created by the logged-in user
-app.get('/requests/my', authMiddleware, async (req, res) => {
+app.get('/requests/my', authMiddleware, (req, res) => {
   try {
-    if (DB_ENABLED) {
-      const { rows } = await dbQuery('SELECT * FROM requests WHERE created_by = $1 ORDER BY created_at DESC', [req.user.id]);
-      const mapped = rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        likes: Number(row.likes || 0),
-        comments: Number(row.comments || 0),
-        boosts: Number(row.boosts || 0),
-        amount: row.amount != null ? Number(row.amount) : 0,
-        funding: row.funding != null ? Number(row.funding) : 0,
-        isTrending: Boolean(row.is_trending),
-        isSponsored: Boolean(row.is_sponsored),
-        company: row.company,
-        companyInitial: row.company_initial,
-        companyColor: row.company_color,
-        imageUrl: row.image_url,
-        creator: row.creator_id ? { id: row.creator_id, name: row.creator_name, email: row.creator_email } : null,
-        creatorId: row.creator_id,
-        createdBy: row.created_by,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        currentStep: row.current_step,
-        claimed: row.claimed,
-        claimedBy: row.claimed_by,
-        claimedAt: row.claimed_at,
-        meta: row.meta
-      }));
-      return res.json({ requests: mapped });
-    }
-
     const allRequests = readRequests();
     const userRequests = allRequests.filter(r => r.createdBy === req.user.id);
     return res.json({ requests: userRequests });
@@ -2651,68 +2118,23 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/requests', authMiddleware, async (req, res) => {
+app.post('/requests', authMiddleware, (req, res) => {
   try {
     const body = req.body || {};
     if (!body.title || !body.description) return res.status(400).json({ error: 'Missing title or description' });
-
-    const parsedAmount = (typeof body.amount === 'number') ? body.amount : (body.amount ? Number(body.amount) : 0);
-    const id = (body.id && String(body.id).startsWith('req_')) ? body.id : `req_${Date.now()}`;
-
-    if (DB_ENABLED) {
-      const existing = await dbQuery('SELECT * FROM requests WHERE id = $1', [id]);
-      if (existing.rows.length) {
-        return res.json({ success: true, request: existing.rows[0], duplicate: true });
-      }
-
-      const company = body.company || (body.creator && body.creator.name) || req.user.name || 'Community';
-      const companyInitial = (body.creator && body.creator.name ? String(body.creator.name)[0] : (req.user.name ? String(req.user.name)[0] : 'C'));
-      const funding = (typeof body.funding === 'number' && body.funding > 0) ? body.funding : (parsedAmount || 0);
-      const createdAt = new Date().toISOString();
-
-      await dbQuery(
-        `INSERT INTO requests
-          (id, title, description, likes, comments, boosts, amount, funding, is_trending, is_sponsored, company, company_initial, company_color, image_url, creator_id, creator_name, creator_email, created_by, created_at, meta)
-         VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-        [
-          id,
-          body.title,
-          body.description,
-          0,
-          0,
-          0,
-          parsedAmount || 0,
-          funding,
-          false,
-          false,
-          company,
-          companyInitial,
-          body.companyColor || 'bg-gray-400',
-          body.imageUrl || '',
-          req.user.id,
-          req.user.name,
-          req.user.email,
-          req.user.id,
-          createdAt,
-          body.meta || null
-        ]
-      );
-
-      const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1', [id]);
-      return res.json({ success: true, request: rows[0] });
-    }
-
     const requests = readRequests();
-
+    
     // Use client-provided ID if available (for optimistic UI consistency), else generate one
+    const id = (body.id && String(body.id).startsWith('req_')) ? body.id : `req_${Date.now()}`;
+    
     // CRITICAL: Check for duplicate ID to prevent re-submitting the same request
     const existingIdx = requests.findIndex(r => String(r.id) === String(id));
     if (existingIdx !== -1) {
       console.log('Request with this ID already exists, returning existing:', id);
       return res.json({ success: true, request: requests[existingIdx], duplicate: true });
     }
-
+    
+    const parsedAmount = (typeof body.amount === 'number') ? body.amount : (body.amount ? Number(body.amount) : 0);
     const newReq = {
       id,
       title: body.title,
@@ -2877,11 +2299,11 @@ app.delete('/requests/:id', authMiddleware, (req, res) => {
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // --- Share / Open Graph endpoints ---
-app.get('/share/video/:id', async (req, res) => {
+app.get('/share/video/:id', (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
     const t = req.query.t ? String(req.query.t) : '';
-    const videos = await loadVideos();
+    const videos = readVideos();
     const video = videos.find(v => String(v.id) === id) || null;
     const title = video?.title || 'Watch a video on Regaarder';
     const description = video?.requester ? `Requested by ${video.requester}` : 'Watch on Regaarder';
@@ -3010,7 +2432,7 @@ app.post('/creator/intro-video', authMiddleware, (req, res) => {
 // Upload profile image for creator (optional)
 app.post('/creator/photo', authMiddleware, (req, res) => {
   // Accept any file field name to be tolerant of client mismatches during debugging
-  upload.any()(req, res, async function (err) {
+  upload.any()(req, res, function (err) {
     if (err) {
       console.error('photo upload error', err && err.message ? err.message : err);
       if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large' });
@@ -3031,24 +2453,16 @@ app.post('/creator/photo', authMiddleware, (req, res) => {
       if (!uploaded) return res.status(400).json({ error: 'Missing file' });
       const url = `${req.protocol}://${req.get('host')}/uploads/${uploaded.filename}`;
       const mimeType = uploaded.mimetype || '';
-      if (DB_ENABLED) {
+      const users = readUsers();
+      const idx = users.findIndex(u => u.id === req.user.id);
+      if (idx !== -1) {
+        // If uploaded file is an image, store as `image` for avatar; otherwise store under `document`.
         if (mimeType.startsWith('image/')) {
-          await dbQuery('UPDATE users SET image = $1 WHERE id = $2', [url, req.user.id]);
+          users[idx] = { ...users[idx], image: url };
         } else {
-          await dbQuery('UPDATE users SET document = $1 WHERE id = $2', [url, req.user.id]);
+          users[idx] = { ...users[idx], document: url };
         }
-      } else {
-        const users = readUsers();
-        const idx = users.findIndex(u => u.id === req.user.id);
-        if (idx !== -1) {
-          // If uploaded file is an image, store as `image` for avatar; otherwise store under `document`.
-          if (mimeType.startsWith('image/')) {
-            users[idx] = { ...users[idx], image: url };
-          } else {
-            users[idx] = { ...users[idx], document: url };
-          }
-          writeUsers(users);
-        }
+        writeUsers(users);
       }
       return res.json({ success: true, url, mimeType, field: uploaded.fieldname });
     } catch (err2) {
@@ -3063,49 +2477,6 @@ app.post('/creator/complete', authMiddleware, (req, res) => {
   try {
     const body = req.body || {};
     const allowed = ['name', 'bio', 'tag', 'introVideo', 'image', 'social', 'price', 'tagline', 'handle', 'pricingType', 'categories'];
-    if (DB_ENABLED) {
-      const fieldMap = {
-        name: 'name',
-        bio: 'bio',
-        tag: 'tag',
-        introVideo: 'intro_video',
-        image: 'image',
-        social: 'social',
-        price: 'price',
-        tagline: 'tagline',
-        handle: 'handle',
-        pricingType: 'pricing_type',
-        categories: 'categories'
-      };
-
-      const fields = [];
-      const values = [];
-      let i = 1;
-
-      allowed.forEach((k) => {
-        if (typeof body[k] !== 'undefined') {
-          fields.push(`${fieldMap[k]} = $${i}`);
-          values.push(body[k]);
-          i += 1;
-        }
-      });
-
-      fields.push(`is_creator = true`);
-      fields.push(`creator_since = now()`);
-
-      values.push(req.user.id);
-      const sql = `UPDATE users SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`;
-      return dbQuery(sql, values)
-        .then(({ rows }) => {
-          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-          return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
-        })
-        .catch((err) => {
-          console.error('creator complete db error', err);
-          return res.status(500).json({ error: 'Server error' });
-        });
-    }
-
     const users = readUsers();
     const idx = users.findIndex(u => u.id === req.user.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -3124,12 +2495,12 @@ app.post('/creator/complete', authMiddleware, (req, res) => {
 });
 
 // Get all published videos
-app.get('/videos', async (req, res) => {
+app.get('/videos', (req, res) => {
   try {
-    let videos = await loadVideos();
+    let videos = readVideos();
     const feed = req.query.feed; // 'trending' | 'recommended' | undefined
     const category = req.query.category;
-    const user = await tryGetUser(req); // helper to get user from token if present
+    const user = tryGetUser(req); // helper to get user from token if present
 
     console.log(`GET /videos feed=${feed} category=${category} user=${user ? user.id : 'anon'}`);
 
@@ -3168,7 +2539,7 @@ app.get('/videos', async (req, res) => {
 
         if (user || req.query.userId) {
              const userId = user ? user.id : (req.query.userId || 'anonymous');
-             const history = (await loadWatchHistory()).filter(h => String(h.userId) === String(userId));
+             const history = readWatchHistory().filter(h => String(h.userId) === String(userId));
              
              history.forEach(h => {
                  if (h.isComplete || h.duration > 30 || (h.lastWatchedTime / h.duration) > 0.5) {
@@ -3218,12 +2589,12 @@ app.get('/videos', async (req, res) => {
 });
 
 // Get a single video by ID (including fresh ads data)
-app.get('/videos/:id', async (req, res) => {
+app.get('/videos/:id', (req, res) => {
   try {
     const videoId = req.params.id;
     console.log(`GET /videos/${videoId}`);
     
-    const videos = await loadVideos();
+    const videos = readVideos();
     const video = videos.find(v => String(v.id) === String(videoId));
     
     if (!video) {
@@ -3240,7 +2611,7 @@ app.get('/videos/:id', async (req, res) => {
 });
 
 // Publish a new video
-app.post('/videos/publish', async (req, res) => {
+app.post('/videos/publish', (req, res) => {
   try {
     console.log('POST /videos/publish received');
     console.log('Request body:', req.body);
@@ -3255,7 +2626,8 @@ app.post('/videos/publish', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7).trim();
-      const user = await getUserFromAuthHeader(req);
+      const users = readUsers();
+      const user = users.find(u => u.token === token);
       if (user) {
         author = user.name || user.email;
         authorId = user.email;
@@ -3283,7 +2655,7 @@ app.post('/videos/publish', async (req, res) => {
       finalVideoUrl = null;
     }
 
-    const videos = await loadVideos();
+    const videos = readVideos();
     console.log('Current videos count:', videos.length);
     
     // Generate unique ID by combining timestamp with random string
@@ -3320,13 +2692,13 @@ app.post('/videos/publish', async (req, res) => {
 
     videos.unshift(newVideo);
     console.log('Writing videos, new count:', videos.length);
-    await saveVideos(videos);
+    writeVideos(videos);
     
     // Update streak for the author if authenticated
-    if (!DB_ENABLED && authorId && authorId !== 'anonymous') {
-      const users = readUsers(); // Re-read to get ID if we only have email
-      const user = users.find(u => u.email === authorId || u.id === authorId);
-      if (user) updateStreak(user.id);
+    if (authorId && authorId !== 'anonymous') {
+        const users = readUsers(); // Re-read to get ID if we only have email
+        const user = users.find(u => u.email === authorId || u.id === authorId);
+        if (user) updateStreak(user.id);
     }
     
     console.log('Video published successfully:', newVideo.title);
@@ -3339,11 +2711,11 @@ app.post('/videos/publish', async (req, res) => {
 });
 
 // Delete a published video
-app.delete('/videos/:id', authMiddleware, async (req, res) => {
+app.delete('/videos/:id', authMiddleware, (req, res) => {
   try {
     const videoId = parseInt(req.params.id);
     const user = req.user;
-    const videos = await loadVideos();
+    const videos = readVideos();
     
     const videoIndex = videos.findIndex(v => v.id === videoId);
     if (videoIndex === -1) {
@@ -3356,7 +2728,7 @@ app.delete('/videos/:id', authMiddleware, async (req, res) => {
     }
 
     videos.splice(videoIndex, 1);
-    await saveVideos(videos);
+    writeVideos(videos);
 
     return res.json({ success: true });
   } catch (err) {
@@ -3459,19 +2831,19 @@ app.post('/unfollow', authMiddleware, (req, res) => {
 });
 
 // Get following list with full creator details
-app.get('/following', authMiddleware, async (req, res) => {
+app.get('/following', authMiddleware, (req, res) => {
   try {
     const users = readUsers();
     const user = users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const following = user.following || [];
-    const videos = await loadVideos();
     const creators = following.map(creatorId => {
       const creator = users.find(u => u.id === creatorId);
       if (!creator) return null;
       
       // Count videos for this creator
+      const videos = readVideos();
       const videoCount = videos.filter(v => v.authorId === creator.email || v.authorId === creator.id).length;
 
       return {
@@ -3576,82 +2948,46 @@ function readWatchHistory() {
 function writeWatchHistory(list) {
   try { fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf8'); } catch (err) { console.error('writeWatchHistory error', err); }
 }
-const loadWatchHistory = async () => {
-  if (!DB_ENABLED) return readWatchHistory();
-  const { rows } = await dbQuery('SELECT payload FROM watch_history ORDER BY updated_at DESC');
-  return rows.map(row => row.payload);
-};
-
-const saveWatchHistory = async (list) => {
-  if (!DB_ENABLED) {
-    writeWatchHistory(list);
-    return;
-  }
-  const client = await dbPool.connect();
-  const ids = list.map(entry => `${entry.videoId}::${entry.userId || 'anonymous'}`);
+function tryGetUser(req) {
   try {
-    await client.query('BEGIN');
-    for (const entry of list) {
-      await client.query(
-        `INSERT INTO watch_history (video_id, user_id, payload, updated_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (video_id, user_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at`,
-        [String(entry.videoId), String(entry.userId || 'anonymous'), entry, new Date(entry.timestamp || Date.now())]
-      );
+    const auth = req.headers.authorization || '';
+    if (auth && auth.startsWith('Bearer ')) {
+      const token = auth.slice(7).trim();
+      const users = readUsers();
+      const user = users.find(u => u.token === token);
+      if (user) return { id: user.id, email: user.email, name: user.name };
     }
-    if (ids.length > 0) {
-      const params = ids.map((_, i) => `$${i + 1}`).join(',');
-      await client.query(
-        `DELETE FROM watch_history WHERE (video_id || '::' || user_id) NOT IN (${params})`,
-        ids
-      );
-    } else {
-      await client.query('DELETE FROM watch_history');
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
-const tryGetUser = async (req) => {
-  try {
-    const user = await getUserFromAuthHeader(req);
-    if (user) return { id: user.id, email: user.email, name: user.name };
   } catch {}
   return null;
-};
+}
 // Upsert watch progress
-app.post('/watch/history', async (req, res) => {
+app.post('/watch/history', (req, res) => {
   try {
     const { videoId, userId: bodyUserId, lastWatchedTime = 0, duration = 0, timestamp, isComplete = false } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
-    const user = await tryGetUser(req);
+    const user = tryGetUser(req);
     const userId = user ? user.id : (bodyUserId || 'anonymous');
     const ts = timestamp ? (typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString()) : new Date().toISOString();
-    const list = await loadWatchHistory();
+    const list = readWatchHistory();
     const idx = list.findIndex(e => String(e.videoId) === String(videoId) && String(e.userId || 'anonymous') === String(userId));
     const isNewWatch = idx < 0; // Track if this is a new watch entry
     const entry = { videoId, userId, lastWatchedTime: Number(lastWatchedTime) || 0, duration: Number(duration) || 0, timestamp: ts, isComplete: Boolean(isComplete) };
     if (idx >= 0) list[idx] = { ...list[idx], ...entry }; else list.unshift(entry);
     if (list.length > 2000) list.splice(2000);
-    await saveWatchHistory(list);
+    writeWatchHistory(list);
     
     // Increment view count on video only if this is a new watch (not an update to existing watch)
     if (isNewWatch) {
       try {
-        const videos = await loadVideos();
+        const videos = readVideos();
         const vidIdx = videos.findIndex(v => String(v.id) === String(videoId));
         if (vidIdx !== -1) {
           videos[vidIdx].views = String(Number(videos[vidIdx].views || 0) + 1);
-          await saveVideos(videos);
+          writeVideos(videos);
           
           // Also increment the creator's total views in the user object
           const video = videos[vidIdx];
-          if (!DB_ENABLED && (video.authorId || video.author || video.authorEmail)) {
+          if (video.authorId || video.author || video.authorEmail) {
             const users = readUsers();
             const creatorIdx = users.findIndex(u => 
               u.id === video.authorId || 
@@ -3669,7 +3005,7 @@ app.post('/watch/history', async (req, res) => {
       }
     }
     
-    if (user && !DB_ENABLED) updateStreak(user.id);
+    if (user) updateStreak(user.id);
     return res.json({ success: true });
   } catch (err) {
     console.error('POST /watch/history error', err);
@@ -3677,12 +3013,12 @@ app.post('/watch/history', async (req, res) => {
   }
 });
 // Get watch history for current user (token optional; falls back to anonymous)
-app.get('/watch/history', async (req, res) => {
+app.get('/watch/history', (req, res) => {
   try {
-    const user = await tryGetUser(req);
+    const user = tryGetUser(req);
     const qUser = req.query.userId || null;
     const userId = user ? user.id : (qUser || 'anonymous');
-    const list = (await loadWatchHistory()).filter(e => String(e.userId || 'anonymous') === String(userId));
+    const list = readWatchHistory().filter(e => String(e.userId || 'anonymous') === String(userId));
     return res.json({ success: true, history: list });
   } catch (err) {
     console.error('GET /watch/history error', err);
@@ -3690,15 +3026,15 @@ app.get('/watch/history', async (req, res) => {
   }
 });
 // Delete single entry
-app.delete('/watch/history/:videoId', async (req, res) => {
+app.delete('/watch/history/:videoId', (req, res) => {
   try {
-    const user = await tryGetUser(req);
+    const user = tryGetUser(req);
     const userId = user ? user.id : 'anonymous';
     const vid = req.params.videoId;
-    let list = await loadWatchHistory();
+    let list = readWatchHistory();
     const before = list.length;
     list = list.filter(e => !(String(e.videoId) === String(vid) && String(e.userId || 'anonymous') === String(userId)));
-    await saveWatchHistory(list);
+    writeWatchHistory(list);
     return res.json({ success: true, removed: before - list.length });
   } catch (err) {
     console.error('DELETE /watch/history/:videoId error', err);
@@ -3706,14 +3042,14 @@ app.delete('/watch/history/:videoId', async (req, res) => {
   }
 });
 // Clear all for user
-app.delete('/watch/history', async (req, res) => {
+app.delete('/watch/history', (req, res) => {
   try {
-    const user = await tryGetUser(req);
+    const user = tryGetUser(req);
     const userId = user ? user.id : 'anonymous';
-    let list = await loadWatchHistory();
+    let list = readWatchHistory();
     const before = list.length;
     list = list.filter(e => String(e.userId || 'anonymous') !== String(userId));
-    await saveWatchHistory(list);
+    writeWatchHistory(list);
     return res.json({ success: true, removed: before - list.length });
   } catch (err) {
     console.error('DELETE /watch/history error', err);
@@ -3730,39 +3066,30 @@ function writeBookmarks(data) {
   try { const safe = { segments: data.segments || [], videos: data.videos || [], requests: data.requests || [] }; fs.writeFileSync(BOOKMARKS_FILE, JSON.stringify(safe, null, 2), 'utf8'); } catch (e) {}
 }
 
-async function getUserIdOrAnon(req) { const u = await tryGetUser(req); return u ? u.id : 'anonymous'; }
+function getUserIdOrAnon(req) { const u = tryGetUser(req); return u ? u.id : 'anonymous'; }
 
 // Aggregate bookmarks for current user
-app.get('/bookmarks', async (req, res) => {
+app.get('/bookmarks', (req, res) => {
   try {
-    const user = await getUserFromAuthHeader(req);
-    const userId = user ? user.id : 'anonymous';
+    const userId = getUserIdOrAnon(req);
     console.log('GET /bookmarks - userId:', userId, 'hasAuth:', !!req.headers.authorization);
     const all = readBookmarks();
+    console.log('Total bookmarks in file - segments:', all.segments?.length, 'videos:', all.videos?.length, 'requests:', all.requests?.length);
     const segments = (all.segments || []).filter(b => String(b.userId||'anonymous') === String(userId));
     const videos = (all.videos || []).filter(b => String(b.userId||'anonymous') === String(userId));
-
-    if (DB_ENABLED) {
-      const { rows } = await dbQuery('SELECT * FROM request_bookmarks WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
-      const requests = rows.map((r) => ({
-        id: r.id,
-        userId: r.user_id,
-        requestId: r.request_id,
-        title: r.title || '',
-        createdAt: r.created_at
-      }));
-      return res.json({ success: true, segments, videos, requests });
-    }
-
     const requests = (all.requests || []).filter(b => String(b.userId||'anonymous') === String(userId));
+    console.log('Filtered for user', userId, '- segments:', segments.length, 'videos:', videos.length, 'requests:', requests.length);
+    if (requests.length > 0) {
+      console.log('Returning request bookmarks:', requests.map(r => ({ id: r.id, requestId: r.requestId, userId: r.userId })));
+    }
     return res.json({ success: true, segments, videos, requests });
   } catch (err) { console.error('GET /bookmarks error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
 // Save a timestamped segment bookmark
-app.post('/bookmarks/segments', async (req, res) => {
+app.post('/bookmarks/segments', (req, res) => {
   try {
-    const userId = await getUserIdOrAnon(req);
+    const userId = getUserIdOrAnon(req);
     const { videoUrl, label, startTime, endTime } = req.body || {};
     if (!videoUrl) return res.status(400).json({ error: 'Missing videoUrl' });
     const s = readBookmarks();
@@ -3776,9 +3103,9 @@ app.post('/bookmarks/segments', async (req, res) => {
 });
 
 // Save a normal video bookmark
-app.post('/bookmarks/videos', async (req, res) => {
+app.post('/bookmarks/videos', (req, res) => {
   try {
-    const userId = await getUserIdOrAnon(req);
+    const userId = getUserIdOrAnon(req);
     const { videoUrl, title, label } = req.body || {};
     if (!videoUrl) return res.status(400).json({ error: 'Missing videoUrl' });
     const s = readBookmarks();
@@ -3791,9 +3118,9 @@ app.post('/bookmarks/videos', async (req, res) => {
 });
 
 // Remove a normal video bookmark for the current user by videoUrl
-app.delete('/bookmarks/videos', async (req, res) => {
+app.delete('/bookmarks/videos', (req, res) => {
   try {
-    const userId = await getUserIdOrAnon(req);
+    const userId = getUserIdOrAnon(req);
     const { videoUrl } = req.body || {};
     if (!videoUrl) return res.status(400).json({ error: 'Missing videoUrl' });
     const s = readBookmarks();
@@ -3802,6 +3129,21 @@ app.delete('/bookmarks/videos', async (req, res) => {
     writeBookmarks(s);
     return res.json({ success: true, removed: Math.max(0, before - (s.videos || []).length) });
   } catch (err) { console.error('DELETE /bookmarks/videos error', err); return res.status(500).json({ error: 'Server error' }); }
+});
+
+// Save a request bookmark
+app.post('/bookmarks/requests', (req, res) => {
+  try {
+    const userId = getUserIdOrAnon(req);
+    const { requestId, title } = req.body || {};
+    if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
+    const s = readBookmarks();
+    const b = { id: `req_${Date.now()}`, userId, requestId, title: title || '', createdAt: new Date().toISOString() };
+    s.requests.unshift(b);
+    if (s.requests.length > 1000) s.requests.splice(1000);
+    writeBookmarks(s);
+    return res.json({ success: true, request: b });
+  } catch (err) { console.error('POST /bookmarks/requests error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
 // --- Reactions storage (per-user per-request) ---
@@ -3814,63 +3156,11 @@ function writeRequestReactions(data) {
 }
 
 // Persist request reactions and aggregate counts
-app.post('/requests/react', async (req, res) => {
+app.post('/requests/react', (req, res) => {
   try {
     const { requestId, action } = req.body || {};
     if (!requestId || !action) return res.status(400).json({ error: 'Missing requestId or action' });
-    if (DB_ENABLED) {
-      return (async () => {
-        const user = await getUserFromAuthHeader(req);
-        const userId = user ? user.id : 'anonymous';
-        const reqRes = await dbQuery('SELECT id, likes FROM requests WHERE id = $1', [requestId]);
-        if (!reqRes.rows[0]) return res.status(404).json({ error: 'Request not found' });
-
-        const currentLikes = Number(reqRes.rows[0].likes || 0);
-        const reactRes = await dbQuery(
-          'SELECT is_liked, is_disliked FROM request_reactions WHERE request_id = $1 AND user_id = $2',
-          [requestId, userId]
-        );
-        const current = reactRes.rows[0] || { is_liked: false, is_disliked: false };
-        let likesCount = currentLikes;
-        let nextLiked = current.is_liked;
-        let nextDisliked = current.is_disliked;
-
-        if (action === 'like') {
-          if (!current.is_liked) likesCount += 1;
-          nextLiked = true;
-          nextDisliked = false;
-        } else if (action === 'unlike') {
-          if (current.is_liked) likesCount = Math.max(0, likesCount - 1);
-          nextLiked = false;
-        } else if (action === 'dislike') {
-          if (current.is_liked) likesCount = Math.max(0, likesCount - 1);
-          nextLiked = false;
-          nextDisliked = true;
-        } else if (action === 'undislike') {
-          nextDisliked = false;
-        } else {
-          return res.status(400).json({ error: 'Invalid action' });
-        }
-
-        await dbQuery('BEGIN');
-        await dbQuery(
-          `INSERT INTO request_reactions (request_id, user_id, is_liked, is_disliked, updated_at)
-           VALUES ($1,$2,$3,$4,now())
-           ON CONFLICT (request_id, user_id)
-           DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
-          [requestId, userId, nextLiked, nextDisliked]
-        );
-        await dbQuery('UPDATE requests SET likes = $1 WHERE id = $2', [likesCount, requestId]);
-        await dbQuery('COMMIT');
-
-        return res.json({ success: true, requestId, action, likes: likesCount });
-      })().catch((err) => {
-        console.error('requests react db error', err);
-        return res.status(500).json({ error: 'Server error' });
-      });
-    }
-
-    const user = await tryGetUser(req);
+    const user = tryGetUser(req);
     const userId = user ? user.id : 'anonymous';
     const reactions = readRequestReactions();
     const requests = readRequests();
@@ -3925,26 +3215,6 @@ app.post('/requests/react', async (req, res) => {
 // Get current user's reactions map (requires auth)
 app.get('/requests/react/me', authMiddleware, (req, res) => {
   try {
-    if (DB_ENABLED) {
-      return dbQuery(
-        'SELECT request_id, is_liked, is_disliked FROM request_reactions WHERE user_id = $1',
-        [req.user.id]
-      )
-        .then(({ rows }) => {
-          const map = {};
-          rows.forEach((row) => {
-            map[row.request_id] = map[row.request_id] || {};
-            if (row.is_liked) map[row.request_id].isLiked = true;
-            if (row.is_disliked) map[row.request_id].isDisliked = true;
-          });
-          return res.json({ success: true, reactions: map });
-        })
-        .catch((err) => {
-          console.error('get reactions db error', err);
-          return res.status(500).json({ error: 'Server error' });
-        });
-    }
-
     const reactions = readRequestReactions();
     const userId = req.user.id;
     const map = {};
@@ -4019,7 +3289,7 @@ app.post('/pay/create-session', (req, res) => {
 });
 
 // Update request status and notify requester
-app.post('/requests/:id/status', authMiddleware, async (req, res) => {
+app.post('/requests/:id/status', authMiddleware, (req, res) => {
   try {
     const requestId = req.params.id;
     const { step, message } = req.body || {};
@@ -4060,9 +3330,11 @@ app.post('/requests/:id/status', authMiddleware, async (req, res) => {
           metadata: { step, message }
         };
         
-        const arr = await loadNotifications();
+        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        let arr = [];
+        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         arr.unshift(suggestion);
-        await saveNotifications(arr);
+        try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
     }
 
     return res.json({ success: true, currentStep: request.currentStep });
@@ -4078,36 +3350,28 @@ function readVideoReactions() { try { if (!fs.existsSync(VIDEO_REACTIONS_FILE)) 
 function writeVideoReactions(data) { try { const safe = { likes: data.likes || {}, dislikes: data.dislikes || {} }; fs.writeFileSync(VIDEO_REACTIONS_FILE, JSON.stringify(safe, null, 2), 'utf8'); } catch (e) {} }
 
 // Helper: find video index by flexible id/url/title matching
-function findVideoIndexById(videos, videoId) {
+function findVideoIndexById(videoId) {
   try {
+    const videos = readVideos();
     return videos.findIndex(v => String(v.id) === String(videoId) || String(v.url) === String(videoId) || String(v.videoUrl) === String(videoId) || String(v.src) === String(videoId) || String(v.title) === String(videoId));
   } catch (e) { return -1; }
 }
 
 // GET like/dislike status for a given video (checks token if provided)
-app.get('/likes/status', async (req, res) => {
+app.get('/likes/status', (req, res) => {
   try {
     const videoId = req.query.videoId || null;
     if (!videoId) return res.json({ liked: false, disliked: false });
+    const reactions = readVideoReactions();
     let liked = false;
     let disliked = false;
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      const user = await getUserFromAuthHeader(req);
+      const token = req.headers.authorization.slice(7).trim();
+      const users = readUsers();
+      const user = users.find(u => u.token === token);
       if (user) {
-        if (DB_ENABLED) {
-          const { rows } = await dbQuery(
-            'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
-            [String(videoId), String(user.id)]
-          );
-          if (rows[0]) {
-            liked = Boolean(rows[0].is_liked);
-            disliked = Boolean(rows[0].is_disliked);
-          }
-        } else {
-          const reactions = readVideoReactions();
-          liked = !!(reactions.likes[videoId] && reactions.likes[videoId][user.id]);
-          disliked = !!(reactions.dislikes[videoId] && reactions.dislikes[videoId][user.id]);
-        }
+        liked = !!(reactions.likes[videoId] && reactions.likes[videoId][user.id]);
+        disliked = !!(reactions.dislikes[videoId] && reactions.dislikes[videoId][user.id]);
       }
     }
     return res.json({ liked, disliked });
@@ -4115,52 +3379,14 @@ app.get('/likes/status', async (req, res) => {
 });
 
 // Like/unlike endpoints (require auth)
-app.post('/likes', authMiddleware, async (req, res) => {
+app.post('/likes', authMiddleware, (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
-    const videos = await loadVideos();
-    const vidx = findVideoIndexById(videos, videoId);
-    if (DB_ENABLED) {
-      let likesCount = Number((vidx !== -1 ? (videos[vidx].likes || 0) : 0)) || 0;
-      let dislikesCount = Number((vidx !== -1 ? (videos[vidx].dislikes || 0) : 0)) || 0;
-      const { rows } = await dbQuery(
-        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
-        [String(videoId), String(userId)]
-      );
-      const prevLiked = Boolean(rows[0]?.is_liked);
-      const prevDisliked = Boolean(rows[0]?.is_disliked);
-      let nextLiked = prevLiked;
-      let nextDisliked = prevDisliked;
-
-      if (!prevLiked) {
-        nextLiked = true;
-        likesCount += 1;
-      }
-      if (prevDisliked) {
-        nextDisliked = false;
-        dislikesCount = Math.max(0, dislikesCount - 1);
-      }
-
-      await dbQuery(
-        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
-         VALUES ($1,$2,$3,$4,now())
-         ON CONFLICT (video_id, user_id)
-         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
-        [String(videoId), String(userId), nextLiked, nextDisliked]
-      );
-
-      if (vidx !== -1) {
-        videos[vidx].likes = String(likesCount);
-        videos[vidx].dislikes = String(dislikesCount);
-        await saveVideos(videos);
-      }
-
-      return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
-    }
-
     const reactions = readVideoReactions();
+    const videos = readVideos();
+    const vidx = findVideoIndexById(videoId);
 
     reactions.likes[videoId] = reactions.likes[videoId] || {};
     reactions.dislikes[videoId] = reactions.dislikes[videoId] || {};
@@ -4181,52 +3407,21 @@ app.post('/likes', authMiddleware, async (req, res) => {
     if (vidx !== -1) {
       videos[vidx].likes = String(likesCount);
       videos[vidx].dislikes = String(dislikesCount);
-      await saveVideos(videos);
+      writeVideos(videos);
     }
 
     return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
   } catch (err) { console.error('POST /likes error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.delete('/likes', authMiddleware, async (req, res) => {
+app.delete('/likes', authMiddleware, (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
-    const videos = await loadVideos();
-    const vidx = findVideoIndexById(videos, videoId);
-    if (DB_ENABLED) {
-      let likesCount = Number((vidx !== -1 ? (videos[vidx].likes || 0) : 0)) || 0;
-      const { rows } = await dbQuery(
-        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
-        [String(videoId), String(userId)]
-      );
-      const prevLiked = Boolean(rows[0]?.is_liked);
-      const prevDisliked = Boolean(rows[0]?.is_disliked);
-      let nextLiked = prevLiked;
-
-      if (prevLiked) {
-        nextLiked = false;
-        likesCount = Math.max(0, likesCount - 1);
-      }
-
-      await dbQuery(
-        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
-         VALUES ($1,$2,$3,$4,now())
-         ON CONFLICT (video_id, user_id)
-         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
-        [String(videoId), String(userId), nextLiked, prevDisliked]
-      );
-
-      if (vidx !== -1) {
-        videos[vidx].likes = String(likesCount);
-        await saveVideos(videos);
-      }
-
-      return res.json({ success: true, likes: likesCount });
-    }
-
     const reactions = readVideoReactions();
+    const videos = readVideos();
+    const vidx = findVideoIndexById(videoId);
 
     reactions.likes[videoId] = reactions.likes[videoId] || {};
 
@@ -4240,7 +3435,7 @@ app.delete('/likes', authMiddleware, async (req, res) => {
     writeVideoReactions(reactions);
     if (vidx !== -1) {
       videos[vidx].likes = String(likesCount);
-      await saveVideos(videos);
+      writeVideos(videos);
     }
 
     return res.json({ success: true, likes: likesCount });
@@ -4248,52 +3443,14 @@ app.delete('/likes', authMiddleware, async (req, res) => {
 });
 
 // Dislike/un-dislike endpoints (require auth)
-app.post('/dislikes', authMiddleware, async (req, res) => {
+app.post('/dislikes', authMiddleware, (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
-    const videos = await loadVideos();
-    const vidx = findVideoIndexById(videos, videoId);
-    if (DB_ENABLED) {
-      let likesCount = Number((vidx !== -1 ? (videos[vidx].likes || 0) : 0)) || 0;
-      let dislikesCount = Number((vidx !== -1 ? (videos[vidx].dislikes || 0) : 0)) || 0;
-      const { rows } = await dbQuery(
-        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
-        [String(videoId), String(userId)]
-      );
-      const prevLiked = Boolean(rows[0]?.is_liked);
-      const prevDisliked = Boolean(rows[0]?.is_disliked);
-      let nextLiked = prevLiked;
-      let nextDisliked = prevDisliked;
-
-      if (!prevDisliked) {
-        nextDisliked = true;
-        dislikesCount += 1;
-      }
-      if (prevLiked) {
-        nextLiked = false;
-        likesCount = Math.max(0, likesCount - 1);
-      }
-
-      await dbQuery(
-        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
-         VALUES ($1,$2,$3,$4,now())
-         ON CONFLICT (video_id, user_id)
-         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
-        [String(videoId), String(userId), nextLiked, nextDisliked]
-      );
-
-      if (vidx !== -1) {
-        videos[vidx].likes = String(likesCount);
-        videos[vidx].dislikes = String(dislikesCount);
-        await saveVideos(videos);
-      }
-
-      return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
-    }
-
     const reactions = readVideoReactions();
+    const videos = readVideos();
+    const vidx = findVideoIndexById(videoId);
 
     reactions.likes[videoId] = reactions.likes[videoId] || {};
     reactions.dislikes[videoId] = reactions.dislikes[videoId] || {};
@@ -4314,52 +3471,21 @@ app.post('/dislikes', authMiddleware, async (req, res) => {
     if (vidx !== -1) {
       videos[vidx].likes = String(likesCount);
       videos[vidx].dislikes = String(dislikesCount);
-      await saveVideos(videos);
+      writeVideos(videos);
     }
 
     return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
   } catch (err) { console.error('POST /dislikes error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.delete('/dislikes', authMiddleware, async (req, res) => {
+app.delete('/dislikes', authMiddleware, (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
-    const videos = await loadVideos();
-    const vidx = findVideoIndexById(videos, videoId);
-    if (DB_ENABLED) {
-      let dislikesCount = Number((vidx !== -1 ? (videos[vidx].dislikes || 0) : 0)) || 0;
-      const { rows } = await dbQuery(
-        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
-        [String(videoId), String(userId)]
-      );
-      const prevLiked = Boolean(rows[0]?.is_liked);
-      const prevDisliked = Boolean(rows[0]?.is_disliked);
-      let nextDisliked = prevDisliked;
-
-      if (prevDisliked) {
-        nextDisliked = false;
-        dislikesCount = Math.max(0, dislikesCount - 1);
-      }
-
-      await dbQuery(
-        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
-         VALUES ($1,$2,$3,$4,now())
-         ON CONFLICT (video_id, user_id)
-         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
-        [String(videoId), String(userId), prevLiked, nextDisliked]
-      );
-
-      if (vidx !== -1) {
-        videos[vidx].dislikes = String(dislikesCount);
-        await saveVideos(videos);
-      }
-
-      return res.json({ success: true, dislikes: dislikesCount });
-    }
-
     const reactions = readVideoReactions();
+    const videos = readVideos();
+    const vidx = findVideoIndexById(videoId);
 
     reactions.dislikes[videoId] = reactions.dislikes[videoId] || {};
 
@@ -4373,7 +3499,7 @@ app.delete('/dislikes', authMiddleware, async (req, res) => {
     writeVideoReactions(reactions);
     if (vidx !== -1) {
       videos[vidx].dislikes = String(dislikesCount);
-      await saveVideos(videos);
+      writeVideos(videos);
     }
 
     return res.json({ success: true, dislikes: dislikesCount });
@@ -5060,7 +4186,7 @@ app.post('/videos/:id/report', (req, res) => {
 });
 
 // Shadow delete video (hides without permanent deletion)
-app.post('/staff/shadow-delete/:videoId', async (req, res) => {
+app.post('/staff/shadow-delete/:videoId', (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -5069,7 +4195,7 @@ app.post('/staff/shadow-delete/:videoId', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const videos = await loadVideos();
+    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5082,7 +4208,7 @@ app.post('/staff/shadow-delete/:videoId', async (req, res) => {
     video.shadowDeletedAt = new Date().toISOString();
     video.shadowDeleteReason = reason;
 
-    await saveVideos(videos);
+    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
 
     // Track in staff file
     const staff = readStaff();
@@ -5129,7 +4255,7 @@ app.get('/staff/user-history/:userId', (req, res) => {
 });
 
 // Get all videos (admin)
-app.get('/staff/videos', async (req, res) => {
+app.get('/staff/videos', (req, res) => {
   try {
     const { employeeId } = req.query;
 
@@ -5137,7 +4263,7 @@ app.get('/staff/videos', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    const videos = await loadVideos();
+    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const staff = readStaff();
 
     // Attach report counts to each video
@@ -5175,7 +4301,7 @@ app.get('/staff/users', (req, res) => {
 });
 
 // Delete video (admin)
-app.delete('/staff/delete-video/:videoId', async (req, res) => {
+app.delete('/staff/delete-video/:videoId', (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -5184,7 +4310,7 @@ app.delete('/staff/delete-video/:videoId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = await loadVideos();
+    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const videoIndex = videos.findIndex(v => v.id === videoId);
 
     if (videoIndex === -1) {
@@ -5192,7 +4318,7 @@ app.delete('/staff/delete-video/:videoId', async (req, res) => {
     }
 
     const deletedVideo = videos.splice(videoIndex, 1)[0];
-    await saveVideos(videos);
+    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
 
     // Log deletion
     const staff = readStaff();
@@ -5214,7 +4340,7 @@ app.delete('/staff/delete-video/:videoId', async (req, res) => {
 });
 
 // Hide video (admin)
-app.post('/staff/hide-video/:videoId', async (req, res) => {
+app.post('/staff/hide-video/:videoId', (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -5223,7 +4349,7 @@ app.post('/staff/hide-video/:videoId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = await loadVideos();
+    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5234,7 +4360,7 @@ app.post('/staff/hide-video/:videoId', async (req, res) => {
     video.hiddenReason = reason;
     video.hiddenBy = parseInt(employeeId);
     video.hiddenAt = new Date().toISOString();
-    await saveVideos(videos);
+    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
 
     // Log hiding
     const staff = readStaff();
@@ -5354,7 +4480,7 @@ app.post('/staff/hide-request/:requestId', (req, res) => {
 });
 
 // Get all comments (admin)
-app.get('/staff/comments', async (req, res) => {
+app.get('/staff/comments', (req, res) => {
   try {
     const { employeeId } = req.query;
 
@@ -5362,7 +4488,7 @@ app.get('/staff/comments', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    const comments = await loadComments();
+    const comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
     return res.json({ comments });
   } catch (err) {
     console.error('Get comments error:', err);
@@ -5371,7 +4497,7 @@ app.get('/staff/comments', async (req, res) => {
 });
 
 // Delete comment (admin)
-app.delete('/staff/delete-comment/:commentId', async (req, res) => {
+app.delete('/staff/delete-comment/:commentId', (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const commentId = req.params.commentId;
@@ -5380,7 +4506,7 @@ app.delete('/staff/delete-comment/:commentId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = await loadComments();
+    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
     const commentIndex = comments.findIndex(c => c.id === commentId);
 
     if (commentIndex === -1) {
@@ -5388,7 +4514,7 @@ app.delete('/staff/delete-comment/:commentId', async (req, res) => {
     }
 
     const deletedComment = comments.splice(commentIndex, 1)[0];
-    await saveComments(comments);
+    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
 
     // Log deletion
     const staff = readStaff();
@@ -5410,7 +4536,7 @@ app.delete('/staff/delete-comment/:commentId', async (req, res) => {
 });
 
 // Hide comment (admin)
-app.post('/staff/hide-comment/:commentId', async (req, res) => {
+app.post('/staff/hide-comment/:commentId', (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const commentId = req.params.commentId;
@@ -5419,7 +4545,7 @@ app.post('/staff/hide-comment/:commentId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = await loadComments();
+    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
     const comment = comments.find(c => c.id === commentId);
 
     if (!comment) {
@@ -5430,7 +4556,7 @@ app.post('/staff/hide-comment/:commentId', async (req, res) => {
     comment.hiddenReason = reason;
     comment.hiddenBy = parseInt(employeeId);
     comment.hiddenAt = new Date().toISOString();
-    await saveComments(comments);
+    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
 
     // Log hiding
     const staff = readStaff();
@@ -5452,7 +4578,7 @@ app.post('/staff/hide-comment/:commentId', async (req, res) => {
 });
 
 // Update video metadata (admin only)
-app.put('/staff/videos/:videoId', async (req, res) => {
+app.put('/staff/videos/:videoId', (req, res) => {
   try {
     const { employeeId, title, description, tags, overlays } = req.body;
     
@@ -5460,7 +4586,7 @@ app.put('/staff/videos/:videoId', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const videos = await loadVideos();
+    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const video = videos.find(v => v.id === req.params.videoId);
 
     if (!video) {
@@ -5474,7 +4600,7 @@ app.put('/staff/videos/:videoId', async (req, res) => {
     video.modifiedBy = parseInt(employeeId);
     video.modifiedAt = new Date().toISOString();
 
-    await saveVideos(videos);
+    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
 
     return res.json({ success: true, video });
   } catch (err) {
@@ -5484,7 +4610,7 @@ app.put('/staff/videos/:videoId', async (req, res) => {
 });
 
 // Apply user action (warn, ban, shadow ban, delete) - admin only
-app.post('/staff/user-action/:userId', async (req, res) => {
+app.post('/staff/user-action/:userId', (req, res) => {
   try {
     const { employeeId, action, reason } = req.body;
     const userId = req.params.userId;
@@ -5549,7 +4675,15 @@ app.post('/staff/user-action/:userId', async (req, res) => {
     writeStaff(staff);
 
     // Create a notification for the user who received the action
-    let notifications = await loadNotifications();
+    const SUG_FILE = path.join(__dirname, 'suggestions.json');
+    let notifications = [];
+    try { 
+      if (fs.existsSync(SUG_FILE)) {
+        notifications = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); 
+      }
+    } catch (e) { 
+      console.error('Error reading notifications:', e);
+    }
 
     // Build notification message based on action type
     let notificationMessage = '';
@@ -5595,7 +4729,7 @@ app.post('/staff/user-action/:userId', async (req, res) => {
       requiresAcknowledgment: true
     });
 
-    await saveNotifications(notifications);
+    fs.writeFileSync(SUG_FILE, JSON.stringify(notifications, null, 2));
 
     console.log(`User action applied: ${action} on user ${userId}`);
     return res.json({ success: true, message: `User ${action} applied`, user });
@@ -5606,7 +4740,7 @@ app.post('/staff/user-action/:userId', async (req, res) => {
 });
 
 // POST /staff/undo-user-action/:userId - Undo a user action
-app.post('/staff/undo-user-action/:userId', async (req, res) => {
+app.post('/staff/undo-user-action/:userId', (req, res) => {
   try {
     const { employeeId, action } = req.body;
     const userId = req.params.userId;
@@ -5665,14 +4799,22 @@ app.post('/staff/undo-user-action/:userId', async (req, res) => {
     writeStaff(staff);
 
     // Remove the notification for the user
-    let notifications = await loadNotifications();
+    const SUG_FILE = path.join(__dirname, 'suggestions.json');
+    let notifications = [];
+    try { 
+      if (fs.existsSync(SUG_FILE)) {
+        notifications = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); 
+      }
+    } catch (e) { 
+      console.error('Error reading notifications:', e);
+    }
 
     // Remove notifications for this user action
     notifications = notifications.filter(n => 
       !(n.to && n.to.id === userId && n.action === action && n.type === 'staff_action')
     );
 
-    await saveNotifications(notifications);
+    fs.writeFileSync(SUG_FILE, JSON.stringify(notifications, null, 2));
 
     return res.json({ success: true, message: `User ${action} undone`, user });
   } catch (err) {
@@ -5751,7 +4893,7 @@ app.post('/reports', (req, res) => {
 });
 
 // Undo hide video
-app.post('/staff/undo-hide-video/:videoId', async (req, res) => {
+app.post('/staff/undo-hide-video/:videoId', (req, res) => {
   try {
     const { employeeId } = req.body;
     const videoId = req.params.videoId;
@@ -5760,7 +4902,7 @@ app.post('/staff/undo-hide-video/:videoId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = await loadVideos();
+    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5771,7 +4913,7 @@ app.post('/staff/undo-hide-video/:videoId', async (req, res) => {
     video.hiddenReason = null;
     video.hiddenBy = null;
     video.hiddenAt = null;
-    await saveVideos(videos);
+    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
 
     // Log undo
     const staff = readStaff();
@@ -5792,7 +4934,7 @@ app.post('/staff/undo-hide-video/:videoId', async (req, res) => {
 });
 
 // Delete video permanently
-app.post('/staff/delete-video/:videoId', async (req, res) => {
+app.post('/staff/delete-video/:videoId', (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -5801,7 +4943,7 @@ app.post('/staff/delete-video/:videoId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = await loadVideos();
+    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5812,7 +4954,7 @@ app.post('/staff/delete-video/:videoId', async (req, res) => {
     video.deletedReason = reason;
     video.deletedBy = parseInt(employeeId);
     video.deletedAt = new Date().toISOString();
-    await saveVideos(videos);
+    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
 
     // Log deletion
     const staff = readStaff();
@@ -5834,7 +4976,7 @@ app.post('/staff/delete-video/:videoId', async (req, res) => {
 });
 
 // Undo delete video
-app.post('/staff/undo-delete-video/:videoId', async (req, res) => {
+app.post('/staff/undo-delete-video/:videoId', (req, res) => {
   try {
     const { employeeId } = req.body;
     const videoId = req.params.videoId;
@@ -5843,7 +4985,7 @@ app.post('/staff/undo-delete-video/:videoId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = await loadVideos();
+    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5854,7 +4996,7 @@ app.post('/staff/undo-delete-video/:videoId', async (req, res) => {
     video.deletedReason = null;
     video.deletedBy = null;
     video.deletedAt = null;
-    await saveVideos(videos);
+    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
 
     // Log undo
     const staff = readStaff();
@@ -5957,7 +5099,7 @@ app.post('/staff/undo-delete-request/:requestId', (req, res) => {
 });
 
 // Undo hide comment
-app.post('/staff/undo-hide-comment/:commentId', async (req, res) => {
+app.post('/staff/undo-hide-comment/:commentId', (req, res) => {
   try {
     const { employeeId } = req.body;
     const commentId = req.params.commentId;
@@ -5966,7 +5108,7 @@ app.post('/staff/undo-hide-comment/:commentId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = await loadComments();
+    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
     const comment = comments.find(c => c.id === commentId);
 
     if (!comment) {
@@ -5977,7 +5119,7 @@ app.post('/staff/undo-hide-comment/:commentId', async (req, res) => {
     comment.hiddenReason = null;
     comment.hiddenBy = null;
     comment.hiddenAt = null;
-    await saveComments(comments);
+    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
 
     // Log undo
     const staff = readStaff();
@@ -5998,7 +5140,7 @@ app.post('/staff/undo-hide-comment/:commentId', async (req, res) => {
 });
 
 // Undo delete comment
-app.post('/staff/undo-delete-comment/:commentId', async (req, res) => {
+app.post('/staff/undo-delete-comment/:commentId', (req, res) => {
   try {
     const { employeeId } = req.body;
     const commentId = req.params.commentId;
@@ -6007,7 +5149,7 @@ app.post('/staff/undo-delete-comment/:commentId', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = await loadComments();
+    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
     const comment = comments.find(c => c.id === commentId);
 
     if (!comment) {
@@ -6018,7 +5160,7 @@ app.post('/staff/undo-delete-comment/:commentId', async (req, res) => {
     comment.deletedReason = null;
     comment.deletedBy = null;
     comment.deletedAt = null;
-    await saveComments(comments);
+    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
 
     // Log undo
     const staff = readStaff();
@@ -6039,7 +5181,7 @@ app.post('/staff/undo-delete-comment/:commentId', async (req, res) => {
 });
 
 // Get user activity metrics for staff (for filtering and insights)
-app.get('/staff/user-metrics', async (req, res) => {
+app.get('/staff/user-metrics', (req, res) => {
   try {
     const { employeeId } = req.query;
 
@@ -6049,7 +5191,7 @@ app.get('/staff/user-metrics', async (req, res) => {
 
     const users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
-    const videos = await loadVideos();
+    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
 
     const userMetrics = users.map(user => {
       // Count requests created by user
@@ -6491,46 +5633,8 @@ function writeSupportTickets(tickets) {
   }
 }
 
-const loadSupportTickets = async () => {
-  if (!DB_ENABLED) return readSupportTickets();
-  const { rows } = await dbQuery('SELECT payload FROM support_tickets ORDER BY created_at DESC');
-  return rows.map(row => row.payload);
-};
-
-const saveSupportTickets = async (tickets) => {
-  if (!DB_ENABLED) {
-    writeSupportTickets(tickets);
-    return;
-  }
-  const client = await dbPool.connect();
-  const ids = tickets.map(t => String(t.id));
-  try {
-    await client.query('BEGIN');
-    for (const ticket of tickets) {
-      const createdAt = ticket.createdAt ? new Date(ticket.createdAt) : new Date();
-      await client.query(
-        `INSERT INTO support_tickets (id, payload, created_at)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`,
-        [String(ticket.id), ticket, createdAt]
-      );
-    }
-    if (ids.length > 0) {
-      await client.query('DELETE FROM support_tickets WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
-    } else {
-      await client.query('DELETE FROM support_tickets');
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
 // Submit a new support ticket (no auth required - customers can submit without logging in)
-app.post('/support/ticket', upload.array('file_', 5), async (req, res) => {
+app.post('/support/ticket', upload.array('file_', 5), (req, res) => {
   try {
     const { title, description, userId, userEmail } = req.body;
 
@@ -6556,7 +5660,7 @@ app.post('/support/ticket', upload.array('file_', 5), async (req, res) => {
     }
 
     // Limit check: Check how many open tickets this user already has
-    const tickets = await loadSupportTickets();
+    const tickets = readSupportTickets();
     const existingOpenTickets = tickets.filter(t => 
       t.userEmail === userInfo.email && 
       ['open', 'in-progress'].includes(t.status)
@@ -6595,9 +5699,9 @@ app.post('/support/ticket', upload.array('file_', 5), async (req, res) => {
     };
 
     // Save to file
-    const allTickets = await loadSupportTickets();
+    const allTickets = readSupportTickets();
     allTickets.push(ticket);
-    await saveSupportTickets(allTickets);
+    writeSupportTickets(allTickets);
 
     console.log(`Support ticket created: ${ticket.id} by ${userInfo.email}`);
 
@@ -6613,7 +5717,7 @@ app.post('/support/ticket', upload.array('file_', 5), async (req, res) => {
 });
 
 // Get all support tickets (staff only - uses employeeId query param)
-app.get('/support/tickets', async (req, res) => {
+app.get('/support/tickets', (req, res) => {
   try {
     const employeeId = req.query.employeeId;
     const userEmail = req.query.userEmail;
@@ -6631,7 +5735,7 @@ app.get('/support/tickets', async (req, res) => {
         return res.status(403).json({ error: 'Unauthorized - staff access required' });
       }
 
-      const tickets = await loadSupportTickets();
+      const tickets = readSupportTickets();
       console.log('Returning', tickets.length, 'support tickets');
       const sortedTickets = tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
@@ -6644,7 +5748,7 @@ app.get('/support/tickets', async (req, res) => {
     
     // If userEmail is provided, serve customer view
     if (userEmail) {
-      const tickets = await loadSupportTickets();
+      const tickets = readSupportTickets();
       const userTickets = tickets.filter(t => t.userEmail === userEmail).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       
       return res.json({
@@ -6662,11 +5766,11 @@ app.get('/support/tickets', async (req, res) => {
 });
 
 // Get single support ticket
-app.get('/support/ticket/:id', async (req, res) => {
+app.get('/support/ticket/:id', (req, res) => {
   try {
     const ticketId = req.params.id;
     const employeeId = req.query.employeeId;
-    const tickets = await loadSupportTickets();
+    const tickets = readSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6689,7 +5793,7 @@ app.get('/support/ticket/:id', async (req, res) => {
 });
 
 // Update ticket status (staff only)
-app.put('/support/ticket/:id/status', async (req, res) => {
+app.put('/support/ticket/:id/status', (req, res) => {
   try {
     const ticketId = req.params.id;
     const { status, priority, employeeId } = req.body;
@@ -6699,7 +5803,7 @@ app.put('/support/ticket/:id/status', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = await loadSupportTickets();
+    const tickets = readSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6715,7 +5819,7 @@ app.put('/support/ticket/:id/status', async (req, res) => {
     }
 
     ticket.updatedAt = new Date().toISOString();
-    await saveSupportTickets(tickets);
+    writeSupportTickets(tickets);
 
     return res.json({ success: true, ticket });
   } catch (err) {
@@ -6725,7 +5829,7 @@ app.put('/support/ticket/:id/status', async (req, res) => {
 });
 
 // Add response to ticket (staff only)
-app.post('/support/ticket/:id/response', async (req, res) => {
+app.post('/support/ticket/:id/response', (req, res) => {
   try {
     const ticketId = req.params.id;
     const { message, employeeId } = req.body;
@@ -6739,7 +5843,7 @@ app.post('/support/ticket/:id/response', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = await loadSupportTickets();
+    const tickets = readSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6766,7 +5870,7 @@ app.post('/support/ticket/:id/response', async (req, res) => {
     ticket.responses.push(response);
     ticket.updatedAt = new Date().toISOString();
 
-    await saveSupportTickets(tickets);
+    writeSupportTickets(tickets);
 
     // Create notification for customer
     try {
@@ -6806,7 +5910,7 @@ app.post('/support/ticket/:id/response', async (req, res) => {
 });
 
 // Add customer response to ticket
-app.post('/support/ticket/:id/customer-response', async (req, res) => {
+app.post('/support/ticket/:id/customer-response', (req, res) => {
   try {
     const ticketId = req.params.id;
     const { message, userEmail } = req.body;
@@ -6815,7 +5919,7 @@ app.post('/support/ticket/:id/customer-response', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    const tickets = await loadSupportTickets();
+    const tickets = readSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6840,7 +5944,7 @@ app.post('/support/ticket/:id/customer-response', async (req, res) => {
     ticket.customerResponses.push(customerResponse);
     ticket.updatedAt = new Date().toISOString();
 
-    await saveSupportTickets(tickets);
+    writeSupportTickets(tickets);
 
     console.log(`Customer response added to ticket ${ticketId}`);
 
@@ -6852,7 +5956,7 @@ app.post('/support/ticket/:id/customer-response', async (req, res) => {
 });
 
 // Close ticket (staff only)
-app.post('/support/ticket/:id/close', async (req, res) => {
+app.post('/support/ticket/:id/close', (req, res) => {
   try {
     const ticketId = req.params.id;
     const { resolution, employeeId } = req.body;
@@ -6862,7 +5966,7 @@ app.post('/support/ticket/:id/close', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = await loadSupportTickets();
+    const tickets = readSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6880,7 +5984,7 @@ app.post('/support/ticket/:id/close', async (req, res) => {
     ticket.closedAt = new Date().toISOString();
     ticket.updatedAt = new Date().toISOString();
 
-    await saveSupportTickets(tickets);
+    writeSupportTickets(tickets);
 
     return res.json({ success: true, ticket });
   } catch (err) {
@@ -6890,7 +5994,7 @@ app.post('/support/ticket/:id/close', async (req, res) => {
 });
 
 // Delete ticket (staff only)
-app.delete('/support/ticket/:id', async (req, res) => {
+app.delete('/support/ticket/:id', (req, res) => {
   try {
     const ticketId = req.params.id;
     const employeeId = req.query.employeeId;
@@ -6900,7 +6004,7 @@ app.delete('/support/ticket/:id', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = await loadSupportTickets();
+    const tickets = readSupportTickets();
     const ticketIdx = tickets.findIndex(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (ticketIdx === -1) {
@@ -6909,7 +6013,7 @@ app.delete('/support/ticket/:id', async (req, res) => {
 
     // Remove ticket
     const deletedTicket = tickets.splice(ticketIdx, 1)[0];
-    await saveSupportTickets(tickets);
+    writeSupportTickets(tickets);
 
     console.log(`Support ticket ${ticketId} deleted by employee ${employeeId}`);
 

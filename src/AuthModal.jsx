@@ -56,7 +56,7 @@ const AuthModal = ({ onClose, onLogin }) => {
     if (!validate()) return;
     setErrors((e) => ({ ...e, server: null }));
     setLoading(true);
-    const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
     fetch(`${BACKEND}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -76,7 +76,7 @@ const AuthModal = ({ onClose, onLogin }) => {
     if (!validate()) return;
     setErrors((e) => ({ ...e, server: null }));
     setLoading(true);
-    const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
     fetch(`${BACKEND}/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,5 +1,5 @@
 /* eslint-disable no-empty */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext.jsx';
 import { getTranslation } from './translations.js';
@@ -29,7 +29,7 @@ const Settings = () => {
   const [selectedLanguage] = useState(() => {
     try { return localStorage.getItem('regaarder_language') || 'English'; } catch (e) { return 'English'; }
   });
-  const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+  const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
 
   const user = (() => { try { return auth.user || JSON.parse(localStorage.getItem('regaarder_user') || '{}'); } catch { return {}; } })();
   const token = (() => { try { return localStorage.getItem('regaarder_token'); } catch { return null; } })();
@@ -57,6 +57,7 @@ const Settings = () => {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
 
   const handleExport = async () => {
     try {
@@ -97,6 +98,9 @@ const Settings = () => {
     'fab_dismissed',
     'welcome_selected_role',
     'requests_search_query',
+    'regaarder_push_enabled',
+    'regaarder_push_token',
+    'regaarder_push_history',
   ];
 
   const confirmDeleteData = async () => {
@@ -189,9 +193,12 @@ const Settings = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
       <div className="w-full max-w-xl min-h-screen flex flex-col" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-        <header className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20">
+        <header
+          className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center space-x-4">
-            <ChevronLeft className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900" onClick={() => {
+            <ChevronLeft className="w-6 h-6 cursor-pointer transition active:scale-90" style={{ color: 'var(--color-gold)' }} onClick={() => {
               const redirectTo = localStorage.getItem('redirectBackTo');
               localStorage.removeItem('redirectBackTo');
               navigate(redirectTo === 'creatorDashboard' ? '/creatordashboard' : '/home');

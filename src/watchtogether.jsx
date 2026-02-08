@@ -23,7 +23,10 @@ const useSearch = useLocalSearch;
 // Videos are now provided by `home.jsx` (imported as `VIDEOS`)
 
 // Backend API URL
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:4000`;
+const API_BASE = (typeof window !== 'undefined' && window.__BACKEND_URL__)
+  || import.meta.env.VITE_BACKEND_URL
+  || import.meta.env.VITE_BACKEND
+  || 'https://pwin.onrender.com';
 
 // Helper to resolve user avatar/image URLs
 const resolveImageUrl = (url) => {
@@ -34,7 +37,6 @@ const resolveImageUrl = (url) => {
       const filename = s.split(':')[1] || s.slice('uploaded:'.length);
       return `${API_BASE}/uploads/${filename}`;
     }
-    if (s.startsWith('http://localhost:4000') || s.startsWith('https://localhost:4000')) return s;
     if (s.startsWith('http') || s.startsWith('https')) return s;
     return s;
   } catch (e) {
@@ -609,7 +611,10 @@ const App = () => {
           {/* Inner container for max-width on larger screens (but still full width on mobile) */}
           <div className="w-full bg-white max-w-4xl mx-auto rounded-none sm:rounded-3xl shadow-none sm:shadow-2xl overflow-hidden min-h-screen sm:min-h-0">
             {/* Header */}
-            <div className="p-6 border-b border-gray-200 flex justify-between items-start">
+            <div
+              className="p-6 border-b border-gray-200 flex justify-between items-start"
+              style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+            >
               <div className="flex items-center">
                 <div className="relative">
                   <div className="p-3 bg-violet-100 rounded-full">

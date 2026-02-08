@@ -1,12 +1,13 @@
 /* eslint-disable no-empty */
 import React from 'react';
 import { Bookmark, MoreHorizontal, Search, History, Home, FileText, Pencil } from 'lucide-react';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 const GOLD_COLOR = '#CB8B04';
 
 const BACKEND_URL = typeof window !== 'undefined'
-  ? (window.__BACKEND_URL__ || `${window.location.protocol}//${window.location.hostname}:4000`)
-  : 'http://localhost:4000';
+  ? (window.__BACKEND_URL__ || 'https://pwin.onrender.com')
+  : 'https://pwin.onrender.com';
 
 const formatSeconds = (s) => {
   try { const n = Math.max(0, Math.floor(Number(s)||0)); const m = Math.floor(n/60); const sec = String(n%60).padStart(2,'0'); return `${m}:${sec}`; } catch { return '0:00'; }
@@ -79,7 +80,10 @@ export default function BookmarksPage() {
   return (
     <div className="flex justify-center min-h-screen w-full bg-white relative">
       <div className="w-full flex flex-col bg-white overflow-hidden">
-        <header className="p-4 border-b border-gray-100 space-y-3">
+        <header
+          className="p-4 border-b border-gray-100 space-y-3"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2"><Bookmark className="w-5 h-5 text-gray-500" strokeWidth={1.5} /><span>Bookmarks</span></h1>
             <button className="p-2 text-gray-600 hover:text-gray-900" aria-label="More"><MoreHorizontal className="w-5 h-5" /></button>
@@ -174,67 +178,9 @@ export default function BookmarksPage() {
             </p>
           </div>
         </main>
-        <BottomBar />
+        <SharedBottomBar selectedLanguage={(typeof window !== 'undefined') ? (localStorage.getItem('regaarder_language') || 'English') : 'English'} />
       </div>
     </div>
   );
 }
-
-const BottomBar = () => {
-  const [activeTab, setActiveTab] = React.useState(null);
-  const navigatedRef = React.useRef(false);
-
-  const tabs = [
-    { name: 'Home', icon: Home },
-    { name: 'Requests', icon: FileText },
-    { name: 'Ideas', icon: Pencil },
-    { name: 'More', icon: MoreHorizontal },
-  ];
-
-  const inactiveColor = 'rgb(107 114 128)';
-
-  return (
-    <div
-      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-      style={{
-        paddingTop: '10px',
-        paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-        minHeight: '70px'
-      }}
-    >
-      <div className="w-full flex justify-around items-center px-2">
-        {tabs.map((tab) => {
-          const isSelected = tab.name === activeTab;
-          const activeColorStyle = isSelected ? { color: 'var(--color-gold)' } : { color: inactiveColor };
-          const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-          const IconComp = tab.icon;
-
-          const navigateToTab = (tabName) => {
-            try {
-              if (tabName === 'Home') { window.location.href = '/home.jsx'; return; }
-              if (tabName === 'Requests') { window.location.href = '/requests.jsx'; return; }
-              if (tabName === 'Ideas') { window.location.href = '/ideas'; return; }
-              if (tabName === 'More') { window.location.href = '/more.jsx'; return; }
-            } catch (e) { console.warn('Navigation failed', e); }
-          };
-
-          return (
-            <div key={tab.name} className="relative flex flex-col items-center justify-center flex-1 focus:outline-none">
-              <button
-                className="flex flex-col items-center w-full h-full justify-center"
-                onMouseDown={() => { setActiveTab(tab.name); if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); } }}
-                onTouchStart={() => { setActiveTab(tab.name); if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); } }}
-                onClick={(e) => { if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; } setActiveTab(tab.name); navigateToTab(tab.name); }}
-              >
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                  <IconComp size={24} strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                </div>
-                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>{tab.name}</span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 };

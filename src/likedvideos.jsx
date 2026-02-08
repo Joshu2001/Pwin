@@ -3,6 +3,8 @@ import { Home, FileText, Pencil, MoreHorizontal, Lightbulb, ChevronLeft } from '
 import { useAppNavigate } from './navigation.js';
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations.js';
+import { WEB_URL } from './config.js';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 const selectedLanguage = typeof window !== 'undefined' ? (localStorage.getItem('regaarder_language') || 'English') : 'English';
 const t = (key) => getTranslation(key, selectedLanguage);
@@ -11,8 +13,8 @@ const t = (key) => getTranslation(key, selectedLanguage);
 const STORAGE_KEY = 'likedVideos';
 
 const BACKEND_URL = typeof window !== 'undefined'
-  ? (window.__BACKEND_URL__ || `${window.location.protocol}//${window.location.hostname}:4000`)
-  : 'http://localhost:4000';
+  ? (window.__BACKEND_URL__ || 'https://pwin.onrender.com')
+  : 'https://pwin.onrender.com';
 
 // Record a like or unlike event from the video player
 export async function recordLike(event) {
@@ -159,8 +161,18 @@ export default function LikedVideos() {
       <div className="max-w-4xl mx-auto">
         {/* Header with back button */}
         <div className="bg-white border-b" style={{ borderColor: dark ? '#1a1a1a' : '#e5e7eb' }}>
-          <div className="px-4 py-4 sticky top-0 z-20 flex items-center space-x-4">
-            <ChevronLeft className="w-6 h-6 cursor-pointer transition hover:opacity-75" style={{ color: dark ? '#fff' : '#374151' }} onClick={() => navigate(-1)} />
+          <div
+            className="px-4 py-4 sticky top-0 z-20 flex items-center space-x-4"
+            style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+          >
+            <ChevronLeft
+              className="w-6 h-6 cursor-pointer transition hover:opacity-75"
+              style={{ color: dark ? '#fff' : '#374151' }}
+              onClick={() => {
+                try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch (e) { }
+                try { navigate('/home', { replace: true }); } catch (e) { }
+              }}
+            />
             <h1 className="text-xl font-semibold" style={{ color: dark ? '#fff' : '#111' }}>{t('Liked Videos')}</h1>
           </div>
         </div>
@@ -265,8 +277,9 @@ export default function LikedVideos() {
                 </div>
                 <button className="p-2 text-gray-600 hover:text-gray-900" aria-label="Share" onClick={(e) => {
                   e.stopPropagation();
+                  const id = it.id || it.videoId;
                   const url = it.url || it.videoId;
-                  const link = url ? `${window.location.origin}/videoplayer?src=${encodeURIComponent(url)}&title=${encodeURIComponent(title || '')}` : window.location.href;
+                  const link = id ? `${WEB_URL}/share/video/${encodeURIComponent(id)}` : (url ? `${WEB_URL}/videoplayer?src=${encodeURIComponent(url)}&title=${encodeURIComponent(title || '')}` : window.location.href);
                   const sharePayload = { title, text: title, url: link };
                   if (navigator.share) { navigator.share(sharePayload).catch(() => { }); }
                   else { try { navigator.clipboard && navigator.clipboard.writeText(link); alert(t('Share link copied')); } catch { } }
@@ -279,7 +292,7 @@ export default function LikedVideos() {
         </div>
         </div>
       </div>
-      <BottomBar />
+      <SharedBottomBar selectedLanguage={selectedLanguage} />
       <style>{`
         @keyframes toastSlideDown {
           from { opacity: 0; transform: translateY(-20px) scale(0.95); }
@@ -290,48 +303,4 @@ export default function LikedVideos() {
   );
 }
 
-// BottomBar: copied from watchhistory.jsx for consistent footer
-const BottomBar = () => {
-  const [activeTab, setActiveTab] = useState(null);
-  const navigatedRef = useRef(false);
-  const tabs = [
-    { name: 'Home', icon: Home },
-    { name: 'Requests', icon: FileText },
-    { name: 'Ideas', icon: Pencil },
-    { name: 'More', icon: MoreHorizontal },
-  ];
-  const inactiveColor = 'rgb(107 114 128)';
-  const navigateToTab = (tabName) => {
-    try {
-      if (tabName === 'Home') { window.location.href = '/home.jsx'; return; }
-      if (tabName === 'Requests') { window.location.href = '/requests.jsx'; return; }
-      if (tabName === 'Ideas') { window.location.href = '/ideas'; return; }
-      if (tabName === 'More') { window.location.href = '/more.jsx'; return; }
-    } catch (e) { console.warn('Navigation failed', e); }
-  };
-  return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50" style={{ paddingTop: '10px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', minHeight: '70px' }}>
-      <div className="w-full flex justify-around items-center px-2">
-        {tabs.map((tab) => {
-          const isSelected = tab.name === activeTab;
-          const activeColorStyle = isSelected ? { color: 'var(--color-gold)' } : { color: inactiveColor };
-          const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-          const IconComp = tab.icon;
-          return (
-            <div key={tab.name} className="relative flex flex-col items-center w-1/4 focus:outline-none">
-              <button className="flex flex-col items-center w-full"
-                onMouseDown={() => { setActiveTab(tab.name); if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); } }}
-                onTouchStart={() => { setActiveTab(tab.name); if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); } }}
-                onClick={(e) => { if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; } setActiveTab(tab.name); navigateToTab(tab.name); }}>
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                  <IconComp size={24} strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                </div>
-                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>{t(tab.name)}</span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
+// BottomBar: removed - now using SharedBottomBar

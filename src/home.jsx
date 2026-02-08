@@ -1,18 +1,22 @@
-/* eslint-disable no-empty */
+/* eslint-disable no-empty, no-unused-vars, no-undef */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext.jsx';
+import { PlayerContext } from './PlayerProvider.jsx';
 import * as eventBus from './eventbus.js';
 import Videoplayer from './Videoplayer.jsx';
 import StaffLoginModal from './StaffLoginModal.jsx';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
 import { LanguageSelector, RoleSelectionModal, UserWelcomeModal, CreatorWelcomeModal } from './components/FirstTimeUserWelcome.jsx';
 import { useLanguage } from './LanguageContext.jsx';
+import { Capacitor } from '@capacitor/core';
 // Updated Lucide imports: Added Video, Sparkles, Pin, Bookmark, Info, EyeOff, Flag, LifeBuoy for support
 import { X, Menu, Bell, Settings, Search, Star, TrendingUp, Trophy, Home, FileText, Lightbulb, MoreHorizontal, MoreVertical, Heart, ThumbsDown, HeartOff, Eye, MessageSquare, Share, Share2, Palette, Shield, Globe, Gift, DollarSign, Users, Monitor, BookOpen, History, Scissors, Zap, CreditCard, Crown, Tag, User, Folder, Shuffle, Camera, Pencil, ShoppingBag, Video, Sparkles, Pin, Bookmark, Info, EyeOff, Flag, Check, AlertCircle, AlertTriangle, Sun, Moon, ChevronDown, ChevronLeft, ChevronRight, ListPlus, Music, Clock, Dumbbell, LifeBuoy } from 'lucide-react';
 import { useTheme } from './ThemeContext.jsx';
 import { getTranslation } from './translations.js';
+import { WEB_URL } from './config.js';
+import { resolveMediaUrl } from './utils/media.js';
 
 // Inject global CSS for smooth videoplayer transitions
 if (typeof document !== 'undefined') {
@@ -58,6 +62,42 @@ const clamp2 = {
     WebkitBoxOrient: 'vertical',
     overflow: 'hidden'
 };
+
+// Prevent white flash during video navigation/open
+const showVideoLaunchMask = () => {
+    try {
+        if (typeof document === 'undefined') return;
+        // Force-remove any existing mask first (prevents stale masks from blocking taps)
+        try { const existing = document.getElementById('vp-launch-mask'); if (existing) existing.remove(); } catch {}
+        const mask = document.createElement('div');
+        mask.id = 'vp-launch-mask';
+        mask.style.position = 'fixed';
+        mask.style.inset = '0';
+        mask.style.background = '#000';
+        mask.style.zIndex = '99999';
+        mask.style.transition = 'opacity 300ms ease';
+        mask.style.opacity = '1';
+        mask.style.pointerEvents = 'none'; // CRITICAL: Don't block taps while mask is visible
+        document.body.appendChild(mask);
+        // Auto-remove mask after player has time to render
+        setTimeout(() => {
+            try {
+                const m = document.getElementById('vp-launch-mask');
+                if (m) {
+                    m.style.opacity = '0';
+                    setTimeout(() => { try { m.remove(); } catch {} }, 350);
+                }
+            } catch {}
+        }, 400);
+        // SAFETY NET: Hard-remove after 2 seconds no matter what
+        setTimeout(() => {
+            try { const m = document.getElementById('vp-launch-mask'); if (m) m.remove(); } catch {}
+        }, 2000);
+    } catch (e) { }
+};
+
+const ImmersiveMode = (Capacitor && Capacitor.Plugins) ? Capacitor.Plugins.ImmersiveMode : null;
+const SystemBars = (Capacitor && Capacitor.Plugins) ? Capacitor.Plugins.SystemBars : null;
 
 // Helper to generate placeholder avatar showing a flag derived from name initials
 const getPlaceholderAvatar = (name) => {
@@ -628,7 +668,7 @@ const CreatorOnboardingDialog = ({ onClose, selectedLanguage = 'English' }) => {
     const [showIntroError, setShowIntroError] = useState(false);
     const [uploadingIntro, setUploadingIntro] = useState(false);
     const auth = useAuth();
-    const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
 
     const features = [
         {
@@ -885,7 +925,10 @@ const CreatorOnboardingDialog = ({ onClose, selectedLanguage = 'English' }) => {
             <div className="rounded-2xl w-full max-w-md overflow-hidden relative flex flex-col" onClick={(e) => e.stopPropagation()} style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.95))", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 20px 60px rgba(0,0,0,0.08)", height: `${window.innerHeight * 0.58}px` }}>
                 {/* Agreement required toast (centered, no red outline, title black) */}
                 {showAgreementError && (
-                    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300 min-w-[360px] sm:min-w-[480px] max-w-[92%]">
+                    <div
+                        className="fixed left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300 min-w-[360px] sm:min-w-[480px] max-w-[92%]"
+                        style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
+                    >
                         <div className="flex items-center bg-white rounded-lg shadow-2xl px-6 py-3">
                             <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center mr-3">
                                 <Icon name="x" size={14} className="text-white" />
@@ -900,7 +943,10 @@ const CreatorOnboardingDialog = ({ onClose, selectedLanguage = 'English' }) => {
 
                 {/* Inline error toast (centered, no red outline, title black) */}
                 {showError && (
-                    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300 min-w-[360px] sm:min-w-[480px] max-w-[92%]">
+                    <div
+                        className="fixed left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300 min-w-[360px] sm:min-w-[480px] max-w-[92%]"
+                        style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
+                    >
                         <div className="flex items-center bg-white rounded-lg shadow-2xl px-6 py-3">
                             <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center mr-3">
                                 <Icon name="x" size={14} className="text-white" />
@@ -914,7 +960,10 @@ const CreatorOnboardingDialog = ({ onClose, selectedLanguage = 'English' }) => {
                 )}
 
                 {showIntroError && (
-                    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300 min-w-[360px] sm:min-w-[480px] max-w-[92%]">
+                    <div
+                        className="fixed left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300 min-w-[360px] sm:min-w-[480px] max-w-[92%]"
+                        style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
+                    >
                         <div className="flex items-center bg-white rounded-lg shadow-2xl px-6 py-3">
                             <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center mr-3">
                                 <Icon name="x" size={14} className="text-white" />
@@ -1675,8 +1724,7 @@ const SideDrawer = ({ isDrawerOpen, onClose, onOpenTheme, onOpenLanguage, curren
                             {/* Track Your Requests removed from sidebar */}
                             <DrawerItem iconName="subscriptions" label={getTranslation('Subscriptions', selectedLanguage)} onClick={() => { try { requireAuthNavigate('/subscriptions'); } catch (e) { console.warn('Navigation to subscriptions failed', e); } }} collapsed={collapsed} />
                             <DrawerItem iconName="referral" label={getTranslation('Referral Rewards', selectedLanguage)} rightText={`3 ${getTranslation('invites', selectedLanguage)} ${getTranslation('left', selectedLanguage)}`} isGold={true} onClick={() => { try { requireAuthNavigate('/referralrewards'); } catch (e) { console.warn('Navigation to referralrewards failed', e); } }} collapsed={collapsed} />
-                            {/* Uses the new ShoppingBag icon via iconName="marketplace" - marketplace can remain public */}
-                            <DrawerItem iconName="marketplace" label={getTranslation('Marketplace', selectedLanguage)} rightText={getTranslation('New', selectedLanguage)} isGold={true} onClick={() => { try { navigateTo('/marketplace'); } catch (e) { console.warn('Navigation to marketplace failed', e); } }} collapsed={collapsed} />
+                            {/* Marketplace hidden temporarily */}
                         </>
                     )}
 
@@ -1838,7 +1886,7 @@ const ReportVideoDialog = ({ video, videoTitle, onClose, selectedLanguage = 'Eng
     };
 
     const handleSubmit = async () => {
-        const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+        const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
         const token = localStorage.getItem('regaarder_token');
         let reporter = null;
         try { reporter = JSON.parse(localStorage.getItem('regaarder_user') || '{}'); } catch (e) { }
@@ -1980,35 +2028,90 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
     const [followActive, setFollowActive] = useState(false);
     const [requestActive, setRequestActive] = useState(false);
     const [loadedProfileData, setLoadedProfileData] = useState(null);
-    const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+    const [resolvedCreatorId, setResolvedCreatorId] = useState(null);
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+
+    // Normalize uploaded: prefix to full backend URL and fix http→https
+    const normalizeProfileImageUrl = (url) => {
+        if (!url) return null;
+        let s = String(url);
+        if (s.startsWith('uploaded:')) {
+            const filename = s.split(':')[1] || s.slice('uploaded:'.length);
+            return `${BACKEND}/uploads/${filename}`;
+        }
+        // Fix http → https for backend URLs
+        if (s.startsWith('http://') && s.includes('onrender.com')) {
+            s = s.replace('http://', 'https://');
+        }
+        return s;
+    };
 
     // Fetch user profile data to get avatar if not already provided
     useEffect(() => {
         if (profileData && profileData.avatar) {
-            setLoadedProfileData(profileData);
+            setLoadedProfileData({ ...profileData, avatar: normalizeProfileImageUrl(profileData.avatar) });
             return;
         }
 
         const fetchUserProfile = async () => {
             try {
                 const targetId = creatorId || username || name;
-                const response = await fetch(`${BACKEND}/users`);
-                const result = await response.json();
-                const users = Array.isArray(result.users) ? result.users : (Array.isArray(result) ? result : []);
-                
-                const user = users.find(u => 
-                    u.id === targetId || 
-                    u.email === targetId || 
-                    u.name === targetId || 
-                    (u.name && u.name.toLowerCase() === String(targetId).toLowerCase())
-                );
+                if (!targetId) return;
 
-                if (user) {
+                // Use /users/:id (which works reliably) instead of /users list
+                const response = await fetch(`${BACKEND}/users/${encodeURIComponent(targetId)}`);
+                if (!response.ok) {
+                    setLoadedProfileData(profileData);
+                    return;
+                }
+                const result = await response.json();
+                const user = result.user || result;
+
+                if (user && !user.isPlaceholder) {
+                    // Store the resolved canonical ID for follow/unfollow
+                    setResolvedCreatorId(user.id || user.email);
+                    const rawImg = user.image || user.avatar || user.photoURL || user.profilePicture || null;
                     setLoadedProfileData({
                         ...profileData,
-                        avatar: user.image || user.avatar || null
+                        avatar: normalizeProfileImageUrl(rawImg),
+                        bio: user.bio || user.description || (profileData && profileData.bio) || null,
+                        stats: {
+                            videos: user.videosCount || (user.videos && Array.isArray(user.videos) ? user.videos.length : 0) || (profileData && profileData.stats && profileData.stats.videos) || 0,
+                            requests: user.requestsCompleted || user.fulfilled || (profileData && profileData.stats && profileData.stats.requests) || 0,
+                            followers: user.followers || user.followers_count || 0,
+                            following: user.followingCount || (Array.isArray(user.following) ? user.following.length : 0) || 0
+                        },
+                        joinedDate: user.joinedDate || user.createdAt || user.created_at || (profileData && profileData.joinedDate) || new Date().getFullYear()
                     });
                 } else {
+                    // If not found by first ID, try other identifiers
+                    const alternateIds = [username, name, creatorId].filter(x => x && x !== targetId);
+                    for (const altId of alternateIds) {
+                        try {
+                            const altRes = await fetch(`${BACKEND}/users/${encodeURIComponent(altId)}`);
+                            if (altRes.ok) {
+                                const altResult = await altRes.json();
+                                const altUser = altResult.user || altResult;
+                                if (altUser && !altUser.isPlaceholder) {
+                                    setResolvedCreatorId(altUser.id || altUser.email);
+                                    const rawImg2 = altUser.image || altUser.avatar || altUser.photoURL || null;
+                                    setLoadedProfileData({
+                                        ...profileData,
+                                        avatar: normalizeProfileImageUrl(rawImg2),
+                                        bio: altUser.bio || (profileData && profileData.bio) || null,
+                                        stats: {
+                                            videos: altUser.videosCount || 0,
+                                            requests: altUser.requestsCompleted || 0,
+                                            followers: altUser.followers || altUser.followers_count || 0,
+                                            following: altUser.followingCount || (Array.isArray(altUser.following) ? altUser.following.length : 0) || 0
+                                        },
+                                        joinedDate: altUser.joinedDate || altUser.createdAt || altUser.created_at || new Date().getFullYear()
+                                    });
+                                    return; // Found it
+                                }
+                            }
+                        } catch (e) { /* try next */ }
+                    }
                     setLoadedProfileData(profileData);
                 }
             } catch (err) {
@@ -2046,39 +2149,44 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
             const token = localStorage.getItem('regaarder_token');
 
             try {
-                // Resolve creator real ID from users by id OR email OR name
-                const usersResp = await fetch(`${BACKEND}/users`).then(r => r.json()).catch(() => null);
-                const usersList = usersResp && Array.isArray(usersResp.users) ? usersResp.users : [];
+                // Resolve creator real ID using /users/:id (which works reliably)
                 let resolvedCreator = null;
-                if (usersList.length) {
-                    resolvedCreator = usersList.find(u =>
-                        u.id === targetId ||
-                        u.email === targetId ||
-                        u.name === targetId ||
-                        (u.email && targetId && targetId.includes('@') && u.email.toLowerCase() === String(targetId).toLowerCase()) ||
-                        (u.name && u.name.toLowerCase() === String(targetId).toLowerCase())
-                    ) || null;
+                const lookupIds = [targetId, username, name, creatorId].filter(Boolean);
+                for (const lookupId of [...new Set(lookupIds)]) {
+                    try {
+                        const resp = await fetch(`${BACKEND}/users/${encodeURIComponent(lookupId)}`);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            const u = data.user || data;
+                            if (u && !u.isPlaceholder) {
+                                resolvedCreator = u;
+                                break;
+                            }
+                        }
+                    } catch (e) { /* try next */ }
                 }
 
                 // 1) Check if we're following this creator using canonical creator.id
                 if (resolvedCreator && resolvedCreator.id) {
-                    const followingResponse = await fetch(`${BACKEND}/following/${encodeURIComponent(resolvedCreator.id)}`, {
-                        headers: {
-                            'Authorization': token ? `Bearer ${token}` : ''
-                        }
-                    });
-                    if (followingResponse.ok) {
-                        const { isFollowing } = await followingResponse.json();
-                        setIsFollowing(!!isFollowing);
-                    }
-                }
+                    // Also store resolved ID for follow/unfollow buttons
+                    setResolvedCreatorId(resolvedCreator.id);
+                    // Update follower count from resolved data
+                    const realFollowers = resolvedCreator.followers || resolvedCreator.followers_count || 0;
+                    if (realFollowers > 0) setFollowerCount(realFollowers);
 
-                // 2) Get real follower count for this creator using creator.id
-                if (resolvedCreator && resolvedCreator.id) {
-                    const followersCount = usersList.filter(u =>
-                        Array.isArray(u.following) && u.following.includes(resolvedCreator.id)
-                    ).length;
-                    setFollowerCount(followersCount);
+                    try {
+                        const followingResponse = await fetch(`${BACKEND}/following/${encodeURIComponent(resolvedCreator.id)}`, {
+                            headers: {
+                                'Authorization': token ? `Bearer ${token}` : ''
+                            }
+                        });
+                        if (followingResponse.ok) {
+                            const { isFollowing: followStatus } = await followingResponse.json();
+                            setIsFollowing(!!followStatus);
+                        }
+                    } catch (e) {
+                        console.warn('Error checking follow status:', e);
+                    }
                 }
             } catch (err) {
                 console.error('Error checking follow status:', err);
@@ -2176,9 +2284,9 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                     setFollowActive(true);
 
                                     try {
-                                        // Call backend to unfollow
+                                        // Call backend to unfollow — use resolvedCreatorId for reliable matching
                                         const token = localStorage.getItem('regaarder_token');
-                                        const targetId = creatorId || username || name;
+                                        const targetId = resolvedCreatorId || creatorId || username || name;
 
                                         const response = await fetch(`${BACKEND}/unfollow`, {
                                             method: 'POST',
@@ -2222,11 +2330,11 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                     setFollowActive(true);
 
                                     try {
-                                        // Call backend to follow
+                                        // Call backend to follow — use resolvedCreatorId for reliable matching
                                         const token = localStorage.getItem('regaarder_token');
-                                        const targetId = creatorId || username || name;
+                                        const targetId = resolvedCreatorId || creatorId || username || name;
 
-                                        console.log('Following:', { targetId, creatorId, username, name });
+                                        console.log('Following:', { targetId, resolvedCreatorId, creatorId, username, name });
 
                                         const response = await fetch(`${BACKEND}/follow`, {
                                             method: 'POST',
@@ -2274,12 +2382,12 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                         setTimeout(() => {
                                             // Store creator data in localStorage for ideas page
                                             const creatorData = {
-                                                id: creatorId || username || name,
+                                                id: resolvedCreatorId || creatorId || username || name,
                                                 name: name,
                                                 handle: username,
                                                 displayName: name,
-                                                photoURL: loadedProfileData?.avatar,
-                                                image: loadedProfileData?.avatar
+                                                photoURL: loadedProfileData?.avatar || null,
+                                                image: loadedProfileData?.avatar || null
                                             };
                                             try {
                                                 localStorage.setItem('ideas_selectedCreator_v1', JSON.stringify(creatorData));
@@ -2743,7 +2851,10 @@ const Toast = ({ show, type = 'info', title, message, onClose }) => {
     const IconComponent = currentStyle.icon;
 
     return (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[200] w-full max-w-md mx-auto px-4">
+        <div
+            className="fixed left-1/2 transform -translate-x-1/2 z-[200] w-full max-w-md mx-auto px-4"
+            style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
+        >
             <div
                 ref={toastRef}
                 className={`flex items-center bg-white rounded-lg shadow-lg overflow-hidden transition-all duration-300 cursor-grab select-none ${isDismissing ? 'opacity-0 scale-95 -translate-y-4' : 'opacity-100 scale-100'}`}
@@ -2791,11 +2902,38 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const auth = useAuth();
+    const { videoRef: globalVideoRef } = React.useContext(PlayerContext) || {};
 
     // State is lifted here to manage filtering based on search
     const [searchTerm, setSearchTerm] = useState('');
     const [isSearchActive, setIsSearchActive] = useState(false);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false); // New state for the drawer
+
+    // NEW: Beta wait modal state (Render free tier cold start)
+    const [showBetaWaitModal, setShowBetaWaitModal] = useState(false);
+    const [betaCountdown, setBetaCountdown] = useState(80);
+    const [betaProgress, setBetaProgress] = useState(0);
+    const [betaStepPhase, setBetaStepPhase] = useState(0);
+    const betaTimerRef = useRef(null);
+    const betaShowTimerRef = useRef(null);
+    const betaStartRef = useRef(null);
+    const formatWait = (seconds) => {
+        const s = Math.max(0, Math.floor(Number(seconds) || 0));
+        const m = Math.floor(s / 60);
+        const sec = String(s % 60).padStart(2, '0');
+        return `${m}:${sec}`;
+    };
+    const handleCloseBetaWait = () => {
+        setShowBetaWaitModal(false);
+        if (betaTimerRef.current) {
+            clearInterval(betaTimerRef.current);
+            betaTimerRef.current = null;
+        }
+        if (betaShowTimerRef.current) {
+            clearTimeout(betaShowTimerRef.current);
+            betaShowTimerRef.current = null;
+        }
+    };
 
     // Set drawer close callback in auth context so modals auto-close the drawer
     useEffect(() => {
@@ -2848,7 +2986,27 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const [miniPlayerPos, setMiniPlayerPos] = useState({ right: 16, bottom: 100 });
     const miniDragRef = useRef({ isDragging: false, hasMoved: false, startX: 0, startY: 0, startRight: 16, startBottom: 100 });
     const miniPlayerClosedTimestampRef = useRef(0); // Track when miniplayer was explicitly closed
+    const miniPlayerClosedRef = useRef(false); // Synchronous flag: true while miniplayer should stay closed (prevents timeupdate race)
     const skipNextSwitchToHomeRef = useRef(false); // Skip next switchToHome event if user just closed miniplayer
+
+    // Hydrate closed-state refs from sessionStorage so a freshly-mounted Home instance
+    // (e.g. after clearOverride restores the Routes tree) knows the player was recently closed
+    useEffect(() => {
+        try {
+            const closedTs = sessionStorage.getItem('miniPlayerClosed');
+            if (closedTs) {
+                const ts = parseInt(closedTs, 10);
+                if (!isNaN(ts) && Date.now() - ts < 10000) {
+                    // Closed within last 10 seconds — keep guard active
+                    miniPlayerClosedRef.current = true;
+                    miniPlayerClosedTimestampRef.current = ts;
+                } else {
+                    // Stale — clean up
+                    sessionStorage.removeItem('miniPlayerClosed');
+                }
+            }
+        } catch (e) { }
+    }, []);
 
     // Staff action notification modal state
     const [staffActionNotification, setStaffActionNotification] = useState(null);
@@ -2869,6 +3027,84 @@ const App = ({ overrideMiniPlayerData = null }) => {
         } catch (e) {
             console.warn('Failed to check welcome modal status', e);
         }
+    }, []);
+
+    // Show beta wait modal only if backend is cold (slow first response)
+    useEffect(() => {
+        try {
+            if (sessionStorage.getItem('beta_wait_modal_seen') === '1') return;
+        } catch (e) { }
+
+        const BACKEND = (typeof window !== 'undefined' && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+        const totalSeconds = 80;
+        const totalMs = totalSeconds * 1000;
+        const showDelayMs = 1800;
+        let resolved = false;
+
+        const startCountdown = () => {
+            try { sessionStorage.setItem('beta_wait_modal_seen', '1'); } catch (e) { }
+            betaStartRef.current = Date.now();
+            setBetaCountdown(totalSeconds);
+            setBetaProgress(0);
+            setBetaStepPhase(0);
+            setShowBetaWaitModal(true);
+
+            if (betaTimerRef.current) clearInterval(betaTimerRef.current);
+            betaTimerRef.current = setInterval(() => {
+                const elapsed = Date.now() - (betaStartRef.current || Date.now());
+                const remaining = Math.max(0, Math.ceil((totalMs - elapsed) / 1000));
+                const progress = Math.min(100, Math.round((elapsed / totalMs) * 100));
+                setBetaCountdown(remaining);
+                setBetaProgress(progress);
+
+                // Phase mapping for dynamic steps
+                if (progress < 20) setBetaStepPhase(0); // Step 1 loading
+                else if (progress < 40) setBetaStepPhase(1); // Step 1 done
+                else if (progress < 55) setBetaStepPhase(2); // Step 2 loading
+                else if (progress < 75) setBetaStepPhase(3); // Step 2 done
+                else if (progress < 90) setBetaStepPhase(4); // Step 3 loading
+                else setBetaStepPhase(5); // Step 3 done
+
+                if (elapsed >= totalMs) {
+                    clearInterval(betaTimerRef.current);
+                    betaTimerRef.current = null;
+                    setShowBetaWaitModal(false);
+                }
+            }, 250);
+        };
+
+        betaShowTimerRef.current = setTimeout(() => {
+            if (!resolved) startCountdown();
+        }, showDelayMs);
+
+        // Ping backend; if it responds quickly, skip modal
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        fetch(`${BACKEND}/healthz`, { method: 'GET', cache: 'no-store', signal: controller ? controller.signal : undefined })
+            .catch(() => { /* ignore errors */ })
+            .finally(() => {
+                resolved = true;
+                if (betaShowTimerRef.current) {
+                    clearTimeout(betaShowTimerRef.current);
+                    betaShowTimerRef.current = null;
+                }
+                if (betaTimerRef.current) {
+                    clearInterval(betaTimerRef.current);
+                    betaTimerRef.current = null;
+                }
+                setShowBetaWaitModal(false);
+            });
+
+        return () => {
+            if (controller) controller.abort();
+            if (betaShowTimerRef.current) {
+                clearTimeout(betaShowTimerRef.current);
+                betaShowTimerRef.current = null;
+            }
+            if (betaTimerRef.current) {
+                clearInterval(betaTimerRef.current);
+                betaTimerRef.current = null;
+            }
+        };
     }, []);
 
     const handleRoleSelect = (role) => {
@@ -2900,6 +3136,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
             try { localStorage.removeItem('miniPlayerData'); } catch (e) { }
         }
         
+        // Restore the Routes tree if App.jsx had replaced it via switchToHomeOnly override
+        try { eventBus.emit('clearOverride'); } catch (e) { }
+        
         navigate(cleanPath);
     }, [navigate]);
 
@@ -2920,6 +3159,40 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const [showFullscreenPlayer, setShowFullscreenPlayer] = useState(false);
     const [fullscreenPlayerData, setFullscreenPlayerData] = useState(null);
     const [isTransitioningToMiniPlayer, setIsTransitioningToMiniPlayer] = useState(false);
+    // Ref mirror of showFullscreenPlayer to avoid stale closures in callbacks/timeouts
+    const showFullscreenPlayerRef = useRef(false);
+    useEffect(() => { showFullscreenPlayerRef.current = showFullscreenPlayer; }, [showFullscreenPlayer]);
+
+    // SAFETY NET: When MiniPlayer is showing and fullscreen overlay should be gone,
+    // force-cleanup after a short delay. This catches any stale closure edge cases.
+    useEffect(() => {
+        if (showMiniPlayer && showFullscreenPlayer) {
+            const safetyTimer = setTimeout(() => {
+                if (showFullscreenPlayerRef.current) {
+                    console.warn('[MiniPlayer safety] Force-closing lingering fullscreen overlay');
+                    setShowFullscreenPlayer(false);
+                    setFullscreenPlayerData(null);
+                    setIsTransitioningToMiniPlayer(false);
+                }
+            }, 800);
+            return () => clearTimeout(safetyTimer);
+        }
+    }, [showMiniPlayer, showFullscreenPlayer]);
+
+    // SAFETY NET: When fullscreen player closes, aggressively clean body styles
+    // that the Videoplayer may have injected (belt-and-suspenders with Videoplayer's own cleanup)
+    useEffect(() => {
+        if (!showFullscreenPlayer) {
+            try {
+                const immersiveStyle = document.getElementById('regaarder-immersive-style');
+                if (immersiveStyle) immersiveStyle.remove();
+            } catch (e) {}
+            try {
+                document.documentElement.style.overflow = '';
+                document.body.style.overflow = '';
+            } catch (e) {}
+        }
+    }, [showFullscreenPlayer]);
 
     // NEW: Toast state
     const [toast, setToast] = useState({ show: false, type: 'info', title: '', message: '' });
@@ -2932,7 +3205,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             const token = localStorage.getItem('regaarder_token');
             if (!token) return;
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/notifications`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -3010,9 +3283,10 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Listen for mini player events from videoplayer
     useEffect(() => {
         const handleMiniPlayerRequest = (data) => {
-            // Only show miniplayer if we're on the home page
-            const isHomePage = location.pathname === '/' || location.pathname === '/home';
+            // Show miniplayer if we're on home OR Home is rendered via override view
+            const isHomePage = location.pathname === '/' || location.pathname === '/home' || !!overrideMiniPlayerData;
             if (isHomePage && data && data.video) {
+                miniPlayerClosedRef.current = false; // Reset closed flag — intentional open
                 setMiniPlayerData(data);
                 setMiniPlaying(!(data.paused));
                 setShowMiniPlayer(true);
@@ -3026,10 +3300,14 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 skipNextSwitchToHomeRef.current = false; // Reset flag
                 return;
             }
+            // Also skip if closed ref is set or recently closed (within 5 seconds)
+            if (miniPlayerClosedRef.current) return;
+            const timeSinceClosed = Date.now() - miniPlayerClosedTimestampRef.current;
+            if (timeSinceClosed < 5000) return;
             
-            // Only show miniplayer if we're on the home page
-            const isHomePage = location.pathname === '/' || location.pathname === '/home';
-            if (isHomePage && data && data.video) {
+            // Always accept miniplayer data — even if not currently on /home,
+            // we may be navigating back to home via history.back() from /videoplayer
+            if (data && data.video) {
                 setMiniPlayerData(data);
                 setMiniPlaying(!(data.paused));
                 setShowMiniPlayer(true);
@@ -3040,21 +3318,32 @@ const App = ({ overrideMiniPlayerData = null }) => {
             unsubscribe();
             try { unsubscribe2(); } catch (e) { }
         };
-    }, [location.pathname]);
+    }, [location.pathname, overrideMiniPlayerData]);
 
     // Check for mini player data in multiple channels: override prop, location.state, URL params, localStorage
     useEffect(() => {
-        // Only restore miniplayer on home page
-        const isHomePage = location.pathname === '/' || location.pathname === '/home';
+        // Only restore miniplayer on home page or when Home is rendered via override view
+        const isHomePage = location.pathname === '/' || location.pathname === '/home' || !!overrideMiniPlayerData;
         if (!isHomePage) {
             return; // Don't restore miniplayer data on non-home pages
         }
 
-        // Don't restore if miniplayer was just explicitly closed (within 2 seconds)
-        const timeSinceClosed = Date.now() - miniPlayerClosedTimestampRef.current;
-        if (timeSinceClosed < 2000) {
-            return; // Recently closed, don't auto-restore
+        // Don't restore if miniplayer was just explicitly closed
+        if (miniPlayerClosedRef.current) {
+            return; // Closed flag is set, don't auto-restore
         }
+        const timeSinceClosed = Date.now() - miniPlayerClosedTimestampRef.current;
+        if (timeSinceClosed < 5000) {
+            return; // Recently closed (within 5 seconds), don't auto-restore
+        }
+        // Guard against component remount resetting the ref: check sessionStorage too
+        try {
+            const closedTs = sessionStorage.getItem('miniPlayerClosed');
+            if (closedTs && (Date.now() - Number(closedTs)) < 10000) {
+                miniPlayerClosedRef.current = true; // Re-hydrate the ref from persisted state
+                return; // Recently closed (within 10 seconds), don't auto-restore
+            }
+        } catch (e) { }
 
         try {
             if (overrideMiniPlayerData && overrideMiniPlayerData.video) {
@@ -3124,8 +3413,10 @@ const App = ({ overrideMiniPlayerData = null }) => {
         try {
             // Resolve candidate src from payload
             const src = (miniPlayerData && miniPlayerData.video && (miniPlayerData.video.src || miniPlayerData.video.videoUrl || miniPlayerData.video.url)) || '';
-            if (src && v.src !== src) {
-                try { v.src = src; } catch (e) { /* best-effort */ }
+            const resolvedSrc = resolveMediaUrl(src) || src;
+            if (resolvedSrc && v.src !== resolvedSrc) {
+                try { v.src = resolvedSrc; } catch (e) { /* best-effort */ }
+                try { v.load(); } catch { }
             }
 
             const applyState = () => {
@@ -3138,9 +3429,11 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     // Always play when switching to miniplayer - continue playback
                     try {
                         v.muted = true;
+                        v.playsInline = true;
+                        v.autoplay = true;
                         const p = v.play();
                         if (p && p.then) {
-                            p.then(() => { try { v.muted = false; } catch (e) { } }).catch(() => { });
+                            p.catch(() => { /* autoplay may be blocked */ });
                         }
                     } catch (e) { }
                 } catch (err) { console.warn('miniPlayer applyState failed', err); }
@@ -3154,12 +3447,19 @@ const App = ({ overrideMiniPlayerData = null }) => {
             }
 
             // Persist currentTime periodically so the full player can resume accurately
+            // CRITICAL: Check miniPlayerClosedRef to prevent writing AFTER user closed the player
             timeUpdateHandler = () => {
                 try {
+                    if (miniPlayerClosedRef.current) return; // Player was closed, stop persisting
                     const current = Math.floor(v.currentTime || 0);
                     setMiniPlayerData(prev => {
-                        const next = { ...(prev || {}), time: current };
-                        try { localStorage.setItem('miniPlayerData', JSON.stringify(next)); } catch (e) { }
+                        if (!prev) return prev; // Don't resurrect null data
+                        const next = { ...prev, time: current };
+                        try {
+                            if (!miniPlayerClosedRef.current) {
+                                localStorage.setItem('miniPlayerData', JSON.stringify(next));
+                            }
+                        } catch (e) { }
                         return next;
                     });
                 } catch (e) { }
@@ -3281,7 +3581,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             if (!v) return;
             const bookmarking = !v.bookmarked;
             if (!bookmarking) return; // only persist adds; removal not supported server-side
-            const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/bookmarks/videos`, {
                 method: 'POST',
@@ -3295,7 +3595,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const handleUnpinVideo = async (videoId) => {
         setVideos(prev => prev.map((v) => (v.id === videoId ? { ...v, pinned: false, pinnedDays: null } : v)));
         try {
-            const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/videos/${encodeURIComponent(videoId)}`, {
                 method: 'PATCH',
@@ -3354,7 +3654,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
         setVideos([]); // Reset videos on tab change
         const fetchVideos = async () => {
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
                 console.log('Fetching videos from:', `${BACKEND}/videos`);
 
                 // Fetch bookmarks to sync state
@@ -3397,6 +3697,11 @@ const App = ({ overrideMiniPlayerData = null }) => {
                         console.log('Adding', data.videos.length, 'videos from backend');
                         // Ensure unique IDs and filter out blob URLs
                         // Also filter to show only public videos on the home page
+                        let backendUrlObj = null;
+                        try { backendUrlObj = new URL(BACKEND); } catch (e) { backendUrlObj = null; }
+                        const backendHost = backendUrlObj ? backendUrlObj.host : (window && window.location ? window.location.host : '');
+                        const backendProtocol = backendUrlObj ? backendUrlObj.protocol : (window && window.location ? window.location.protocol : 'https:');
+
                         const uniqueVideos = data.videos
                             .filter(video => {
                                 // Exclude videos staff have hidden, deleted, or shadow-deleted so the
@@ -3432,59 +3737,52 @@ const App = ({ overrideMiniPlayerData = null }) => {
 
                                 // Use a stable ID derived from backend id or timestamp (no random suffix)
                                 const uniqueId = (video.id != null && video.id !== undefined) ? String(video.id) : (video.timestamp ? `ts-${video.timestamp}` : (video.videoUrl ? `url-${video.videoUrl}` : `idx-${index}`));
-                                const videoUrlRaw = (video.videoUrl && !video.videoUrl.startsWith('blob:')) ? video.videoUrl : null;
-                                let videoUrl = null;
-                                if (videoUrlRaw) {
+                                const normalizeMediaUrl = (rawUrl) => {
+                                    if (!rawUrl || rawUrl.startsWith('blob:')) return null;
                                     try {
-                                        const u = new URL(videoUrlRaw);
-                                        // rewrite hostname if backend used 'localhost' so mobile/remote clients can reach it
-                                        if (u.hostname === 'localhost') u.hostname = window.location.hostname;
-                                        // avoid mixed-content: match page protocol when possible
-                                        if (window && window.location && window.location.protocol) u.protocol = window.location.protocol;
-                                        videoUrl = u.toString();
+                                        const u = new URL(rawUrl, BACKEND);
+                                        const host = (u.hostname || '').toLowerCase();
+                                        const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+                                        if (backendProtocol) u.protocol = backendProtocol;
+                                        if (backendHost) {
+                                            const [bh, bp] = backendHost.split(':');
+                                            if (isLocalhost || !u.host || u.protocol === 'capacitor:') {
+                                                u.hostname = bh;
+                                                if (bp) u.port = bp;
+                                            }
+                                        }
+                                        return u.toString();
                                     } catch (e) {
-                                        // fallback to simple replace if URL parsing fails
-                                        try { videoUrl = videoUrlRaw.replace('://localhost', `://${window.location.hostname}`); } catch (e2) { videoUrl = videoUrlRaw; }
+                                        return rawUrl;
                                     }
-                                }
+                                };
+
+                                const videoUrlRaw = (video.videoUrl || video.url || video.src) && !String(video.videoUrl || video.url || video.src).startsWith('blob:')
+                                    ? (video.videoUrl || video.url || video.src)
+                                    : null;
+                                const videoUrl = normalizeMediaUrl(videoUrlRaw);
 
                                 return {
                                     ...video,
                                     id: uniqueId,
                                     date: relativeTime,
-                                    // Replace blob URLs with fallback placeholders and rewrite localhost to current host
+                                    // Replace blob URLs with fallback placeholders
                                     imageUrl: (() => {
+                                        const rawThumb = video.thumbnailUrl || video.thumbUrl || video.thumb || video.poster || video.cover || video.thumbnail || video.image;
                                         const url = (video.imageUrl && !video.imageUrl.startsWith('blob:'))
                                             ? video.imageUrl
-                                            : video.thumbnail || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable';
-                                        try {
-                                            const iu = new URL(url);
-                                            if (iu.hostname === 'localhost') iu.hostname = window.location.hostname;
-                                            if (window && window.location && window.location.protocol) iu.protocol = window.location.protocol;
-                                            return iu.toString();
-                                        } catch (e) { return url; }
+                                            : (rawThumb || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable');
+                                        return normalizeMediaUrl(url) || url;
                                     })(),
                                     // Process author avatar if available
                                     authorAvatar: (() => {
                                         if (!video.authorAvatar) return null;
-                                        const url = video.authorAvatar;
-                                        try {
-                                            const u = new URL(url);
-                                            if (u.hostname === 'localhost') u.hostname = window.location.hostname;
-                                            if (window && window.location && window.location.protocol) u.protocol = window.location.protocol;
-                                            return u.toString();
-                                        } catch (e) { return url; }
+                                        return normalizeMediaUrl(video.authorAvatar) || video.authorAvatar;
                                     })(),
                                     // Process requester avatar if available
                                     requesterAvatar: (() => {
                                         if (!video.requesterAvatar) return null;
-                                        const url = video.requesterAvatar;
-                                        try {
-                                            const u = new URL(url);
-                                            if (u.hostname === 'localhost') u.hostname = window.location.hostname;
-                                            if (window && window.location && window.location.protocol) u.protocol = window.location.protocol;
-                                            return u.toString();
-                                        } catch (e) { return url; }
+                                        return normalizeMediaUrl(video.requesterAvatar) || video.requesterAvatar;
                                     })(),
                                     videoUrl: videoUrl,
                                     // Ensure time field exists
@@ -3598,24 +3896,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
         displayedVideos.sort((a, b) => getVideoTimestamp(b) - getVideoTimestamp(a));
     }
 
-    // One-time Requests tooltip state: show the tooltip during the user's
-    // first session (unless they've already seen it). Persisted via
-    // localStorage as `hasSeenRequests`.
-    const [showRequestsTooltip, setShowRequestsTooltip] = useState(() => {
-        try {
-            return localStorage.getItem('hasSeenRequests') !== '1';
-        } catch (e) {
-            return true;
-        }
-    });
-
-    const markRequestsSeen = () => {
-        try {
-            localStorage.setItem('hasSeenRequests', '1');
-        } catch (e) { }
-        setShowRequestsTooltip(false);
-    };
-
     const scrollableHeightStyle = {
         height: 'calc(100vh - 160px)',
     };
@@ -3639,7 +3919,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
         });
 
         try {
-            const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/videos/${encodeURIComponent(videoId)}`, {
                 method: 'PATCH',
@@ -3706,7 +3986,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                         try {
                             const token = localStorage.getItem('regaarder_token');
                             if (token && staffActionNotification.id) {
-                                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                                const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
                                 await fetch(`${BACKEND}/notifications/${staffActionNotification.id}/read`, {
                                     method: 'POST',
                                     headers: { 'Authorization': `Bearer ${token}` }
@@ -3835,104 +4115,129 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 </div>
             )}
 
-            {/* Blurred overlay to draw focus to the Requests tooltip when shown */}
-            {showRequestsTooltip && (
-                <div
-                    className="absolute inset-0 bg-black/70 backdrop-blur-none z-40"
-                    onClick={() => { markRequestsSeen(); }}
-                    aria-hidden="true"
-                />
+            {!showFullscreenPlayer && (
+                <TopHeader setIsDrawerOpen={setIsDrawerOpen} navigate={navigate} selectedLanguage={selectedLanguage} onLanguageSelect={handleLanguageSelect} />
             )}
-            <TopHeader setIsDrawerOpen={setIsDrawerOpen} navigate={navigate} selectedLanguage={selectedLanguage} onLanguageSelect={handleLanguageSelect} />
             {/* Main scrollable content area */}
             <div className="overflow-y-auto" style={scrollableHeightStyle}>
-                <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} onFocusChange={setIsSearchActive} selectedLanguage={selectedLanguage} />
+                <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} onFocusChange={setIsSearchActive} selectedLanguage={selectedLanguage} videos={videos} navigate={navigate} />
                 <TabPills activeTab={selectedTab} setActiveTab={setSelectedTab} selectedLanguage={selectedLanguage} />
 
                 {/* Conditional Rendering: If search term is active and no results, show 404 screen */}
                 {displayedVideos.length > 0 ? (
-                    (() => {
-                        const firstRequested = displayedVideos.find(v => v.requester);
-                        const firstRequestedId = firstRequested ? firstRequested.id : null;
-                        return displayedVideos.map(video => (
-                            <ContentCard
-                                key={video.id}
-                                video={video}
-                                allVideos={videos}
-                                onReportVideo={handleReportVideo}
-                                onPinVideo={handlePinVideo}
-                                onOpenProfile={handleOpenProfile}
-                                onToggleBookmark={handleToggleBookmark} // <-- pass toggle handler
-                                onUnpinVideo={handleUnpinVideo} // <-- pass unpin handler
-                                onOpenShare={handleOpenShare} // <-- pass open share handler
-                                onNotInterested={handleNotInterested} // <-- pass not interested handler
-                                selectedLanguage={selectedLanguage} // pass current language
-                                onAddToPlaylistStart={(v) => { setPlaylistTargetVideo(v); setIsPlaylistPickerOpen(true); }}
-                                onVideoClick={async () => {
-                                    // Store all current videos in localStorage for discover modal to use
-                                    // Normalize the videos to ensure consistent property names
-                                    try {
-                                        const normalizedVideos = videos.map(v => ({
-                                            ...v,
-                                            url: v.url || v.videoUrl,
-                                            videoUrl: v.videoUrl || v.url,
-                                            creator: v.creator || v.author,
-                                            thumbnail: v.thumbnail || v.imageUrl,
-                                        }));
-                                        localStorage.setItem('discoverAllVideos', JSON.stringify(normalizedVideos));
-                                    } catch (e) { }
+                    displayedVideos.map(video => (
+                        <ContentCard
+                            key={video.id}
+                            video={video}
+                            allVideos={videos}
+                            onReportVideo={handleReportVideo}
+                            onPinVideo={handlePinVideo}
+                            onOpenProfile={handleOpenProfile}
+                            onToggleBookmark={handleToggleBookmark} // <-- pass toggle handler
+                            onUnpinVideo={handleUnpinVideo} // <-- pass unpin handler
+                            onOpenShare={handleOpenShare} // <-- pass open share handler
+                            onNotInterested={handleNotInterested} // <-- pass not interested handler
+                            selectedLanguage={selectedLanguage} // pass current language
+                            onAddToPlaylistStart={(v) => { setPlaylistTargetVideo(v); setIsPlaylistPickerOpen(true); }}
+                            onVideoClick={async () => {
+                                showVideoLaunchMask();
+                                // Store all current videos in localStorage for discover modal to use
+                                // Normalize the videos to ensure consistent property names
+                                try {
+                                    const normalizedVideos = videos.map(v => ({
+                                        ...v,
+                                        url: v.url || v.videoUrl,
+                                        videoUrl: v.videoUrl || v.url,
+                                        creator: v.creator || v.author,
+                                        thumbnail: v.thumbnail || v.imageUrl,
+                                    }));
+                                    localStorage.setItem('discoverAllVideos', JSON.stringify(normalizedVideos));
+                                } catch (e) { }
 
-                                    // Fetch the latest video data from backend to ensure ads are up-to-date
-                                    let freshVideo = video;
-                                    try {
-                                        const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
-                                        const freshResponse = await fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}`);
-                                        if (freshResponse.ok) {
-                                            const freshData = await freshResponse.json();
-                                            if (freshData && freshData.id) {
-                                                freshVideo = freshData;
-                                                console.log('Refreshed video data for ads:', freshVideo.id);
-                                            }
+                                // Fetch the latest video data from backend to ensure ads are up-to-date
+                                let freshVideo = video;
+                                try {
+                                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+                                    const freshResponse = await fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}`);
+                                    if (freshResponse.ok) {
+                                        const freshData = await freshResponse.json();
+                                        if (freshData && freshData.id) {
+                                            freshVideo = freshData;
+                                            console.log('Refreshed video data for ads:', freshVideo.id);
                                         }
-                                    } catch (e) {
-                                        console.warn('Could not refresh video data:', e);
-                                        // Use stale video if fetch fails
                                     }
+                                } catch (e) {
+                                    console.warn('Could not refresh video data:', e);
+                                    // Use stale video if fetch fails
+                                }
 
-                                    // Overlays are now part of the video object from the backend
-                                    const overlays = freshVideo.overlays || [];
+                                // Overlays are now part of the video object from the backend
+                                const overlays = freshVideo.overlays || [];
 
-                                    // Show fullscreen videoplayer as overlay (seamless transition)
-                                    const initialVideoData = {
-                                        id: freshVideo.id || '',
-                                        title: freshVideo.title || '',
-                                        author: freshVideo.author || '',
-                                        requester: freshVideo.requester || '',
-                                        videoUrl: freshVideo.videoUrl || '',
-                                        imageUrl: freshVideo.imageUrl || '',
-                                        views: freshVideo.views || 0,
-                                        likes: freshVideo.likes || 0,
-                                        comments: freshVideo.comments || 0,
-                                        duration: freshVideo.duration || 0,
-                                        overlays: overlays,
-                                        ads: freshVideo.ads || {},
-                                    };
-                                    
-                                    setFullscreenPlayerData({
-                                        video: initialVideoData,
-                                        initialVideo: initialVideoData,
-                                        discoverItems: videos,
-                                    });
-                                    setShowFullscreenPlayer(true);
-                                    setIsTransitioningToMiniPlayer(false);
-                                }} // <-- pass video click handler with video data
-                                // Tooltip props
-                                showRequestsTooltip={showRequestsTooltip}
-                                markRequestsSeen={markRequestsSeen}
-                                isFirstRequested={video.id === firstRequestedId}
-                            />
-                        ));
-                    })()
+                                // Show fullscreen videoplayer as overlay (seamless transition)
+                                const initialVideoData = {
+                                    id: freshVideo.id || '',
+                                    title: freshVideo.title || '',
+                                    author: freshVideo.author || '',
+                                    requester: freshVideo.requester || '',
+                                    videoUrl: freshVideo.videoUrl || freshVideo.url || freshVideo.src || '',
+                                    url: freshVideo.url || freshVideo.videoUrl || freshVideo.src || '',
+                                    imageUrl: freshVideo.imageUrl || '',
+                                    views: freshVideo.views || 0,
+                                    likes: freshVideo.likes || 0,
+                                    comments: freshVideo.comments || 0,
+                                    duration: freshVideo.duration || 0,
+                                    overlays: overlays,
+                                    ads: freshVideo.ads || {},
+                                };
+
+                                // Web: navigate to /videoplayer route instead of overlay
+                                try {
+                                    const isNative = window?.Capacitor?.isNativePlatform?.() === true;
+                                    if (!isNative) {
+                                        try {
+                                            localStorage.setItem('videoplayer_quick_load', JSON.stringify({
+                                                url: initialVideoData.videoUrl || initialVideoData.url,
+                                                title: initialVideoData.title || '',
+                                                creator: initialVideoData.author || ''
+                                            }));
+                                        } catch { }
+                                        const params = new URLSearchParams();
+                                        if (initialVideoData.videoUrl || initialVideoData.url) params.set('src', initialVideoData.videoUrl || initialVideoData.url);
+                                        if (initialVideoData.title) params.set('title', initialVideoData.title);
+                                        if (initialVideoData.author) params.set('channel', initialVideoData.author);
+                                        // Use React Router navigate for in-app navigation (no reload)
+                                        navigate(`/videoplayer?${params.toString()}`, { state: { video: initialVideoData } });
+                                        return;
+                                    }
+                                } catch { }
+                                
+                                setFullscreenPlayerData({
+                                    video: initialVideoData,
+                                    initialVideo: initialVideoData,
+                                    discoverItems: videos,
+                                });
+                                setShowFullscreenPlayer(true);
+                                setIsTransitioningToMiniPlayer(false);
+
+                                // Enable immersive mode on Android when opening the player
+                                try {
+                                    if (Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+                                        if (ImmersiveMode) ImmersiveMode.setImmersive({ enabled: true });
+                                        const platform = Capacitor.getPlatform ? Capacitor.getPlatform() : null;
+                                        if (platform === 'android' && SystemBars) {
+                                            SystemBars.hide?.({ bar: 'StatusBar' });
+                                            SystemBars.hide?.({ bar: 'NavigationBar' });
+                                        }
+                                        if (platform === 'ios' && SystemBars) {
+                                            SystemBars.hide?.({ bar: 'StatusBar', animation: 'FADE' });
+                                            SystemBars.hide?.({ bar: 'NavigationBar' });
+                                        }
+                                    }
+                                } catch (e) { console.warn('Immersive mode error:', e); }
+                            }} // <-- pass video click handler with video data
+                        />
+                    ))
                 ) : (searchTerm.length > 0 && (
                     <div className="flex flex-col items-center justify-center text-center px-8 pt-0" style={{ marginTop: '-18px' }}>
                         <p
@@ -4026,18 +4331,91 @@ const App = ({ overrideMiniPlayerData = null }) => {
             <SideDrawer isDrawerOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} onOpenTheme={handleOpenTheme} onOpenLanguage={handleOpenLanguage} currentLanguageFlag={selectedLanguageFlag} onOpenCreator={handleOpenCreatorOnboarding} navigateTo={navigateTo} selectedLanguage={selectedLanguage} />
             <BottomBar selectedLanguage={selectedLanguage} />
 
+            {/* Beta Wait Modal (cold-start friendly) */}
+            {showBetaWaitModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/50" onClick={handleCloseBetaWait}></div>
+                    <div className="relative w-[92%] max-w-md bg-white rounded-2xl shadow-2xl p-6">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] uppercase tracking-widest px-2 py-1 rounded-full font-semibold" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: 'var(--color-final, #7C3AED)' }}>Beta</span>
+                                <h2 className="text-lg font-semibold text-gray-900">Thanks for being early</h2>
+                            </div>
+                        </div>
+
+                        <p className="text-sm text-gray-600 mt-2">
+                            We’re warming up our beta servers so your first experience feels smooth and reliable. Your patience helps us improve for everyone.
+                        </p>
+
+                        <div className="mt-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--color-final, #7C3AED)', borderTopColor: 'transparent' }} aria-hidden="true"></div>
+                            <div className="flex-1">
+                                <div className="text-xs text-gray-500">Estimated wait</div>
+                                <div className={`text-2xl font-semibold ${betaCountdown <= 20 ? 'text-emerald-600' : 'text-red-500'}`}>{formatWait(betaCountdown)}</div>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                                className="h-full transition-all duration-300"
+                                style={{ width: `${betaProgress}%`, backgroundColor: 'var(--color-final, #7C3AED)' }}
+                            ></div>
+                        </div>
+
+                        <div className="mt-4 space-y-2 text-sm text-gray-600">
+                            <div className="flex items-center gap-2">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${betaStepPhase >= 1 ? 'bg-emerald-100 text-emerald-700' : betaStepPhase === 0 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {betaStepPhase >= 1 ? <Check size={12} /> : '1'}
+                                </span>
+                                <span>{betaStepPhase === 0 ? 'Waking servers…' : 'Waking servers for a steady experience'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${betaStepPhase >= 3 ? 'bg-emerald-100 text-emerald-700' : betaStepPhase === 2 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {betaStepPhase >= 3 ? <Check size={12} /> : '2'}
+                                </span>
+                                <span>{betaStepPhase === 2 ? 'Syncing content…' : 'Syncing content so everything loads cleanly'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${betaStepPhase >= 5 ? 'bg-emerald-100 text-emerald-700' : betaStepPhase === 4 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {betaStepPhase >= 5 ? <Check size={12} /> : '3'}
+                                </span>
+                                <span>{betaStepPhase === 4 ? 'Final polish…' : 'Final polish before you jump in'}</span>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 flex items-center justify-between">
+                            <button onClick={handleCloseBetaWait} className="text-xs text-gray-500 underline">Enter anyway</button>
+                            <div className="text-xs text-gray-500">Thank you for shaping the beta</div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Mini Player (Floating) - Extracted for performance */}
             {showMiniPlayer && miniPlayerData && (
                 <MiniPlayer
                     data={miniPlayerData}
                     onClose={() => {
+                        // CRITICAL: Set synchronous closed flag FIRST to stop timeupdate from re-writing localStorage
+                        miniPlayerClosedRef.current = true;
                         // Set flag to prevent switchToHome event from immediately showing miniplayer again
                         skipNextSwitchToHomeRef.current = true;
                         // Mark when miniplayer was explicitly closed to prevent auto-restore
                         miniPlayerClosedTimestampRef.current = Date.now();
+                        // Persist closed state in sessionStorage so it survives component remounts
+                        try { sessionStorage.setItem('miniPlayerClosed', String(Date.now())); } catch (e) { }
+                        // Synchronously nuke localStorage BEFORE React batches state updates
+                        try { localStorage.removeItem('miniPlayerData'); } catch (e) { }
                         setShowMiniPlayer(false);
                         setMiniPlayerData(null);
-                        try { localStorage.removeItem('miniPlayerData'); } catch (e) { }
+                        // Double-remove after React flush in case timeupdate snuck one in
+                        setTimeout(() => { try { localStorage.removeItem('miniPlayerData'); } catch (e) { } }, 50);
+                        setTimeout(() => { try { localStorage.removeItem('miniPlayerData'); } catch (e) { } }, 200);
+                        // Clean up any lingering vp-launch-mask that could block taps
+                        try { const m = document.getElementById('vp-launch-mask'); if (m) m.remove(); } catch (e) { }
+                        // Safety net: emit clearOverride to restore the Routes tree if App.jsx
+                        // had previously replaced it via switchToHomeOnly
+                        try { eventBus.emit('clearOverride'); } catch (e) { }
                     }}
                     onExpand={() => {
                         // Expand mini-player back to fullscreen videoplayer
@@ -4055,20 +4433,23 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     }}
                     onUpdateData={setMiniPlayerData}
                     navigate={navigate}
+                    onMiniPlayerReady={() => {
+                        // MiniPlayer is ready - now safe to close fullscreen player
+                        // This creates a seamless handoff like YouTube
+                        // Use ref to avoid stale closure issues
+                        if (showFullscreenPlayerRef.current) {
+                            setShowFullscreenPlayer(false);
+                            setFullscreenPlayerData(null);
+                            setIsTransitioningToMiniPlayer(false);
+                        }
+                    }}
                 />
             )}
 
             {/* FULLSCREEN VIDEOPLAYER OVERLAY - Seamless Transition */}
             {showFullscreenPlayer && fullscreenPlayerData && (
                 <div
-                    className="fixed inset-0 z-50 bg-black"
-                    style={{
-                        animation: 'fadeIn 0.3s ease-in-out',
-                        '@keyframes fadeIn': {
-                            'from': { opacity: 0 },
-                            'to': { opacity: 1 }
-                        }
-                    }}
+                    className="fixed inset-0 z-[120] bg-black"
                 >
                     <style>{`
                         @keyframes fadeInOverlay {
@@ -4087,33 +4468,149 @@ const App = ({ overrideMiniPlayerData = null }) => {
                         }
                     `}</style>
                     <Videoplayer
-                        onChevronDown={() => {
+                        onChevronDown={(storedData) => {
                             // Transition to miniplayer
+                            miniPlayerClosedRef.current = false; // Reset closed flag — intentional open via minimize
                             setIsTransitioningToMiniPlayer(true);
                             
-                            // Get current video state from videoplayer
-                            // Store in miniPlayerData
-                            if (fullscreenPlayerData && fullscreenPlayerData.video) {
+                            // CRITICAL: Move global video element to document.body BEFORE unmounting Videoplayer
+                            // This prevents it from being removed from DOM when Videoplayer unmounts
+                            try {
+                                const v = globalVideoRef && globalVideoRef.current;
+                                if (v && v.parentNode) {
+                                    // Temporarily move video to body so it survives Videoplayer unmount
+                                    v.style.position = 'fixed';
+                                    v.style.top = '-9999px';
+                                    v.style.left = '-9999px';
+                                    v.style.width = '1px';
+                                    v.style.height = '1px';
+                                    v.style.opacity = '0';
+                                    document.body.appendChild(v);
+                                }
+                            } catch (e) { console.warn('Failed to preserve video element', e); }
+                            
+                            // Use the data passed from Videoplayer which includes current time and paused: false
+                            // This ensures seamless playback continuation
+                            if (storedData && storedData.video) {
+                                // storedData from Videoplayer already has:
+                                // - video: full video info
+                                // - time: current playback time
+                                // - paused: false (to keep playing)
                                 const miniData = {
-                                    video: fullscreenPlayerData.video,
-                                    time: 0, // This should come from videoplayer current time
-                                    paused: true // Pause when transitioning to miniplayer
+                                    ...storedData,
+                                    paused: false // Ensure video keeps playing in miniplayer
                                 };
                                 
                                 try {
                                     localStorage.setItem('miniPlayerData', JSON.stringify(miniData));
                                 } catch (e) { }
                                 
-                                setMiniPlayerData(miniData);
-                                setShowMiniPlayer(true);
+                                // Preload thumbnail before showing MiniPlayer (prevents empty flash)
+                                const thumbUrl = storedData.video?.imageUrl || storedData.video?.thumbnail || '';
+                                if (thumbUrl) {
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        setMiniPlayerData(miniData);
+                                        setShowMiniPlayer(true);
+                                    };
+                                    img.onerror = () => {
+                                        // Show anyway if thumbnail fails
+                                        setMiniPlayerData(miniData);
+                                        setShowMiniPlayer(true);
+                                    };
+                                    img.src = thumbUrl;
+                                    // Fallback timeout in case image takes too long
+                                    setTimeout(() => {
+                                        if (!showMiniPlayer) {
+                                            setMiniPlayerData(miniData);
+                                            setShowMiniPlayer(true);
+                                        }
+                                    }, 300);
+                                } else {
+                                    setMiniPlayerData(miniData);
+                                    setShowMiniPlayer(true);
+                                }
+                            } else if (fullscreenPlayerData && fullscreenPlayerData.video) {
+                                // Fallback: build miniData from fullscreenPlayerData
+                                let currentTime = 0;
+                                try {
+                                    const v = globalVideoRef && globalVideoRef.current;
+                                    if (v) {
+                                        currentTime = v.currentTime || 0;
+                                    }
+                                } catch (e) { }
+                                const miniData = {
+                                    video: fullscreenPlayerData.video,
+                                    time: currentTime,
+                                    paused: false // Keep playing
+                                };
+                                
+                                try {
+                                    localStorage.setItem('miniPlayerData', JSON.stringify(miniData));
+                                } catch (e) { }
+                                
+                                // Preload thumbnail before showing MiniPlayer
+                                const thumbUrl = fullscreenPlayerData.video?.imageUrl || fullscreenPlayerData.video?.thumbnail || '';
+                                if (thumbUrl) {
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        setMiniPlayerData(miniData);
+                                        setShowMiniPlayer(true);
+                                    };
+                                    img.onerror = () => {
+                                        setMiniPlayerData(miniData);
+                                        setShowMiniPlayer(true);
+                                    };
+                                    img.src = thumbUrl;
+                                    setTimeout(() => {
+                                        if (!showMiniPlayer) {
+                                            setMiniPlayerData(miniData);
+                                            setShowMiniPlayer(true);
+                                        }
+                                    }, 300);
+                                } else {
+                                    setMiniPlayerData(miniData);
+                                    setShowMiniPlayer(true);
+                                }
                             }
+
+                            // Restore system UI when exiting to miniplayer
+                            try {
+                                if (Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+                                    ImmersiveMode.setImmersive({ enabled: false });
+                                    const platform = Capacitor.getPlatform ? Capacitor.getPlatform() : null;
+                                    if (platform === 'ios') {
+                                        SystemBars?.show?.({ bar: 'StatusBar', animation: 'FADE' });
+                                        SystemBars?.show?.({ bar: 'NavigationBar' });
+                                    }
+                                    if (platform === 'android') {
+                                        SystemBars?.show?.({ bar: 'StatusBar' });
+                                        SystemBars?.show?.({ bar: 'NavigationBar' });
+                                    }
+                                }
+                            } catch (e) { }
                             
-                            // Close fullscreen overlay
-                            setTimeout(() => {
-                                setShowFullscreenPlayer(false);
-                                setFullscreenPlayerData(null);
-                                setIsTransitioningToMiniPlayer(false);
-                            }, 300);
+                            // DON'T close fullscreen player here - wait for MiniPlayer to signal ready
+                            // This creates seamless handoff like YouTube (no empty flash)
+                            // Fullscreen closes via onMiniPlayerReady callback
+                            // Fallback timeout in case callback doesn't fire
+                            // Uses ref to avoid stale closure issues
+                            // Immediately close fullscreen overlay - don't wait for MiniPlayer ready
+                            setShowFullscreenPlayer(false);
+                            setFullscreenPlayerData(null);
+                            setIsTransitioningToMiniPlayer(false);
+                            // Always clean body styles on exit regardless
+                            try {
+                                const immersiveStyle = document.getElementById('regaarder-immersive-style');
+                                if (immersiveStyle) immersiveStyle.remove();
+                            } catch (e) {}
+                            try {
+                                document.documentElement.style.overflow = '';
+                                document.body.style.overflow = '';
+                                document.body.style.position = '';
+                                document.body.style.width = '';
+                                document.body.style.height = '';
+                            } catch (e) {}
                         }}
                         data={fullscreenPlayerData}
                         initialVideo={fullscreenPlayerData?.initialVideo}
@@ -4148,7 +4645,11 @@ const App = ({ overrideMiniPlayerData = null }) => {
             {isShareOpen && (
                 <ShareDialog
                     onClose={handleCloseShare}
-                    link={shareVideo ? `https://example.com/video/${shareVideo.id}` : window.location.href}
+                    link={shareVideo ? (
+                        (shareVideo.id || shareVideo.videoId)
+                            ? `${WEB_URL}/share/video/${encodeURIComponent(shareVideo.id || shareVideo.videoId)}`
+                            : `${WEB_URL}/videoplayer?src=${encodeURIComponent(shareVideo.url || shareVideo.videoUrl || shareVideo.src || '')}`
+                    ) : `${WEB_URL}/home`}
                     onCopySuccess={handleCopySuccess}
                     selectedLanguage={selectedLanguage}
                 />
@@ -4190,7 +4691,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
 
 // --- ContentCard Component (where the fix is applied) ---
 
-const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggleBookmark, onUnpinVideo, onOpenShare, onNotInterested, onVideoClick, onAddToPlaylistStart, showRequestsTooltip = false, markRequestsSeen = () => { }, isFirstRequested = false, allVideos = [], selectedLanguage = 'English' }) => { // added tooltip props and allVideos
+const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggleBookmark, onUnpinVideo, onOpenShare, onNotInterested, onVideoClick, onAddToPlaylistStart, allVideos = [], selectedLanguage = 'English' }) => { // added tooltip props and allVideos
 
     // Helper to format date string for display with translation (local to card to avoid scoping issues)
     const formatDate = (dateStr) => {
@@ -4603,27 +5104,10 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
                                     <Icon name="pencil" size={14} className="text-current mr-1" />
                                     Requested
 
-                                    {/* Pulsing indicator anchored to the Requested tag */}
-                                    {isFirstRequested && showRequestsTooltip && (
-                                        <div className="absolute -top-1 -right-1 w-6 h-6 z-50 pointer-events-none">
-                                            <span className="absolute inset-0 rounded-full bg-[var(--color-final, rgba(124,58,237,0.12))] opacity-60 animate-ping"></span>
-                                            <span className="absolute inset-0 m-1 rounded-full bg-[var(--color-final, rgba(124,58,237,0.12))]"></span>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
                         )}
 
-                        {/* One-time tooltip shown below the first Requested badge */}
-                        {isFirstRequested && showRequestsTooltip && (
-                            <div className="absolute top-full mt-3 left-1/2 transform -translate-x-1/2 w-60 bg-white text-sm text-gray-800 p-3 rounded-lg shadow-lg z-50">
-                                <div className="font-semibold">Requests</div>
-                                <div className="text-xs text-gray-500 mt-1">See what people want to watch and add your own ideas anytime..</div>
-                                <div className="mt-2 text-right">
-                                    <button onClick={() => { try { localStorage.setItem('requested_badge_seen', '1'); } catch (e) { } setRequestedVisible(false); markRequestsSeen && markRequestsSeen(); }} className="text-xs font-medium text-[var(--color-gold)]">Got it</button>
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     <div className="absolute bottom-3 right-3 bg-black bg-opacity-70 rounded-lg px-2 py-1">
@@ -4689,7 +5173,7 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
 
     // Use sticky top-0 and z-[60] to ensure it stays on top of other elements on mobile
     return (
-        <div className="sticky top-0 z-[60] flex items-center justify-between px-5 py-3 bg-white border-b border-gray-100 transition-all" style={{ paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))', paddingBottom: '12px', minHeight: '48px', height: '48px' }}>
+        <div className="sticky top-0 z-[60] flex items-center justify-between px-5 py-3 bg-white border-b border-gray-100 transition-all" style={{ paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))', paddingBottom: '12px', minHeight: '48px', height: 'auto', marginBottom: '4px' }}>
             <div className="flex items-center space-x-3">
                 <button 
                     type="button" 
@@ -4727,20 +5211,96 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
     );
 };
 
-const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selectedLanguage = 'English' }) => {
+const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selectedLanguage = 'English', videos = [] }) => {
     const [isFocused, setIsFocused] = useState(false);
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
     const [highlight, setHighlight] = useState(-1);
+    const [dropdownStyle, setDropdownStyle] = useState({});
     const containerRef = useRef(null);
     const debounceRef = useRef(null);
 
     const SELECTED_CREATOR_KEY = 'ideas_selectedCreator_v1';
 
+    const getBackendBase = () => (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+
+    // Extract unique creators from loaded video data (local fallback for search)
+    const extractLocalCreators = (query) => {
+        if (!query || !videos || !videos.length) return [];
+        const q = query.toLowerCase();
+        const creatorMap = new Map();
+        videos.forEach(v => {
+            const name = v.author || v.creator || v.channel || '';
+            if (!name) return;
+            const key = name.toLowerCase();
+            if (key.includes(q) && !creatorMap.has(key)) {
+                creatorMap.set(key, {
+                    id: v.authorId || v.creatorId || v.userId || `local-${key}`,
+                    name: name,
+                    handle: v.authorHandle || v.creatorHandle || key.replace(/\s+/g, ''),
+                    image: v.authorImage || v.creatorImage || v.authorAvatar || null,
+                    avatar: v.authorImage || v.creatorImage || v.authorAvatar || null,
+                    isCreator: true,
+                    _localFallback: true,
+                });
+            }
+            // Also check requester
+            const req = v.requester || '';
+            if (req) {
+                const rkey = req.toLowerCase();
+                if (rkey.includes(q) && !creatorMap.has(rkey)) {
+                    creatorMap.set(rkey, {
+                        id: v.requesterId || `local-${rkey}`,
+                        name: req,
+                        handle: rkey.replace(/\s+/g, ''),
+                        isCreator: false,
+                        _localFallback: true,
+                    });
+                }
+            }
+        });
+        return Array.from(creatorMap.values());
+    };
+    const normalizeImageUrl = (url) => {
+        if (!url) return null;
+        try {
+            const base = getBackendBase();
+            let s = String(url || '');
+            if (s.startsWith('uploaded:')) {
+                const filename = s.split(':')[1] || s.slice('uploaded:'.length);
+                return `${base}/uploads/${filename}`;
+            }
+            // Fix http → https for backend URLs
+            if (s.startsWith('http://') && s.includes('onrender.com')) {
+                s = s.replace('http://', 'https://');
+            }
+            return s;
+        } catch (e) {
+            return url;
+        }
+    };
+
+    // Compute dropdown position using fixed positioning to avoid overflow clipping
+    const updateDropdownPosition = () => {
+        if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            setDropdownStyle({
+                position: 'fixed',
+                top: rect.bottom + 8,
+                left: rect.left,
+                width: rect.width,
+                zIndex: 9999,
+            });
+        }
+    };
+
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (containerRef.current && !containerRef.current.contains(e.target)) {
+                // Also check if click was on the fixed dropdown
+                const dropdownEl = document.getElementById('creator-search-dropdown');
+                if (dropdownEl && dropdownEl.contains(e.target)) return;
                 setShowDropdown(false);
                 setHighlight(-1);
             }
@@ -4763,19 +5323,123 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
             return;
         }
         setLoading(true);
+        setShowDropdown(true);
+        updateDropdownPosition();
         try {
-            const url = `${window.location.protocol}//${window.location.hostname}:4000/users?q=${encodeURIComponent(q)}&creatorsOnly=1`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('search failed');
-            const data = await res.json();
-            const users = (data && data.users) || [];
-            setResults(users);
-            setShowDropdown(users && users.length > 0);
+            const base = getBackendBase();
+            let allUsers = [];
+
+            // Strategy 1: Try /creators endpoint (most reliable - extracts from videos + users)
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000);
+                const creatorsUrl = `${base}/creators?q=${encodeURIComponent(q)}`;
+                const creatorsRes = await fetch(creatorsUrl, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (creatorsRes.ok) {
+                    const creatorsData = await creatorsRes.json();
+                    allUsers = creatorsData.creators || creatorsData.users || [];
+                }
+            } catch (e1) {
+                if (e1.name === 'AbortError') console.warn('[search] /creators timed out');
+                else console.warn('[search] /creators failed:', e1.message);
+            }
+
+            // Strategy 2: If /creators returned nothing, try /users
+            if (allUsers.length === 0) {
+                try {
+                    const controller2 = new AbortController();
+                    const timeout2 = setTimeout(() => controller2.abort(), 10000);
+                    const url = `${base}/users?q=${encodeURIComponent(q)}&creatorsOnly=1`;
+                    const res = await fetch(url, { signal: controller2.signal });
+                    clearTimeout(timeout2);
+                    if (res.ok) {
+                        const data = await res.json();
+                        allUsers = (data && data.users) || (Array.isArray(data) ? data : []);
+                    }
+                } catch (fetchErr) {
+                    console.warn('[search] /users also failed:', fetchErr.message);
+                }
+            }
+
+            // Strategy 3: If /users also returned nothing, try /users without creatorsOnly filter
+            if (allUsers.length === 0) {
+                try {
+                    const controller3 = new AbortController();
+                    const timeout3 = setTimeout(() => controller3.abort(), 10000);
+                    const fallbackUrl = `${base}/users?q=${encodeURIComponent(q)}`;
+                    const fallbackRes = await fetch(fallbackUrl, { signal: controller3.signal });
+                    clearTimeout(timeout3);
+                    if (fallbackRes.ok) {
+                        const fallbackData = await fallbackRes.json();
+                        allUsers = (fallbackData && fallbackData.users) || (Array.isArray(fallbackData) ? fallbackData : []);
+                    }
+                } catch (fallbackErr) {
+                    console.warn('[search] /users fallback also failed:', fallbackErr.message);
+                }
+            }
+
+            let normalized = allUsers.map((u) => {
+                const img = normalizeImageUrl(u.image || u.avatar || u.photoURL || u.profilePicture || u.profileImage);
+                return {
+                    ...u,
+                    // Handle both camelCase and snake_case field names
+                    isCreator: u.isCreator === true || u.is_creator === true,
+                    image: img || u.image || u.avatar || u.photoURL || null,
+                    avatar: img || u.avatar || u.image || null,
+                    photoURL: img || u.photoURL || u.image || null,
+                };
+            });
+
+            // Strategy 4: If API returned nothing, extract creators from locally loaded videos
+            if (normalized.length === 0) {
+                const localCreators = extractLocalCreators(q);
+                if (localCreators.length > 0) {
+                    // Enrich local creators with backend profile data
+                    const enriched = await Promise.all(localCreators.map(async (c) => {
+                        try {
+                            const lookupId = c.id || c.name;
+                            const res = await fetch(`${base}/users/${encodeURIComponent(lookupId)}`);
+                            if (res.ok) {
+                                const data = await res.json();
+                                const u = data.user || data;
+                                if (u && !u.isPlaceholder) {
+                                    return {
+                                        ...c,
+                                        ...u,
+                                        isCreator: true,
+                                        image: normalizeImageUrl(u.image || u.avatar || c.image),
+                                        avatar: normalizeImageUrl(u.avatar || u.image || c.avatar),
+                                        photoURL: normalizeImageUrl(u.photoURL || u.image || c.image),
+                                        followers: u.followers || u.followers_count || 0,
+                                    };
+                                }
+                            }
+                        } catch (e) { /* use original */ }
+                        return c;
+                    }));
+                    normalized = enriched;
+                }
+            }
+
+            // Deduplicate by unique id to avoid React duplicate key warnings
+            const seen = new Set();
+            normalized = normalized.filter(u => {
+                const key = u.id || u.email || u.name;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            setResults(normalized);
+            setShowDropdown(true);
             setHighlight(-1);
+            updateDropdownPosition();
         } catch (err) {
             console.warn('creator search error', err);
-            setResults([]);
-            setShowDropdown(false);
+            // Even on error, try local fallback from video data
+            const localCreators = extractLocalCreators(q);
+            setResults(localCreators);
+            setShowDropdown(true);
         } finally {
             setLoading(false);
         }
@@ -4789,16 +5453,24 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
 
     const selectCreator = (creator) => {
         try {
+            const followers = creator.followersCount || creator.followers || creator.stats?.followers || creator.followers_count || null;
             const creatorObj = {
-                id: creator.id || creator.handle || String(creator.name || '').replace(/^@+/, '').toLowerCase(),
-                name: creator.handle ? `@${creator.handle}` : (creator.name || ''),
-                displayName: creator.name || creator.handle || '',
-                handle: creator.handle,
-                image: creator.image || creator.photoURL || null,
-                photoURL: creator.image || creator.photoURL || null,
+                id: creator.id || creator.handle || creator.username || String(creator.name || '').replace(/^@+/, '').toLowerCase(),
+                name: creator.handle ? `@${creator.handle}` : (creator.username ? `@${creator.username}` : (creator.name || '')),
+                displayName: creator.name || creator.handle || creator.username || '',
+                handle: creator.handle || creator.username,
+                username: creator.username || creator.handle,
+                email: creator.email || null,
+                image: normalizeImageUrl(creator.image || creator.avatar || creator.photoURL || null),
+                photoURL: normalizeImageUrl(creator.image || creator.avatar || creator.photoURL || null),
+                followers,
                 price: creator.price || 0
             };
-            try { window.localStorage.setItem(SELECTED_CREATOR_KEY, JSON.stringify(creatorObj)); } catch (e) { }
+            try {
+                window.localStorage.setItem(SELECTED_CREATOR_KEY, JSON.stringify(creatorObj));
+                // Dispatch event so ideas.jsx picks it up even if already mounted
+                window.dispatchEvent(new Event('ideas:creator_selected'));
+            } catch (e) { }
         } catch (e) { console.warn('persist creator failed', e); }
         if (onFocusChange) try { onFocusChange(false); } catch (e) { }
         // navigate to ideas page so user can type request immediately with creator selected
@@ -4858,8 +5530,8 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                 className="flex-1 text-base placeholder-gray-400 text-gray-700 focus:outline-none bg-transparent"
                 value={searchTerm}
                 onChange={(e) => e.target.value.length < 80 ? onInputChange(e.target.value) : null}
-                onFocus={() => { setIsFocused(true); if (onFocusChange) try { onFocusChange(true); } catch (e) { } if (results && results.length) setShowDropdown(true); }}
-                onBlur={() => { setIsFocused(false); if (onFocusChange) try { onFocusChange(false); } catch (e) { } }}
+                onFocus={() => { setIsFocused(true); if (onFocusChange) try { onFocusChange(true); } catch (e) { } if (results && results.length) { setShowDropdown(true); updateDropdownPosition(); } }}
+                onBlur={() => { setIsFocused(false); }}
                 onKeyDown={onKeyDown}
                 aria-autocomplete="list"
             />
@@ -4874,12 +5546,12 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                 </button>
             )}
 
-            {/* Dropdown */}
+            {/* Dropdown — uses fixed positioning to escape overflow:auto clipping */}
             {showDropdown && (
-                <div className="absolute left-0 right-0 top-full mt-2 z-50">
+                <div id="creator-search-dropdown" style={dropdownStyle}>
                     <div
-                        className="bg-white rounded-xl shadow-xl border border-gray-100 w-full"
-                        style={{ maxHeight: '50vh', overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+                        className="bg-white rounded-xl shadow-xl border border-gray-100"
+                        style={{ maxHeight: '50vh', overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', width: '100%' }}
                     >
                         {loading && (
                             <div className="p-3 text-sm text-gray-500">Searching creators...</div>
@@ -4887,29 +5559,39 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                         {!loading && results.length === 0 && (
                             <div className="p-3 text-sm text-gray-500">No creators found</div>
                         )}
-                        {!loading && results.map((u, idx) => (
+                        {!loading && results.map((u, idx) => {
+                            const handle = u.username || u.handle || '';
+                            const followers = u.followersCount || u.followers || u.stats?.followers || u.followers_count || null;
+                            const subtitle = handle
+                                ? `@${handle}${followers ? ` • ${followers} followers` : ''}`
+                                : (followers ? `${followers} followers` : (u.tagline || u.category || (u.isCreator ? 'Creator' : 'User')));
+                            return (
                             <button
                                 key={u.id || u.email || idx}
                                 onMouseDown={(e) => { e.preventDefault(); }}
                                 onClick={() => selectCreator(u)}
                                 className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between ${highlight === idx ? 'bg-gray-50' : ''}`}
                             >
-                                <div className="flex items-center">
+                                <div className="flex items-center" style={{ flex: 1, minWidth: 0 }}>
                                     {u.image ? (
-                                        <img src={u.image} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/64x64/cccccc/000000?text=?'; }} />
-                                    ) : (
-                                        <img src={getPlaceholderAvatar(u.name)} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/64x64/cccccc/000000?text=?'; }} />
-                                    )}
-                                    <div className="flex flex-col text-sm">
-                                        <span className="font-semibold text-gray-900">{u.name || u.handle || 'Unknown'}</span>
-                                        <span className="text-xs text-gray-500">{u.tagline || u.category || (u.isCreator ? 'Creator' : '')}</span>
+                                        <img src={u.image} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" style={{ flexShrink: 0 }} onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
+                                    ) : null}
+                                    {/* First-letter avatar fallback — always rendered, hidden when image loads */}
+                                    <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: ['#f87171','#34d399','#a78bfa','#60a5fa','#fbbf24','#ec4899','#fb923c','#4ade80'][(u.name || 'U').charCodeAt(0) % 8], display: u.image ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 12, color: '#fff', fontSize: 18, fontWeight: 700, textTransform: 'uppercase' }}>
+                                        {(u.name || 'U').charAt(0)}
+                                    </div>
+                                    <div className="flex flex-col text-sm" style={{ minWidth: 0 }}>
+                                        <span className="font-semibold text-gray-900" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name || u.handle || 'Unknown'}</span>
+                                        <span className="text-xs text-gray-500" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</span>
                                     </div>
                                 </div>
-                                <div className="text-sm text-gray-600 ml-4">
-                                    {u.price ? `$${u.price}` : ''}
-                                </div>
+                                {u.price ? (
+                                    <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a', marginLeft: 8, whiteSpace: 'nowrap', padding: '4px 10px', backgroundColor: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                                        ${u.price}
+                                    </div>
+                                ) : null}
                             </button>
-                        ))}
+                        );})}
                     </div>
                 </div>
             )}
@@ -4940,7 +5622,7 @@ const TabPills = ({ activeTab, setActiveTab, selectedLanguage = 'English' }) => 
     useEffect(() => {
         const fetchCategories = async () => {
              try {
-                 const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
                  const res = await fetch(`${BACKEND}/categories`);
                  if (res.ok) {
                      const catList = await res.json();
@@ -5239,58 +5921,143 @@ const BottomBar = ({ selectedLanguage = 'English' }) => {
     return <SharedBottomBar selectedLanguage={selectedLanguage} activeTabOverride="Home" />;
 };
 
-const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate }) => {
+const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate, onMiniPlayerReady }) => {
+    // MiniPlayer uses its OWN video element for reliability
+    const videoRef = useRef(null);
+    
     // Local state for dragging to prevent re-rendering the parent Home component
     const [pos, setPos] = useState({ right: 16, bottom: 100 });
     const dragRef = useRef({ isDragging: false, hasMoved: false, startX: 0, startY: 0, startRight: 0, startBottom: 0 });
-    const videoRef = useRef(null);
     const [playing, setPlaying] = useState(!(data && data.paused));
+    
+    // Track if video has loaded enough to display (prevents empty state flash)
+    const [videoReady, setVideoReady] = useState(false);
+    
+    // Track if we've signaled ready to parent (only once)
+    const hasSignaledReady = useRef(false);
 
-    // Sync initial time from data when mounting or when data source changes
+    // Get video source URL and thumbnail from data
+    const videoSrc = resolveMediaUrl(data?.video?.src || data?.video?.videoUrl || data?.video?.url || '') || (data?.video?.src || data?.video?.videoUrl || data?.video?.url || '');
+    const thumbnailUrl = data?.video?.imageUrl || data?.video?.thumbnail || data?.imageUrl || '';
+    const startTime = data?.time || 0;
+    
+    // Signal ready to parent ONLY when video is actually ready
+    // This allows fullscreen player to close, creating seamless handoff
+    useEffect(() => {
+        if (videoReady && !hasSignaledReady.current && onMiniPlayerReady) {
+            hasSignaledReady.current = true;
+            onMiniPlayerReady();
+        }
+    }, [videoReady, onMiniPlayerReady]);
+
+    // Initialize video when component mounts or source changes  
     useEffect(() => {
         const v = videoRef.current;
-        if (v && data && typeof data.time === 'number') {
-            // Only set time if we are near the beginning to avoid resetting if already playing
-            // But actually, when data changes (new video), we want to respect the time.
-            // Or when reopening miniplayer.
-            try {
-                if (Math.abs(v.currentTime - data.time) > 1) {
-                    v.currentTime = data.time;
-                }
-            } catch (e) { }
+        if (!v || !videoSrc) return;
+
+        // Reset ready state when source changes
+        setVideoReady(false);
+
+        // Set source if different
+        if (videoSrc && v.src !== videoSrc) {
+            v.src = videoSrc;
+            v.load();
         }
-    }, [data]);
+
+        // Set start time once metadata is loaded
+        const handleLoadedMetadata = () => {
+            try {
+                if (startTime > 0) {
+                    v.currentTime = startTime;
+                }
+            } catch (e) {}
+            
+            // Auto-play if data.paused is false (muted for autoplay reliability)
+            if (data && data.paused === false) {
+                v.muted = true;
+                v.volume = 0;
+                v.playsInline = true;
+                v.autoplay = true;
+                v.play().then(() => {
+                    setPlaying(true);
+                }).catch(() => { /* autoplay may be blocked */ });
+            }
+        };
+
+        const handleLoadedData = () => {
+            try { setVideoReady(true); } catch (e) {}
+        };
+
+        v.addEventListener('loadedmetadata', handleLoadedMetadata);
+        v.addEventListener('loadeddata', handleLoadedData);
+        // Only show video when it actually starts playing (prevents grey play overlay)
+        const handlePlaying = () => {
+            setVideoReady(true);
+        };
+        const handleError = () => {
+            // keep thumbnail visible if video fails
+            setVideoReady(false);
+        };
+        v.addEventListener('playing', handlePlaying);
+        v.addEventListener('timeupdate', handlePlaying);
+        v.addEventListener('canplay', handlePlaying);
+        v.addEventListener('canplaythrough', handlePlaying);
+        v.addEventListener('error', handleError);
+        
+        // If already loaded, apply immediately
+        if (v.readyState >= 1) {
+            handleLoadedMetadata();
+        }
+        
+        // Requirements for video ready: metadata loaded + some data available
+        if (v.readyState >= 3) {
+            setVideoReady(true);
+        }
+
+        return () => {
+            v.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            v.removeEventListener('loadeddata', handleLoadedData);
+            v.removeEventListener('playing', handlePlaying);
+            v.removeEventListener('timeupdate', handlePlaying);
+            v.removeEventListener('canplay', handlePlaying);
+            v.removeEventListener('canplaythrough', handlePlaying);
+            v.removeEventListener('error', handleError);
+        };
+    }, [videoSrc, startTime, data]);
 
     // State to track if resizing or dragging
     const [isResizing, setIsResizing] = useState(false);
     const [size, setSize] = useState({ width: 220, height: 172 }); // Combined height (124+48)
 
     const handlePointerDown = (e) => {
+        // Use touch coordinates for mobile, pointer for desktop
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const drag = dragRef.current;
         drag.isDragging = false;
         drag.hasMoved = false;
-        drag.startX = e.clientX;
-        drag.startY = e.clientY;
+        drag.startX = clientX;
+        drag.startY = clientY;
         drag.startRight = pos.right;
         drag.startBottom = pos.bottom;
         drag.startWidth = size.width;
         drag.startHeight = size.height;
-        if (e.target.dataset.resize === "true") {
+        const target = e.target || (e.touches && e.touches[0] && e.touches[0].target);
+        if (target && target.dataset && target.dataset.resize === "true") {
             setIsResizing(true);
             drag.isResizing = true;
         } else {
             setIsResizing(false);
             drag.isResizing = false;
         }
-        if (e.target.setPointerCapture) {
-            try { e.target.setPointerCapture(e.pointerId); } catch { }
-        }
     };
 
     const handlePointerMove = (e) => {
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const drag = dragRef.current;
-        const dx = e.clientX - drag.startX;
-        const dy = e.clientY - drag.startY;
+        const dx = clientX - drag.startX;
+        const dy = clientY - drag.startY;
 
         if (!drag.isDragging && !drag.isResizing && Math.sqrt(dx * dx + dy * dy) > 5) {
             if (!drag.isResizing) {
@@ -5320,15 +6087,13 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
         drag.isDragging = false;
         drag.isResizing = false;
         setIsResizing(false);
-        if (e.target.releasePointerCapture) {
-            try { e.target.releasePointerCapture(e.pointerId); } catch { }
-        }
     };
 
     const handleClick = (e) => {
         if (dragRef.current.hasMoved || dragRef.current.isResizing) return;
         if (onExpand) onExpand();
         else {
+            showVideoLaunchMask();
             const video = data.video || {};
             const params = new URLSearchParams();
             const idVal = video.id || video.videoId || video.src || video.url || '';
@@ -5362,6 +6127,8 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
             try {
                 navigate(`/videoplayer?${params.toString()}`, { state: { miniPlayerData: data } });
             } catch (err) {
+                // Fallback only if navigate is not available
+                console.warn('navigate failed, using location.href:', err);
                 window.location.href = `/videoplayer?${params.toString()}`;
             }
         }
@@ -5369,9 +6136,12 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
 
     const togglePlay = (e) => {
         e.stopPropagation();
+        // Use local video ref
         const v = videoRef.current;
         if (!v) return;
         if (v.paused) {
+            try { v.muted = false; } catch { }
+            try { v.volume = 1; } catch { }
             v.play().catch(() => { });
             setPlaying(true);
             if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
@@ -5411,11 +6181,12 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
 
     return (
         <div
-            onPointerDown={(e) => { handlePointerDown(e); showControls(); }}
-            onPointerMove={(e) => { handlePointerMove(e); showControls(); }}
-            onPointerUp={(e) => { handlePointerUp(e); }}
-            onPointerEnter={showControls}
-            onPointerLeave={hideControlsDelayed}
+            onTouchStart={(e) => { handlePointerDown(e); showControls(); }}
+            onTouchMove={(e) => { handlePointerMove(e); showControls(); }}
+            onTouchEnd={(e) => { handlePointerUp(e); }}
+            onMouseDown={(e) => { handlePointerDown(e); showControls(); }}
+            onMouseMove={(e) => { handlePointerMove(e); showControls(); }}
+            onMouseUp={(e) => { handlePointerUp(e); }}
             onClick={handleClick}
             style={{
                 position: 'fixed',
@@ -5423,7 +6194,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                 bottom: pos.bottom,
                 width: size.width,
                 height: size.height,
-                zIndex: 9999,
+                zIndex: 55,
                 borderRadius: 16,
                 overflow: 'hidden',
                 boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
@@ -5431,7 +6202,11 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                 cursor: 'grab',
                 touchAction: 'none',
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                opacity: 1,
+                transform: 'scale(1)',
+                pointerEvents: 'auto',
+                transition: 'opacity 0.3s ease-out'
             }}
         >
             {/* Resize Handle (Top-Left) - where requested */}
@@ -5446,7 +6221,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                     display: 'flex',
                     alignItems: 'center', // Icon will be at top-left visually via padding if needed, or centered
                     justifyContent: 'center',
-                    opacity: controlsVisible || isResizing ? 1 : 0,
+                    opacity: (controlsVisible || isResizing) && videoReady ? 1 : 0,
                     transition: 'opacity 0.2s',
                     pointerEvents: 'auto', // Ensure it captures clicks even if opacity is 0
                     touchAction: 'none'
@@ -5457,16 +6232,48 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                 </svg>
             </div>
 
-            <div style={{ width: '100%', height: size.height - 48, position: 'relative', background: '#000' }}>
-                <video
+            <div style={{ 
+                width: '100%', 
+                height: size.height - 48, 
+                position: 'relative', 
+                background: '#000',
+                backgroundImage: thumbnailUrl ? `url(${thumbnailUrl})` : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+            }}>
+                {/* Pure black overlay - covers everything until video is ready */}
+                {!videoReady && (
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        background: '#000',
+                        backgroundImage: thumbnailUrl ? `url(${thumbnailUrl})` : 'none',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        zIndex: 5
+                    }} />
+                )}
+                
+                {/* MiniPlayer's own video element - hidden behind black overlay until ready */}
+                <video 
                     ref={videoRef}
-                    src={(data && (data.video && (data.video.src || data.video.videoUrl || data.video.url))) || ''}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }}
                     playsInline
-                    autoPlay={playing}
-                    onPlay={() => setPlaying(true)}
-                    onPause={() => setPlaying(false)}
+                    poster={thumbnailUrl || undefined}
+                    style={{ 
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%', 
+                        height: '100%', 
+                        background: '#000', 
+                        objectFit: 'cover',
+                        visibility: videoReady ? 'visible' : 'hidden'
+                    }}
                 />
+                
                 {/* Close Button - inside video area, visible on hover */}
                 <button
                     onClick={(e) => { e.stopPropagation(); if (onClose) onClose(); }}

@@ -9,21 +9,25 @@ const getBackendUrl = () => {
     return window.__BACKEND_URL__;
   }
 
-  // Development: localhost with port 4000
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-    return 'http://localhost:4000';
-  }
+  const envBackend = (typeof import.meta !== 'undefined' && import.meta.env)
+    ? (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND)
+    : null;
 
-  // APK/Mobile: Use the device's actual IP with port 4000
+  if (envBackend) return envBackend;
+
+  // Default to deployed backend
   if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol; // http: or https:
-    const hostname = window.location.hostname; // 192.168.x.x or actual domain
-    return `${protocol}//${hostname}:4000`;
+    return 'https://regaarder-pwin.onrender.com';
   }
 
   // Fallback
-  return 'http://localhost:4000';
+  return 'https://regaarder-pwin.onrender.com';
 };
+
+/**
+ * Production Web URL for sharing
+ */
+export const WEB_URL = 'https://regaarder.com';
 
 /**
  * Get the backend base URL for API calls

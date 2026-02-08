@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Home, FileText, Pencil, MoreHorizontal, Crown, Sparkles, ArrowRight, Check } from 'lucide-react';
 import { getTranslation } from './translations.js';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 const getCssVar = (name, fallback) => {
     try { 
@@ -23,105 +24,7 @@ const ACCENT_COLOR = getAccentColor();
 const HIGHLIGHT_COLOR = `rgba(${parseInt(ACCENT_COLOR.slice(1, 3), 16)}, ${parseInt(ACCENT_COLOR.slice(3, 5), 16)}, ${parseInt(ACCENT_COLOR.slice(5, 7), 16)}, 0.12)`;
 const ICON_BACKGROUND = `rgba(${parseInt(ACCENT_COLOR.slice(1, 3), 16)}, ${parseInt(ACCENT_COLOR.slice(3, 5), 16)}, ${parseInt(ACCENT_COLOR.slice(5, 7), 16)}, 0.1)`;
 
-// Bottom navigation bar component
-const BottomBar = () => {
-    const [activeTab, setActiveTab] = useState(null);
-    const navigatedRef = useRef(false);
-
-    const tabs = [
-        { name: 'Home', Icon: Home },
-        { name: 'Requests', Icon: FileText },
-        { name: 'Ideas', Icon: Pencil },
-        { name: 'More', Icon: MoreHorizontal },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{ 
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.name === activeTab;
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold)' }
-                        : { color: inactiveColor };
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                    const navigateToTab = (tabName) => {
-                        try {
-                            if (tabName === 'Home') {
-                                window.location.href = '/home.jsx';
-                                return;
-                            }
-                            if (tabName === 'Requests') {
-                                window.location.href = '/requests.jsx';
-                                return;
-                            }
-                            if (tabName === 'Ideas') {
-                                window.location.href = '/ideas';
-                                return;
-                            }
-                            if (tabName === 'More') {
-                                window.location.href = '/more.jsx';
-                                return;
-                            }
-                        } catch (e) {
-                            console.warn('Navigation failed', e);
-                        }
-                    };
-
-                    return (
-                        <div
-                            key={tab.name}
-                            className="relative flex flex-col items-center w-1/4 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { 
-                                        navigatedRef.current = true; 
-                                        navigateToTab(tab.name); 
-                                    }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { 
-                                        navigatedRef.current = true; 
-                                        navigateToTab(tab.name); 
-                                    }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { 
-                                        navigatedRef.current = false; 
-                                        e.preventDefault(); 
-                                        return; 
-                                    }
-                                    setActiveTab(tab.name);
-                                    navigateToTab(tab.name);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    <tab.Icon className="w-6 h-6" strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {tab.name}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
+// Bottom navigation bar component - removed, now using SharedBottomBar
 
 const Subscriptions = () => {
     const [currentPlan, setCurrentPlan] = useState(null);
@@ -153,7 +56,7 @@ const Subscriptions = () => {
                 // Get backend URL dynamically
                 const protocol = window.location.protocol;
                 const hostname = window.location.hostname;
-                const backendUrl = window.__BACKEND_URL__ || `${protocol}//${hostname}:4000`;
+                const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
 
                 // Fetch subscription status from payment endpoint
                 const response = await fetch(`${backendUrl}/payment/subscription`, {
@@ -271,7 +174,10 @@ const Subscriptions = () => {
 
     return (
         <div className="min-h-screen text-gray-900" style={{ background: 'linear-gradient(135deg, rgba(var(--color-gold-rgb), 0.03) 0%, white 50%)' }}>
-            <div className="max-w-md mx-auto px-4 pt-6 pb-28">
+            <div
+                className="max-w-md mx-auto px-4 pb-28"
+                style={{ paddingTop: 'calc(24px + env(safe-area-inset-top, 0px))' }}
+            >
 
                 {/* Ad Visibility Message Banner */}
                 {(() => {
@@ -408,7 +314,7 @@ const Subscriptions = () => {
                                                         const token = localStorage.getItem('authToken');
                                                         const protocol = window.location.protocol;
                                                         const hostname = window.location.hostname;
-                                                        const backendUrl = window.__BACKEND_URL__ || `${protocol}//${hostname}:4000`;
+                                                        const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
                                                         
                                                         const response = await fetch(`${backendUrl}/payment/subscription/cancel`, {
                                                             method: 'POST',
@@ -537,7 +443,7 @@ const Subscriptions = () => {
             </div>
 
             {/* Bottom Navigation Bar */}
-            <BottomBar />
+            <SharedBottomBar selectedLanguage={localStorage.getItem('regaarder_language') || 'English'} />
         </div>
     );
 };

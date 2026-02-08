@@ -359,7 +359,7 @@ const SupportPage = () => {
       const userEmail = localStorage.getItem('userEmail') || getOrCreateAnonymousUserEmail();
       const protocol = window.location.protocol;
       const hostname = window.location.hostname;
-      const backendUrl = window.__BACKEND_URL__ || `${protocol}//${hostname}:4000`;
+      const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
 
       const response = await fetch(`${backendUrl}/support/tickets?userEmail=${encodeURIComponent(userEmail)}`);
       if (response.ok) {
@@ -458,7 +458,7 @@ const SupportPage = () => {
 
       const protocol = window.location.protocol;
       const hostname = window.location.hostname;
-      const backendUrl = window.__BACKEND_URL__ || `${protocol}//${hostname}:4000`;
+      const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
 
       const response = await fetch(`${backendUrl}/support/ticket`, {
         method: 'POST',
@@ -497,7 +497,7 @@ const SupportPage = () => {
     try {
       const protocol = window.location.protocol;
       const hostname = window.location.hostname;
-      const backendUrl = window.__BACKEND_URL__ || `${protocol}//${hostname}:4000`;
+      const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
 
       const response = await fetch(`${backendUrl}/support/ticket/${selectedTicket.id}/customer-response`, {
         method: 'POST',
@@ -550,7 +550,10 @@ const SupportPage = () => {
     return (
       <div className="min-h-screen bg-white flex flex-col">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div
+          className="bg-white border-b border-gray-200 sticky top-0 z-40"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="max-w-2xl mx-auto px-6 py-4 flex items-center gap-4">
             <button
               onClick={() => setView('list')}
@@ -727,7 +730,10 @@ const SupportPage = () => {
     return (
       <div className="min-h-screen bg-white flex flex-col">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200">
+        <div
+          className="bg-white border-b border-gray-200"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="max-w-2xl mx-auto px-6 py-4 flex items-center gap-4">
             <button
               onClick={() => setView('list')}
@@ -775,7 +781,10 @@ const SupportPage = () => {
     return (
       <div className="min-h-screen bg-white flex flex-col">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div
+          className="bg-white border-b border-gray-200 sticky top-0 z-40"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="max-w-3xl mx-auto px-6 py-3 flex items-center gap-4">
             <button
               onClick={() => {
@@ -877,7 +886,10 @@ const SupportPage = () => {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
       <div className="w-full max-w-xl flex flex-col flex-1" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
         {/* Header */}
-        <div className="bg-white border-b border-gray-100 p-3 sticky top-0 z-20">
+        <div
+          className="bg-white border-b border-gray-100 p-3 sticky top-0 z-20"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-3 min-w-0">
               <button

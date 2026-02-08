@@ -1,10 +1,12 @@
 /* eslint-disable no-empty */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     ChevronLeft, Edit2, Copy, Share2, Play, Zap, Camera, LineChart, DollarSign, CreditCard,
     Bell, Plus, Monitor, BookOpen, Zap as ThunderIcon, Globe, Clock, MoreHorizontal,
     Home, FileText, Edit, Grid, File, CheckCircle, Clock3, Check, Lock, Link as LinkIcon, ChevronDown, Pencil // Added Check icon for save
 } from 'lucide-react';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Use the app accent via CSS variable for dynamic theming
 const GOLD_COLOR_SHADE = 'var(--color-gold)';
@@ -311,104 +313,10 @@ const NavItem = ({ icon: Icon, name, isActive, onClick }) => {
     );
 };
 
-// Footer (BottomBar) — mirrors the footer from `home.jsx` (padding, color, size, behavior)
-const BottomBar = () => {
-    // No tab is highlighted by default; highlight only after user taps a tab
-    const [activeTab, setActiveTab] = useState(null);
-    const navigatedRef = useRef(false);
-
-    const tabs = [
-        { id: 'Home', label: t('Home'), icon: Home },
-        { id: 'Requests', label: t('Requests'), icon: FileText },
-        { id: 'Ideas', label: t('Ideas'), icon: Pencil },
-        { id: 'More', label: t('More'), icon: MoreHorizontal },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    const navigateToTab = (tabName) => {
-        try {
-            if (tabName === 'Home') {
-                // Navigate to the Home page instead of reloading
-                window.location.href = '/home.jsx';
-                return;
-            }
-            if (tabName === 'Requests') {
-                window.location.href = '/requests.jsx';
-                return;
-            }
-            if (tabName === 'Ideas') {
-                window.location.href = '/ideas';
-                return;
-            }
-            if (tabName === 'More') {
-                window.location.href = '/more.jsx';
-                return;
-            }
-        } catch (e) {
-            console.warn('Navigation failed', e);
-        }
-    };
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.id === activeTab;
-
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold, #ca8a04)' }
-                        : { color: inactiveColor };
-
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                    return (
-                        <div
-                            key={tab.id}
-                            className="relative flex flex-col items-center w-1/4 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.id);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.id); }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.id);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.id); }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; }
-                                    setActiveTab(tab.id);
-                                    navigateToTab(tab.id);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    {React.createElement(tab.icon, { size: 24, strokeWidth: isSelected ? 2 : 1.5, style: activeColorStyle })}
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {tab.label}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
-
-
 // --- Main Component ---
 
 const App = () => {
+    const navigate = useNavigate();
     const [profile, setProfile] = useState(initialProfileData);
     const [isCopied, setIsCopied] = useState(false);
     // Ref for the hidden file input
@@ -433,7 +341,7 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/users/me`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -442,7 +350,12 @@ const App = () => {
                     const data = await res.json();
                     if (data && data.user) {
                         const u = data.user;
-                        if (u.image) { try { const url = new URL(u.image); if (url.hostname === 'localhost') url.hostname = window.location.hostname; if (window && window.location && window.location.protocol) url.protocol = window.location.protocol; u.image = url.toString(); } catch (e) { } }
+                        if (u.image) {
+                            try {
+                                const url = new URL(u.image);
+                                u.image = url.toString();
+                            } catch (e) { }
+                        }
                         setProfile({
                             name: u.name || initialProfileData.name,
                             handle: u.handle || u.tag || initialProfileData.handle,
@@ -469,7 +382,7 @@ const App = () => {
             const token = localStorage.getItem('regaarder_token');
             if (!token) return;
 
-            const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
             await fetch(`${BACKEND}/users/update`, {
                 method: 'POST',
                 headers: {
@@ -544,7 +457,7 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/following`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -570,7 +483,7 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/requests/my`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -631,7 +544,7 @@ const App = () => {
                 const formData = new FormData();
                 formData.append('image', file);
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/creator/photo`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
@@ -788,7 +701,7 @@ const App = () => {
                 return newSet;
             });
 
-            const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
             const res = await fetch(`${BACKEND}/unfollow`, {
                 method: 'POST',
                 headers: {
@@ -852,8 +765,17 @@ const App = () => {
                     <div className="flex-grow overflow-y-auto">
 
                         {/* Header Section (Profile) - Updated for Preview Toggle */}
-                        <header className="p-4 flex items-center justify-between bg-stone-50 flex-shrink-0">
-                            <button onClick={() => { window.location.href = '/home.jsx'; }} className="p-2 rounded-full hover:bg-stone-100 transition">
+                        <header
+                          className="p-4 flex items-center justify-between bg-stone-50 flex-shrink-0"
+                          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+                        >
+                            <button
+                                onClick={() => {
+                                    try { if (window.setFooterTab) window.setFooterTab('home'); } catch (e) { }
+                                    navigate('/home');
+                                }}
+                                className="p-2 rounded-full hover:bg-stone-100 transition"
+                            >
                                 <ChevronLeft size={24} className="text-stone-800" />
                             </button>
 
@@ -1371,7 +1293,7 @@ const App = () => {
                 </div>
 
                 {/* Bottom Navigation Bar (Fixed) */}
-                <BottomBar />
+                <SharedBottomBar selectedLanguage={selectedLanguage} />
 
             </div>
         </>

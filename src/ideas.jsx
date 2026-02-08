@@ -632,7 +632,7 @@ const SponsorConfirmation = ({ selectedLanguage = 'English' }) => {
       {/* Toast Notification - Updated to match "Language Updated" style */}
       <div
         className={`
-                    fixed top-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm
+                    fixed left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm
                     bg-[var(--surface)] px-4 py-3 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-gray-100
                     flex items-start space-x-3 z-50 transition-all duration-500
                     ${showToast
@@ -640,6 +640,7 @@ const SponsorConfirmation = ({ selectedLanguage = 'English' }) => {
             : "-translate-y-20 opacity-0"
           }
                 `}
+        style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
       >
         <div className="bg-green-500 rounded-full p-1 flex-shrink-0 mt-0.5">
           <Check className="w-3 h-3 text-white" strokeWidth={3} />
@@ -2856,11 +2857,151 @@ const App = () => {
   const [creatorsList, setCreatorsList] = useState([]);
   const BACKEND = (function() {
       if (window && window.__BACKEND_URL__) return window.__BACKEND_URL__;
-      // Dynamic backend URL construction to match requests.jsx and support network/IP access
-      const protocol = window.location.protocol;
-      const hostname = window.location.hostname;
-      return `${protocol}//${hostname}:4000`;
+      return 'https://regaarder-pwin.onrender.com';
   })();
+
+  // Helper: normalize image URLs (uploaded: prefix → full backend URL, http→https)
+  const normalizeCreatorImage = (url) => {
+    if (!url) return null;
+    let s = String(url);
+    if (s.startsWith('uploaded:')) {
+      const filename = s.split(':')[1] || s.slice('uploaded:'.length);
+      return `${BACKEND}/uploads/${filename}`;
+    }
+    // Fix http → https for backend URLs
+    if (s.startsWith('http://') && s.includes('onrender.com')) {
+      s = s.replace('http://', 'https://');
+    }
+    return s;
+  };
+
+  const getRandomColor = () => {
+    const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
+  // Map raw user/creator data to normalized creator object
+  const mapToCreator = (u) => ({
+    id: u.id || u.email || u.name,
+    name: u.name || u.handle || u.tag || 'Unknown',
+    displayName: u.name || u.handle || u.tag || 'Unknown',
+    handle: u.handle || u.tag || '',
+    email: u.email || null,
+    photoURL: normalizeCreatorImage(u.photoURL || u.image || u.avatar),
+    image: normalizeCreatorImage(u.image || u.photoURL || u.avatar),
+    price: u.price || u.rate || 0,
+    followers: u.followers || u.followers_count || 0,
+    fallbackColor: getRandomColor()
+  });
+
+  // Shared fetch function for loading creators with multiple fallbacks
+  const fetchCreatorsFromBackend = async (signal) => {
+    try {
+      // Strategy 1: Try new /creators endpoint (extracts from videos + users)
+      try {
+        const creatorsRes = await fetch(`${BACKEND}/creators`, { signal });
+        if (creatorsRes.ok) {
+          const creatorsJson = await creatorsRes.json();
+          const arr = creatorsJson.creators || creatorsJson.users || [];
+          if (arr.length > 0) {
+            console.log('[ideas] Got', arr.length, 'creators from /creators endpoint');
+            return arr.map(mapToCreator);
+          }
+        }
+      } catch (e1) {
+        if (e1.name === 'AbortError') return [];
+        console.warn('[ideas] /creators failed, trying /users', e1.message);
+      }
+
+      // Strategy 2: Try /users endpoint
+      try {
+        const res = await fetch(`${BACKEND}/users`, { signal });
+        if (res.ok) {
+          const json = await res.json();
+          const allUsers = json.users || [];
+          if (allUsers.length > 0) {
+            // Handle both isCreator and is_creator field names
+            let creators = allUsers.filter(u => u.isCreator === true || u.is_creator === true);
+            if (creators.length === 0) creators = allUsers; // If no creator flag, show all
+            console.log('[ideas] Got', creators.length, 'creators from /users endpoint');
+            return creators.map(mapToCreator);
+          }
+        }
+      } catch (e2) {
+        if (e2.name === 'AbortError') return [];
+        console.warn('[ideas] /users failed, trying /videos', e2.message);
+      }
+
+      // Strategy 3: Extract unique creators from /videos endpoint (guaranteed to work)
+      try {
+        const vRes = await fetch(`${BACKEND}/videos`, { signal });
+        if (vRes.ok) {
+          const vJson = await vRes.json();
+          const videos = vJson.videos || (Array.isArray(vJson) ? vJson : []);
+          const creatorMap = new Map();
+          videos.forEach(v => {
+            const authorId = v.authorId || v.creatorId || v.userId;
+            const authorName = v.author || v.creator || v.channel;
+            if (!authorId && !authorName) return;
+            const key = (authorId || authorName || '').toLowerCase();
+            if (!creatorMap.has(key)) {
+              creatorMap.set(key, {
+                id: authorId || `video-${key}`,
+                name: authorName || 'Unknown',
+                image: v.authorImage || v.creatorImage || null,
+                handle: v.authorHandle || '',
+                email: authorId && authorId.includes('@') ? authorId : null,
+                isCreator: true,
+              });
+            }
+          });
+          // For each creator found in videos, try to enrich with user profile data
+          const creators = [];
+          for (const [, creator] of creatorMap) {
+            try {
+              const lookupId = creator.email || creator.id || creator.name;
+              const userRes = await fetch(`${BACKEND}/users/${encodeURIComponent(lookupId)}`, { signal });
+              if (userRes.ok) {
+                const userData = await userRes.json();
+                const u = userData.user || userData;
+                if (u && !u.isPlaceholder) {
+                  creators.push(mapToCreator({ ...creator, ...u, isCreator: true }));
+                  continue;
+                }
+              }
+            } catch (e) { /* skip enrichment for this creator */ }
+            creators.push(mapToCreator(creator));
+          }
+          console.log('[ideas] Got', creators.length, 'creators from /videos fallback');
+          return creators;
+        }
+      } catch (e3) {
+        if (e3.name === 'AbortError') return [];
+        console.warn('[ideas] /videos fallback also failed', e3.message);
+      }
+
+      return [];
+    } catch (e) {
+      if (e.name === 'AbortError') return [];
+      console.warn('fetchCreatorsFromBackend error', e);
+      return [];
+    }
+  };
+
+  // Eagerly fetch creators on mount so they're ready for any search UI
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    fetchCreatorsFromBackend(controller.signal).then(creators => {
+      clearTimeout(timer);
+      if (!cancelled && creators.length > 0) {
+        console.log('[ideas] Setting creatorsList with', creators.length, 'creators');
+        setCreatorsList(creators);
+      }
+    });
+    return () => { cancelled = true; controller.abort(); clearTimeout(timer); };
+  }, []);
 
   // Handle return from payment provider
   useEffect(() => {
@@ -2931,8 +3072,9 @@ const App = () => {
             if (stored) {
                 const creatorObj = JSON.parse(stored);
                 setSelectedCreator(creatorObj);
-                if (creatorObj.photoURL || creatorObj.image) {
-                    setSelectedCreatorImage(creatorObj.photoURL || creatorObj.image);
+                const rawImg = creatorObj.photoURL || creatorObj.image;
+                if (rawImg) {
+                    setSelectedCreatorImage(normalizeCreatorImage(rawImg));
                 }
                 // Set minimum payment amount based on creator's price
                 const minAmount = (creatorObj.price && Number(creatorObj.price) > 0) ? Math.max(15, Number(creatorObj.price)) : 15;
@@ -2954,38 +3096,32 @@ const App = () => {
     return () => window.removeEventListener('ideas:creator_selected', handler);
   }, []);
 
-  // Fetch creators from backend when chooser expands OR payment modal opens (only once)
+  // Re-fetch creators when chooser expands OR payment modal opens OR a creator was selected (if not already loaded)
   useEffect(() => {
     let cancelled = false;
-    const loadCreators = async () => {
-      try {
-        const res = await fetch(`${BACKEND}/users`);
-        if (!res.ok) return;
-        const json = await res.json();
-        if (!json || !Array.isArray(json.users)) return;
-        // Prefer users marked as creators; include fallback of others
-        const getRandomColor = () => {
-          const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
-          return colors[Math.floor(Math.random() * colors.length)];
-        };
-        const creators = json.users.filter(u => u.isCreator).map(u => ({ id: u.id || u.email || u.name, name: u.handle || u.tag || (`@${(u.name || '').toLowerCase()}`), displayName: u.name || u.handle || u.tag, photoURL: u.photoURL || u.image || u.avatar, price: u.price || u.rate || 0, fallbackColor: getRandomColor() }));
-        if (cancelled) return;
-        if (creators.length > 0) setCreatorsList(creators);
-      } catch (e) {
-        console.warn('Failed to load creators', e);
-      }
-    };
-    if (chooseCreatorExpanded || paymentModalOpen) loadCreators();
-    return () => { cancelled = true; };
-  }, [chooseCreatorExpanded, paymentModalOpen]);
+    if ((chooseCreatorExpanded || paymentModalOpen || (selectedCreator && selectedCreator.id)) && creatorsList.length === 0) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      fetchCreatorsFromBackend(controller.signal).then(creators => {
+        clearTimeout(timer);
+        if (!cancelled && creators.length > 0) setCreatorsList(creators);
+      });
+      return () => { cancelled = true; controller.abort(); clearTimeout(timer); };
+    }
+  }, [chooseCreatorExpanded, paymentModalOpen, selectedCreator?.id]);
 
-  // Filter creators so that a visible leading '@' is respected.
+  // Filter creators by search text - match against name, displayName, and handle
   const filteredCreators = (() => {
     const raw = String(creatorSearch || "").trim();
     if (!raw) return creatorsList;
-    // If user typed with or without '@', normalize to include '@' when searching
-    const query = raw.startsWith("@") ? raw.toLowerCase() : ("@" + raw.toLowerCase());
-    return creatorsList.filter((c) => String(c.name || '').toLowerCase().includes(query) || String(c.displayName || '').toLowerCase().includes(raw.toLowerCase()));
+    const query = raw.replace(/^@+/, '').toLowerCase();
+    if (!query) return creatorsList;
+    return creatorsList.filter((c) => {
+      const cName = String(c.name || '').toLowerCase();
+      const cDisplay = String(c.displayName || '').toLowerCase();
+      const cHandle = String(c.handle || '').toLowerCase();
+      return cName.includes(query) || cDisplay.includes(query) || cHandle.includes(query);
+    });
   })();
 
   // Prevent background scroll and ensure backdrop covers everything when payment modal is open
@@ -3034,29 +3170,18 @@ const App = () => {
     }
   }, [chooseCreatorExpanded]);
 
-  // Fetch creators when the ideas page modal opens
+  // Re-fetch creators when the ideas page modal opens (if not already loaded)
   useEffect(() => {
     let cancelled = false;
-    const loadCreators = async () => {
-      try {
-        const res = await fetch(`${BACKEND}/users`);
-        if (!res.ok) return;
-        const json = await res.json();
-        if (!json || !Array.isArray(json.users)) return;
-        // Prefer users marked as creators; include fallback of others
-        const getRandomColor = () => {
-          const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
-          return colors[Math.floor(Math.random() * colors.length)];
-        };
-        const creators = json.users.filter(u => u.isCreator).map(u => ({ id: u.id || u.email || u.name, name: u.handle || u.tag || (`@${(u.name || '').toLowerCase()}`), displayName: u.name || u.handle || u.tag, photoURL: u.photoURL || u.image || u.avatar, price: u.price || u.rate || 0, fallbackColor: getRandomColor() }));
-        if (cancelled) return;
-        if (creators.length > 0) setCreatorsList(creators);
-      } catch (e) {
-        console.warn('Failed to load creators', e);
-      }
-    };
-    if (showCreatorModal && creatorsList.length === 0) loadCreators();
-    return () => { cancelled = true; };
+    if (showCreatorModal && creatorsList.length === 0) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      fetchCreatorsFromBackend(controller.signal).then(creators => {
+        clearTimeout(timer);
+        if (!cancelled && creators.length > 0) setCreatorsList(creators);
+      });
+      return () => { cancelled = true; controller.abort(); clearTimeout(timer); };
+    }
   }, [showCreatorModal]);
 
   // Keep expanded state in sync with focus mode so entering focus always expands
@@ -3239,50 +3364,40 @@ const App = () => {
       return; // Already has image data
     }
 
-    // If we don't have image data, fetch all creators and find the match
+    // Use /users/:id (which works) instead of /users (which may return empty)
     const enrichCreatorData = async () => {
       try {
-        console.log('[ideas] Enriching selectedCreator with image data...', selectedCreator);
-        const res = await fetch('/users');
-        const json = await res.json();
-        if (!json || !Array.isArray(json.users)) {
-          console.warn('[ideas] No users returned from /users');
-          return;
-        }
+        console.log('[ideas] Enriching selectedCreator with image data...', selectedCreator.id);
+        // Try looking up by id, then email, then name
+        const lookupIds = [
+          selectedCreator.id,
+          selectedCreator.email,
+          selectedCreator.displayName || String(selectedCreator.name || '').replace(/^@/, '')
+        ].filter(Boolean);
 
-        // Find the creator in the list and get their image data
-        // Try multiple matching strategies
-        let creatorData = json.users.find(u => u.id === selectedCreator.id);
-        console.log('[ideas] Match by ID:', creatorData);
-        
-        if (!creatorData) {
-          // Try matching by handle (with or without @)
-          const cleanName = String(selectedCreator.name || '').replace(/^@/, '').toLowerCase();
-          creatorData = json.users.find(u => {
-            const uHandle = String(u.handle || '').replace(/^@/, '').toLowerCase();
-            return uHandle === cleanName;
-          });
-          console.log('[ideas] Match by handle:', creatorData);
+        for (const lookupId of lookupIds) {
+          try {
+            const res = await fetch(`${BACKEND}/users/${encodeURIComponent(lookupId)}`);
+            if (!res.ok) continue;
+            const json = await res.json();
+            const u = json.user || json;
+            if (u && !u.isPlaceholder) {
+              const imageUrl = normalizeCreatorImage(u.photoURL || u.image || u.avatar);
+              console.log('[ideas] Enriched creator image from /users/:id:', imageUrl);
+              if (imageUrl) {
+                setSelectedCreator(prev => ({
+                  ...prev,
+                  photoURL: imageUrl,
+                  image: imageUrl,
+                  followers: u.followers || u.followers_count || prev.followers || 0,
+                  price: u.price || prev.price || 0,
+                }));
+              }
+              return; // Found it, stop trying
+            }
+          } catch (e) { /* try next */ }
         }
-        
-        if (!creatorData) {
-          // Try matching by displayName
-          creatorData = json.users.find(u => String(u.name || '').toLowerCase() === String(selectedCreator.displayName || '').toLowerCase());
-          console.log('[ideas] Match by displayName:', creatorData);
-        }
-
-        if (creatorData) {
-          const imageUrl = creatorData.photoURL || creatorData.image || creatorData.avatar;
-          console.log('[ideas] Found image URL:', imageUrl);
-          if (imageUrl) {
-            setSelectedCreator(prev => ({
-              ...prev,
-              photoURL: imageUrl
-            }));
-          }
-        } else {
-          console.warn('[ideas] Creator not found in users list');
-        }
+        console.warn('[ideas] Could not enrich creator data for', selectedCreator.id);
       } catch (e) {
         console.warn('Failed to enrich creator data with image', e);
       }
@@ -3300,39 +3415,36 @@ const App = () => {
 
     // If selectedCreator already has image data, use it
     if (selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar) {
-      console.log('[ideas] Using image from selectedCreator:', selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar);
-      setSelectedCreatorImage(selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar);
+      const normalized = normalizeCreatorImage(selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar);
+      console.log('[ideas] Using image from selectedCreator:', normalized);
+      setSelectedCreatorImage(normalized);
       return;
     }
 
-    // Otherwise fetch from backend
+    // Otherwise fetch from backend using /users/:id (reliable)
     const fetchCreatorImage = async () => {
       try {
-        console.log('[ideas] selectedCreator missing image, fetching all users...');
-        const res = await fetch('/users');
+        console.log('[ideas] selectedCreator missing image, fetching via /users/:id...');
+        const lookupId = selectedCreator.email || selectedCreator.id || String(selectedCreator.displayName || selectedCreator.name || '').replace(/^@/, '');
+        const res = await fetch(`${BACKEND}/users/${encodeURIComponent(lookupId)}`);
+        if (!res.ok) return;
         const json = await res.json();
+        const creator = json.user || json;
         
-        if (json && Array.isArray(json.users)) {
-          console.log('[ideas] Got ' + json.users.length + ' users from backend');
-          // Try to find by ID first (most reliable)
-          let creator = json.users.find(u => u.id === selectedCreator.id);
-          console.log('[ideas] Match by ID:', creator ? 'found' : 'not found', creator?.name);
-          
-          if (!creator) {
-            // Try by name
-            creator = json.users.find(u => String(u.name || '').toLowerCase() === String(selectedCreator.displayName || selectedCreator.name || '').toLowerCase());
-            console.log('[ideas] Match by name:', creator ? 'found' : 'not found', creator?.name);
-          }
-          
-          if (creator) {
-            const imgUrl = creator.image || creator.photoURL || creator.avatar;
-            console.log('[ideas] Found creator, image URL:', imgUrl);
-            setSelectedCreatorImage(imgUrl || null);
-          } else {
-            console.warn('[ideas] Creator not found in users list');
-          }
+        if (creator && !creator.isPlaceholder) {
+          const imgUrl = normalizeCreatorImage(creator.image || creator.photoURL || creator.avatar);
+          console.log('[ideas] Found creator image via /users/:id:', imgUrl);
+          setSelectedCreatorImage(imgUrl || null);
         } else {
-          console.warn('[ideas] No users returned');
+          // Also try in creatorsList
+          if (creatorsList.length > 0) {
+            const fromList = creatorsList.find(c => c.id === selectedCreator.id || c.email === selectedCreator.id);
+            if (fromList) {
+              const img = normalizeCreatorImage(fromList.photoURL || fromList.image);
+              if (img) setSelectedCreatorImage(img);
+            }
+          }
+          console.warn('[ideas] Creator not found via /users/:id');
         }
       } catch (e) {
         console.warn('[ideas] Failed to fetch creator image:', e);
@@ -3341,6 +3453,17 @@ const App = () => {
 
     fetchCreatorImage();
   }, [selectedCreator?.id]);
+
+  // When creatorsList loads, try to find image for selectedCreator if still missing
+  useEffect(() => {
+    if (!selectedCreator || !selectedCreator.id || selectedCreatorImage) return;
+    if (creatorsList.length === 0) return;
+    const creatorFromList = creatorsList.find(c => c.id === selectedCreator.id);
+    if (creatorFromList && (creatorFromList.photoURL || creatorFromList.image)) {
+      const img = normalizeCreatorImage(creatorFromList.photoURL || creatorFromList.image);
+      if (img) setSelectedCreatorImage(img);
+    }
+  }, [creatorsList, selectedCreator?.id, selectedCreatorImage]);
 
   // If we arrived with a selected creator, auto-scroll and focus the description textarea once
   useEffect(() => {
@@ -4017,7 +4140,7 @@ const App = () => {
     try {
       const REQUESTS_KEY = "ideas_requests_v1";
       const tempId = `req_${Date.now()}`;
-      const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
       
       // Create valid creator object - use localStorage instead of auth context
       let submitterCreator = null;
@@ -4109,8 +4232,15 @@ const App = () => {
         setPaymentModalOpen(false);
         
         // Store request data and show free request submitted modal
-        setCurrentFreeRequest(newRequest);
+        // The modal handlers will navigate to requests page when user interacts with them
+        setCurrentFreeRequest({ ...newRequest, id: json.request?.id || newRequest.id });
         setShowFreeRequestSubmittedModal(true);
+
+        // Update footer tab (do NOT navigate yet - let modal handle it)
+        try {
+          if (window.setFooterTab) window.setFooterTab('requests');
+        } catch (e) { }
+        // Navigation is now handled by the modal's onClose, onBoostRequest, or onInviteContributors callbacks
       } else {
         console.error('🔴 Backend save failed:', saveRes.status);
         showToast('Failed to save request. Please try again.');
@@ -4476,7 +4606,10 @@ const App = () => {
       {/* Animations and helpers are defined in source; theme variables are global via ThemeProvider */}
 
       {/* Header: Progress Text and Visual Bar */}
-      <header className="px-5 pt-4 sticky top-0 z-20" style={{ backgroundColor: '#F8F8FA', borderBottom: '1px solid rgba(15,23,42,0.03)' }}>
+      <header
+        className="px-5 pt-4 sticky top-0 z-20"
+        style={{ backgroundColor: '#F8F8FA', borderBottom: '1px solid rgba(15,23,42,0.03)', paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))', marginBottom: '4px' }}
+      >
         <div className="flex justify-between items-center mb-2">
           <span className="text-sm text-gray-700 font-medium">{getTranslation('Progress', selectedLanguage)}</span>
           <span className="text-sm font-normal" style={{ color: 'var(--color-accent)' }}>
@@ -4627,14 +4760,11 @@ const App = () => {
                       <img src={selectedCreatorImage} alt={selectedCreator.name || selectedCreator.handle} className="w-full h-full object-cover" />
                     ) : (
                       (() => {
-                        // If we still don't have image, try to find it in creatorsList as a fallback
-                        if (!selectedCreatorImage && creatorsList.length > 0) {
-                          const creatorFromList = creatorsList.find(c => c.id === selectedCreator.id);
-                          if (creatorFromList && (creatorFromList.photoURL || creatorFromList.image || creatorFromList.avatar)) {
-                            console.log('[ideas] Found image in creatorsList, updating state');
-                            setSelectedCreatorImage(creatorFromList.photoURL || creatorFromList.image || creatorFromList.avatar);
-                            return <img src={creatorFromList.photoURL || creatorFromList.image || creatorFromList.avatar} alt={selectedCreator.name} className="w-full h-full object-cover" />;
-                          }
+                        // Check creatorsList for an image (the useEffect will update state, but render the image immediately if found)
+                        const creatorFromList = creatorsList.length > 0 ? creatorsList.find(c => c.id === selectedCreator.id) : null;
+                        const listImg = creatorFromList ? (creatorFromList.photoURL || creatorFromList.image) : null;
+                        if (listImg) {
+                          return <img src={listImg} alt={selectedCreator.name} className="w-full h-full object-cover" />;
                         }
                         
                         const seed = String(selectedCreator.id || selectedCreator.name || selectedCreator.handle || "");
@@ -5646,11 +5776,13 @@ const App = () => {
                              </button>
                           )}
                        </div>
-                       {creatorSearch && (
+                       {(creatorSearch || creatorsList.length > 0) && (
                           <div className="rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-sm overflow-hidden">
                              {filteredCreators.length > 0 ? (
                                 <div className="max-h-56 overflow-y-auto space-y-0">
-                                   {filteredCreators.slice(0, 8).map((c) => (
+                                   {filteredCreators.slice(0, 8).map((c) => {
+                                      const avatarUrl = c.photoURL || c.image;
+                                      return (
                                       <button
                                          key={c.id}
                                          onClick={() => {
@@ -5660,27 +5792,27 @@ const App = () => {
                                          }}
                                          className="w-full flex items-center gap-3 p-3 hover:bg-blue-50/50 transition-colors text-left border-b border-gray-100 last:border-b-0 active:scale-95"
                                       >
-                                         <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white text-sm font-bold shadow-md">
-                                            {c.photoURL ? (
-                                               <img src={c.photoURL} alt="" className="w-full h-full object-cover" />
+                                         <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center text-white text-sm font-bold shadow-md" style={{ backgroundColor: avatarUrl ? 'transparent' : (c.fallbackColor || '#3b82f6') }}>
+                                            {avatarUrl ? (
+                                               <img src={avatarUrl} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display='none'; }} />
                                             ) : (
-                                               c.name.charAt(0).toUpperCase()
+                                               (c.name || 'U').charAt(0).toUpperCase()
                                             )}
                                          </div>
                                          <div className="flex-1 min-w-0">
                                             <div className="text-sm font-semibold text-gray-900 truncate">{c.displayName || c.name}</div>
-                                            {c.price && <div className="text-xs text-gray-500">${c.price}/request</div>}
+                                            {c.price ? <div className="text-xs text-gray-500">${c.price}/request</div> : null}
                                          </div>
                                       </button>
-                                   ))}
+                                   );})}
                                 </div>
-                             ) : (
+                             ) : creatorSearch ? (
                                 <div className="p-6 text-center">
                                    <div className="text-4xl mb-2">😕</div>
                                    <div className="text-sm font-medium text-gray-600">No creators found</div>
                                    <div className="text-xs text-gray-400 mt-1">Try a different search term</div>
                                 </div>
-                             )}
+                             ) : null}
                           </div>
                        )}
                     </>
@@ -5688,14 +5820,12 @@ const App = () => {
                     <div className="flex items-center justify-between w-full border border-blue-200 bg-gradient-to-r from-blue-50/80 to-purple-50/80 rounded-2xl p-4 backdrop-blur-sm">
                        <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-purple-400 flex-shrink-0 shadow-md flex items-center justify-center flex-none">
-                             {selectedCreator.photoURL ? (
-                                <img src={selectedCreator.photoURL} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                             {(selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? (
+                                <img src={selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
                              ) : null}
-                             {!selectedCreator.photoURL && (
-                                <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold">
-                                   {selectedCreator.name.charAt(0).toUpperCase()}
-                                </div>
-                             )}
+                             <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold" style={{ display: (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? 'none' : 'flex' }}>
+                                {(selectedCreator.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase()}
+                             </div>
                           </div>
                           <div className="min-w-0">
                              <div className="text-sm font-bold text-gray-900">{selectedCreator.displayName || selectedCreator.name}</div>
@@ -5818,19 +5948,20 @@ const App = () => {
                       className={`w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left ${selectedCreator?.id === c.id ? 'bg-blue-50' : ''}`}
                     >
                       <div
-                        className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold"
+                        className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold overflow-hidden"
                         style={{
-                          backgroundColor: c.photoURL ? 'transparent' : (c.fallbackColor || '#3b82f6'),
+                          backgroundColor: (c.photoURL || c.image) ? 'transparent' : (c.fallbackColor || '#3b82f6'),
                         }}
                       >
-                        {c.photoURL ? (
+                        {(c.photoURL || c.image) ? (
                           <img
-                            src={c.photoURL}
+                            src={c.photoURL || c.image}
                             alt={c.name}
                             className="w-full h-full rounded-full object-cover"
+                            onError={(e) => { e.target.style.display = 'none'; }}
                           />
                         ) : (
-                          String(c.name).replace("@", "").charAt(0).toUpperCase()
+                          String(c.name || 'U').replace("@", "").charAt(0).toUpperCase()
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -5869,7 +6000,8 @@ const App = () => {
           onClose={() => {
             setShowFreeRequestSubmittedModal(false);
             setCurrentFreeRequest(null);
-            window.location.href = '/requests?filter=For You';
+            const focusId = currentFreeRequest?.id ? `&focus=${encodeURIComponent(String(currentFreeRequest.id))}` : '';
+            navigate(`/requests?filter=For You${focusId}`);
           }}
           onBoostRequest={() => {
             setShowFreeRequestSubmittedModal(false);
@@ -5878,10 +6010,15 @@ const App = () => {
             setShowBoostsModal(true);
           }}
           onInviteContributors={() => {
+            // Don't navigate - let the share dialog stay open
+            // The modal will stay visible so user can continue interacting
+          }}
+          onViewDetails={() => {
             setShowFreeRequestSubmittedModal(false);
             setCurrentFreeRequest(null);
-            // Navigate to requests page to share/invite contributors
-            window.location.href = '/requests?filter=For You';
+            // Navigate directly to the newly created request
+            const focusId = currentFreeRequest?.id ? `&focus=${encodeURIComponent(String(currentFreeRequest.id))}` : '';
+            navigate(`/requests?filter=For You${focusId}`);
           }}
           requestData={currentFreeRequest}
           selectedLanguage={selectedLanguage}

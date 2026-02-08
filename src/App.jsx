@@ -30,6 +30,39 @@ const Policies = lazy(() => import('./policies.jsx'));
 const StaffDashboard = lazy(() => import('./StaffDashboard.jsx'));
 const SupportPage = lazy(() => import('./SupportPage.jsx'));
 
+const GlobalToast = ({ toast, onClose }) => {
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => onClose(), 3800);
+    return () => clearTimeout(timer);
+  }, [toast, onClose]);
+
+  if (!toast) return null;
+
+  return (
+    <div
+      className="fixed left-1/2 transform -translate-x-1/2 z-[200] w-full max-w-md mx-auto px-4"
+      style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
+    >
+      <div className="flex items-start bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 px-4 py-3">
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-gray-900">{toast.title}</div>
+          {toast.subtitle && (
+            <div className="text-xs text-gray-600 mt-0.5">{toast.subtitle}</div>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-600 ml-3 text-sm"
+          aria-label="Close"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // Main footer tab switcher component
 function FooterTabSwitcher() {
   const [activeTab, setActiveTab] = useState('home');
@@ -91,11 +124,33 @@ function App() {
   const [overridePayload, setOverridePayload] = useState(null);
   const [isPending, startTransition] = useTransition();
   const [showLaunchScreen, setShowLaunchScreen] = useState(true);
+  const [globalToast, setGlobalToast] = useState(null);
 
   // Store launch screen state in window so FAB can access it
   useEffect(() => {
     window.showLaunchScreen = showLaunchScreen;
   }, [showLaunchScreen]);
+
+  useEffect(() => {
+    window.showToast = (payload) => {
+      if (!payload) return;
+      setGlobalToast({
+        title: payload.title || 'Notification',
+        subtitle: payload.subtitle || ''
+      });
+    };
+    return () => {
+      try { delete window.showToast; } catch (e) { }
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem('regaarder_push_enabled');
+      localStorage.removeItem('regaarder_push_token');
+      localStorage.removeItem('regaarder_push_history');
+    } catch (e) { }
+  }, []);
 
   useEffect(() => {
     const off = eventBus.on('switchToHomeOnly', (data) => {
@@ -127,7 +182,7 @@ function App() {
         // Get backend URL
         const protocol = window.location.protocol;
         const hostname = window.location.hostname;
-        const backendUrl = window.__BACKEND_URL__ || `${protocol}//${hostname}:4000`;
+        const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
 
         // Get pending payment session
         const pendingSession = localStorage.getItem('pending_payment_session');
@@ -242,6 +297,7 @@ function App() {
         {showLaunchScreen && (
           <LaunchScreen onLoadComplete={() => setShowLaunchScreen(false)} />
         )}
+        <GlobalToast toast={globalToast} onClose={() => setGlobalToast(null)} />
         {isPending ? (
           <PageLoadingSkeleton />
         ) : overrideView === 'home' ? (
@@ -264,7 +320,7 @@ function App() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/watchhistory" element={<WatchHistory />} />
           <Route path="/watchtogether" element={<WatchTogether />} />
-          <Route path="/marketplace" element={<Marketplace />} />
+          <Route path="/marketplace" element={<Navigate to="/home" replace />} />
           <Route path="/sponsorship" element={<Sponsorship />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/videoplayer" element={<Videoplayer />} />
@@ -295,8 +351,8 @@ function App() {
           <Route path="/notifications.jsx" element={<Navigate to="/notifications" replace />} />
           <Route path="/watchhistory.jsx" element={<Navigate to="/watchhistory" replace />} />
           <Route path="/watchtogether.jsx" element={<Navigate to="/watchtogether" replace />} />
-          <Route path="/marketplace.jsx" element={<Navigate to="/marketplace" replace />} />
-          <Route path="/Marketplace.jsx" element={<Navigate to="/marketplace" replace />} />
+          <Route path="/marketplace.jsx" element={<Navigate to="/home" replace />} />
+          <Route path="/Marketplace.jsx" element={<Navigate to="/home" replace />} />
           <Route path="/sponsorship.jsx" element={<Navigate to="/sponsorship" replace />} />
           <Route path="/Sponsorship.jsx" element={<Navigate to="/sponsorship" replace />} />
           <Route path="/videoplayer.jsx" element={<Navigate to="/videoplayer" replace />} />

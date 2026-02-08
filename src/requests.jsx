@@ -5,6 +5,8 @@ import { useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { getTranslation } from './translations.js';
 import { useLanguage } from './LanguageContext.jsx';
+import { WEB_URL, getBackendBaseUrl } from './config.js';
+import { resolveMediaUrl } from './utils/media.js';
 import BoostsModal from './BoostsModal.jsx';
 import DailyLimitModal from './DailyLimitModal.jsx';
 import RequestValueLimitModal from './RequestValueLimitModal.jsx';
@@ -24,8 +26,6 @@ const getCssVar = (name, fallback) => {
         return val ? val.trim() : (fallback || '');
     } catch (e) { return fallback || ''; }
 };
-
-// Derived color variables used across this file. Prefer CSS variables
 // so UI layers update automatically when the active theme changes.
 const customColors = {
     '--color-gold': 'var(--color-gold)',
@@ -37,33 +37,8 @@ const customColors = {
     '--color-like': 'var(--color-like)',
 };
 
-// Resolve image URL strings used in mock data. Some entries use a custom
-// scheme like "uploaded:<filename>" which the browser treats as an unknown
-// URL scheme. Translate those to a backend-served uploads path so images
-// load correctly during local development.
-const resolveImageUrl = (url) => {
-    if (!url) return '';
-    try {
-        const s = String(url || '');
-        if (s.startsWith('uploaded:')) {
-            const filename = s.split(':')[1] || s.slice('uploaded:'.length);
-            return `${window.location.protocol}//${window.location.hostname}:4000/uploads/${filename}`;
-        }
-        // Rewrite localhost-based URLs to the current host so images load on devices
-        if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(s)) {
-            try {
-                const u = new URL(s);
-                const port = u.port ? `:${u.port}` : '';
-                return `${window.location.protocol}//${window.location.hostname}${port}${u.pathname}`;
-            } catch (e) {
-                return s.replace('://localhost', `://${window.location.hostname}`);
-            }
-        }
-        return s;
-    } catch (e) {
-        return url;
-    }
-};
+// Resolve image URL strings used in request cards and mock data.
+const resolveImageUrl = (url) => resolveMediaUrl(url);
 
 // Small utility to produce human-friendly relative time strings from ISO timestamps
 const timeAgoFromISO = (iso) => {
@@ -354,7 +329,7 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
         };
 
         (async () => {
-            const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+            const BACKEND = getBackendBaseUrl();
             const token = localStorage.getItem('regaarder_token');
             try {
                 const res = await fetch(`${BACKEND}/requests/${requestId}/comments`, {
@@ -389,7 +364,7 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
 
     const handleEditComment = (commentId, newText) => {
         (async () => {
-            const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+            const BACKEND = getBackendBaseUrl();
             const token = localStorage.getItem('regaarder_token');
             try {
                 const res = await fetch(`${BACKEND}/requests/${requestId}/comments/${commentId}`, {
@@ -418,7 +393,7 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
 
     const handleDeleteComment = (commentId) => {
         (async () => {
-            const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+            const BACKEND = getBackendBaseUrl();
             const token = localStorage.getItem('regaarder_token');
             try {
                 const res = await fetch(`${BACKEND}/requests/${requestId}/comments/${commentId}`, { method: 'DELETE', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
@@ -448,7 +423,7 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
             const token = localStorage.getItem('regaarder_token');
             if (!token) return;
 
-            const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+            const BACKEND = getBackendBaseUrl();
             await fetch(`${BACKEND}/comments/react`, {
                 method: 'POST',
                 headers: {
@@ -566,7 +541,7 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
             (async () => {
                 try {
                     if (requestId) {
-                        const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+                        const BACKEND = getBackendBaseUrl();
                         const res = await fetch(`${BACKEND}/requests/${requestId}/comments`);
                         if (res.ok) {
                             const body = await res.json();
@@ -635,7 +610,7 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
 
     return (
         <div
-            className={`fixed inset-0 z-50 transition-all duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full pointer-events-none'}`}
+            className={`fixed inset-0 z-[9999] transition-all duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full pointer-events-none'}`}
             style={{
                 transitionProperty: 'transform',
                 transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
@@ -693,7 +668,10 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
                     )}
                 </main>
 
-                <footer className="p-4 border-t border-gray-100 flex-shrink-0">
+                <footer
+                    className="p-4 border-t border-gray-100 flex-shrink-0"
+                    style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+                >
 
                     {replyingTo && (
                         <div className="flex items-center justify-between p-2 mb-2 bg-gray-100 rounded-lg text-sm text-gray-700">
@@ -790,7 +768,7 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
         try {
             const token = localStorage.getItem('regaarder_token');
             if (token) {
-                await fetch(`${window.location.protocol}//${window.location.hostname}:4000/suggestion`, {
+                await fetch(`${getBackendBaseUrl()}/suggestion`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({ requestId, text })
@@ -850,7 +828,7 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
             (async () => {
                 try {
                     if (requestId) {
-                        const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+                        const BACKEND = getBackendBaseUrl();
                         const res = await fetch(`${BACKEND}/requests/${requestId}/suggestions`);
                         if (res.ok) {
                             const body = await res.json();
@@ -883,7 +861,7 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
 
     return (
         <div
-            className={`fixed inset-0 z-50 transition-all duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full pointer-events-none'}`}
+            className={`fixed inset-0 z-[9999] transition-all duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full pointer-events-none'}`}
             style={{
                 transitionProperty: 'transform',
                 transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
@@ -1025,7 +1003,8 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
                     style={{
                         borderColor: 'rgba(203,138,0,0.1)',
                         background: 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(254,253,251,0.98) 100%)',
-                        backdropFilter: 'blur(8px)'
+                        backdropFilter: 'blur(8px)',
+                        paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))'
                     }}
                 >
                     <div className="flex items-center space-x-3">
@@ -1222,7 +1201,8 @@ const Toast = ({ message, isVisible, onClose, actionLabel, onAction, variant = '
 
     return (
         <div
-            className={`fixed top-6 left-4 right-4 z-[70] flex justify-center transition-all duration-500 ease-out ${isVisible && !isDismissing ? 'translate-y-0 opacity-100' : '-translate-y-8 opacity-0 pointer-events-none'}`}
+            className={`fixed left-4 right-4 z-[70] flex justify-center transition-all duration-500 ease-out ${isVisible && !isDismissing ? 'translate-y-0 opacity-100' : '-translate-y-8 opacity-0 pointer-events-none'}`}
+            style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
         >
             <div
                 ref={toastRef}
@@ -1282,11 +1262,20 @@ const Toast = ({ message, isVisible, onClose, actionLabel, onAction, variant = '
 
 
 // --- Reusable Component for a Single Request Card ---
-const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onTogglePin, pulseActive = false, onOpenProfile, selectedLanguage = 'English', initialBookmarked = false, adminSelections = {}, onBookmarkChange = null }) => {
+const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onTogglePin, pulseActive = false, onOpenProfile, selectedLanguage = 'English', initialBookmarked = false, adminSelections = {}, onBookmarkChange = null, isFocused = false }) => {
     const goldColor = 'var(--color-gold)';
     const lightGreyBg = customColors['--color-neutral-light-bg']; // UPDATED
 
     const [isExpanded, setIsExpanded] = useState(false);
+    const requesterName = request.requesterName || (request.creator && request.creator.name) || request.company || 'Anonymous';
+    const requesterId = (request.creator && request.creator.id) || request.createdBy || request.creatorId || null;
+    const requesterAvatar = resolveImageUrl(
+        request.requesterAvatar ||
+        (request.creator && (request.creator.image || request.creator.avatar || request.creator.photoURL)) ||
+        request.imageUrl ||
+        request.avatarUrl ||
+        ''
+    );
 
     // States for interactivity
     const [isBookmarked, setIsBookmarked] = useState(false);
@@ -1394,10 +1383,16 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
 
 
     useEffect(() => {
+        if (!requesterAvatar) {
+            setShowFallback(true);
+            return;
+        }
         if (request.imageUrl && request.imageUrl.includes('mock-image-fail')) {
             setShowFallback(true);
+            return;
         }
-    }, [request.imageUrl]);
+        setShowFallback(false);
+    }, [request.imageUrl, requesterAvatar]);
 
 
     const handleImageError = () => {
@@ -1432,7 +1427,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
 
         console.log('Toggling bookmark:', { requestId: request.id, action: next ? 'add' : 'remove', title: request.title, hasToken: !!token });
 
-        const base = `${window.location.protocol}//${window.location.hostname}:4000`;
+        const base = getBackendBaseUrl();
         const doPersist = async () => {
             const headers = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) };
             if (next) {
@@ -1697,7 +1692,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
         try {
             const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
             const action = (!isLiked ? 'like' : 'unlike');
-            fetch(`${window.location.protocol}//${window.location.hostname}:4000/requests/react`, {
+            fetch(`${getBackendBaseUrl()}/requests/react`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 body: JSON.stringify({ requestId: request.id, action })
@@ -1754,7 +1749,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
         }
 
         try {
-            const res = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/claim`, {
+            const res = await fetch(`${getBackendBaseUrl()}/claim`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1911,7 +1906,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
         try {
             const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
             const action = (!isDisliked ? 'dislike' : 'undislike');
-            fetch(`${window.location.protocol}//${window.location.hostname}:4000/requests/react`, {
+            fetch(`${getBackendBaseUrl()}/requests/react`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 body: JSON.stringify({ requestId: request.id, action })
@@ -2002,7 +1997,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
     };
 
     const confirmShareCopy = async () => {
-        const shareUrl = `https://regaarder.com/request/${request.id}`;
+        const shareUrl = `${WEB_URL}/share/request/${encodeURIComponent(request.id)}`;
         const shareText = `${request.title}\n${shareUrl}`;
         const ok = await copyTextToClipboard(shareText);
         if (ok) {
@@ -2015,7 +2010,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
     };
 
     const confirmShareNative = async () => {
-        const shareUrl = `https://regaarder.com/request/${request.id}`;
+        const shareUrl = `${WEB_URL}/share/request/${encodeURIComponent(request.id)}`;
         try {
             if (navigator && navigator.share) {
                 await navigator.share({ title: request.title, text: `${request.title}\n${shareUrl}`, url: shareUrl });
@@ -2231,7 +2226,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
 
                 {/* Card surface moves as a single element (includes border + shadow) */}
                 <div
-                    className={`p-5 pb-4 pr-12 rounded-3xl relative z-10 ${pulseActive ? 'pinned-pulse' : ''}`}
+                    className={`p-5 pb-4 pr-12 rounded-3xl relative z-10 ${pulseActive ? 'pinned-pulse' : ''} ${isFocused ? 'ring-2 ring-yellow-400 ring-offset-2 ring-offset-gray-50' : ''}`}
                     style={{
                         backgroundColor: backgroundColor,
                         border: `${borderWidth} solid ${borderColor}`,
@@ -2355,23 +2350,6 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                         onTouchEnd={(e) => e.stopPropagation()}
                         className="absolute top-4 right-4 flex flex-col items-end space-y-1 z-10"
                     >
-                        {/* Pending Sync Badge */}
-                        {request.isOptimistic && (
-                            <div style={{
-                                backgroundColor: '#E0F2FE', // blue-100
-                                color: '#0369A1',       // blue-700
-                                fontWeight: 'bold',
-                                padding: '4px 8px',
-                                borderRadius: '4px', // distinct from others
-                                fontSize: '10px',
-                                textTransform: 'uppercase',
-                                marginBottom: '2px', // spacing
-                                border: '1px solid #BAE6FD',
-                                zIndex: 6
-                            }}>
-                                PENDING SYNC
-                            </div>
-                        )}
                         {request.isTrending && (
                             <div style={trendingBadgeStyle}>
                                 <TrendingUp className="w-4 h-4 mr-1" style={{ color: goldColor }} />
@@ -2454,19 +2432,19 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                                 style={{ focusRingColor: 'var(--color-gold)' }}
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    if (onOpenProfile && request.creator && request.creator.name && request.creator.name !== 'Anonymous') {
-                                        onOpenProfile(request.creator.name, true, {
-                                            id: request.creator.id || null,
-                                            avatar: resolveImageUrl(request.creator && (request.creator.image || request.creator.avatar) ? (request.creator.image || request.creator.avatar) : ''),
-                                            bio: request.creator.bio || 'Creating engaging content',
+                                    if (onOpenProfile && requesterName && requesterName !== 'Anonymous' && requesterName !== 'Community') {
+                                        onOpenProfile(requesterName, true, {
+                                            id: requesterId,
+                                            avatar: requesterAvatar,
+                                            bio: (request.creator && request.creator.bio) || 'Creating engaging content',
                                             stats: {
-                                                videos: request.creator.videosCount || 0,
-                                                requests: request.creator.requestsCompleted || 0,
-                                                followers: request.creator.followers || request.creator.followerCount || 0,
-                                                following: request.creator.following || 0
+                                                videos: (request.creator && request.creator.videosCount) || 0,
+                                                requests: (request.creator && request.creator.requestsCompleted) || 0,
+                                                followers: (request.creator && (request.creator.followers || request.creator.followerCount)) || 0,
+                                                following: (request.creator && request.creator.following) || 0
                                             },
-                                            verified: request.creator.verified || false,
-                                            joinedDate: request.creator.joinedYear || new Date().getFullYear()
+                                            verified: (request.creator && request.creator.verified) || false,
+                                            joinedDate: (request.creator && request.creator.joinedYear) || new Date().getFullYear()
                                         });
                                     }
                                 }}
@@ -2474,8 +2452,8 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
 
                                 {/* Image with onError for fallback */}
                                 <img
-                                    src={resolveImageUrl(request.creator && (request.creator.image || request.creator.avatar) ? (request.creator.image || request.creator.avatar) : '')}
-                                    alt={`${request.company} profile`}
+                                    src={requesterAvatar}
+                                    alt={`${requesterName} profile`}
                                     className={`w-full h-full object-cover absolute inset-0 z-10 transition-opacity duration-300 ${showFallback ? 'opacity-0' : 'opacity-100'}`}
                                     onError={handleImageError}
                                     onLoad={() => setShowFallback(false)}
@@ -2483,7 +2461,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
 
                                 {/* Fallback Initial */}
                                 {(() => {
-                                    const avatarInitial = (request.creator && request.creator.name && request.creator.name !== 'Anonymous') ? String(request.creator.name).charAt(0).toUpperCase() : 'U';
+                                    const avatarInitial = requesterName ? String(requesterName).charAt(0).toUpperCase() : 'U';
                                     const colorClasses = ['bg-gray-400', 'bg-blue-600', 'bg-indigo-600', 'bg-green-600', 'bg-red-600', 'bg-yellow-500', 'bg-pink-600'];
                                     const seed = String(request.id || '').split('').reduce((s, ch) => s + ch.charCodeAt(0), 0);
                                     const colorClass = request.companyColor || colorClasses[seed % colorClasses.length];
@@ -2504,7 +2482,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                             </button>
 
                             <div>
-                                <p className="text-sm font-medium text-gray-900">{(request.creator && request.creator.name) ? (request.creator.name === 'Anonymous' ? 'Anonymous' : request.creator.name) : request.company}</p>
+                                <p className="text-sm font-medium text-gray-900">{requesterName}</p>
                                 <p className="text-xs text-gray-500">{request.timeAgo}</p>
                             </div>
                         </div>
@@ -2734,7 +2712,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                                                 <button
                                                     onClick={async () => {
                                                         const token = localStorage.getItem('regaarder_token');
-                                                        const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+                                                        const BACKEND = getBackendBaseUrl();
                                                         try {
                                                             const meta = { 
                                                                 ...(request.meta || {}), 
@@ -2855,7 +2833,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                             <button
                                 onClick={async () => {
                                     const token = localStorage.getItem('regaarder_token');
-                                    const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+                                    const BACKEND = getBackendBaseUrl();
                                     try {
                                         const res = await fetch(`${BACKEND}/requests/${request.id}`, {
                                             method: 'DELETE',
@@ -3061,7 +3039,7 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
         const fetchUserProfile = async () => {
             try {
                 const targetId = username || name;
-                const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+                const BACKEND = getBackendBaseUrl();
                 const response = await fetch(`${BACKEND}/users`);
                 const result = await response.json();
                 const users = Array.isArray(result.users) ? result.users : (Array.isArray(result) ? result : []);
@@ -3110,7 +3088,7 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
             const creatorId = (profileData && profileData.id) || null;
             const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
             if (!creatorId || !token) return;
-            fetch(`${window.location.protocol}//${window.location.hostname}:4000/following/${creatorId}`, {
+            fetch(`${getBackendBaseUrl()}/following/${creatorId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.json()).then(d => { if (typeof d.isFollowing !== 'undefined') setIsFollowing(!!d.isFollowing); }).catch(() => { });
         } catch (e) { }
@@ -3187,7 +3165,7 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                 const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
                                 if (!creatorId || !token) { onClose && onClose(); return; }
                                 const url = isFollowing ? '/unfollow' : '/follow';
-                                fetch(`${window.location.protocol}//${window.location.hostname}:4000${url}`, {
+                                fetch(`${getBackendBaseUrl()}${url}`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                                     body: JSON.stringify({ creatorId })
@@ -3281,6 +3259,7 @@ export default function RequestsFeed() {
     });
     const [activeNav, setActiveNav] = useState('Requests');
     const [searchQuery, setSearchQuery] = useState('');
+    const [focusRequestId, setFocusRequestId] = useState(null);
     const [bookmarkedReqSet, setBookmarkedReqSet] = useState(new Set());
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('All');
@@ -3388,14 +3367,34 @@ export default function RequestsFeed() {
     }, [location.search]);
 
 
-    // If arriving with a query param, seed the search box
+    // If arriving with a query param, seed the search box or target specific request
     useEffect(() => {
-        try {
-            const params = new URLSearchParams(window.location.search || '');
-            const qParam = params.get('q');
-            if (qParam) setSearchQuery(qParam);
-        } catch (e) { }
+        const handleDeepLink = () => {
+            try {
+                const params = new URLSearchParams(window.location.search || '');
+                const qParam = params.get('q');
+                if (qParam) setSearchQuery(qParam);
+
+                const idParam = params.get('id');
+                if (idParam) {
+                    setPulseId(String(idParam));
+                    setTimeout(() => {
+                        try {
+                            const el = document.querySelector(`[data-request-id="${String(idParam)}"]`);
+                            if (el && el.scrollIntoView) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        } catch (e) { }
+                    }, 800);
+                }
+            } catch (e) { }
+        };
+
+        handleDeepLink();
     }, []);
+
+    // id of the request that should briefly pulse (set immediately after pin or via deep link)
+    const [pulseId, setPulseId] = useState(null);
 
     // --- Influence and Ranking Calculation Logic ---
     // Influence: 1 Like = 1 Influence, $1 Boost = 2 Influence
@@ -3479,7 +3478,7 @@ export default function RequestsFeed() {
         let cancelled = false;
         (async () => {
             try {
-                const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+                const BACKEND = getBackendBaseUrl();
 
                 // Fetch bookmarks to sync request bookmark state
                 const token = localStorage.getItem('regaarder_token');
@@ -3628,12 +3627,20 @@ export default function RequestsFeed() {
                     const base = { likes: 0, boosts: 0, comments: 0, funding: 0, ...r };
                     // Prefer explicit funding or fall back to posted amount
                     base.funding = (typeof base.funding === 'number' && base.funding > 0) ? base.funding : (typeof base.amount === 'number' ? base.amount : 0);
+                    // Normalize requester/creator fields for consistent display across platforms
+                    const creatorObj = (base.creator && typeof base.creator === 'object') ? base.creator : null;
+                    const creatorId = (creatorObj && (creatorObj.id || creatorObj.userId)) || base.creatorId || base.createdBy || (typeof base.creator === 'string' ? base.creator : null);
+                    const requesterName = base.requesterName || base.requester || base.createdByName || base.creatorName || (creatorObj && (creatorObj.name || creatorObj.handle || creatorObj.tag)) || base.company || 'Community';
+                    const requesterAvatar = base.requesterAvatar || base.requesterImage || base.avatar || base.photoURL || (creatorObj && (creatorObj.image || creatorObj.avatar || creatorObj.photoURL)) || base.imageUrl || '';
+                    base.creator = creatorObj || { id: creatorId || null, name: requesterName, image: requesterAvatar || '' };
+                    base.requesterName = requesterName;
+                    base.requesterAvatar = requesterAvatar || '';
                     // Derive company / display name
-                    base.company = base.company || (base.creator && (base.creator.name || base.creator.id)) || 'Community';
+                    base.company = base.company || requesterName;
                     base.companyInitial = base.companyInitial || (base.company ? String(base.company).charAt(0).toUpperCase() : 'C');
                     base.companyColor = base.companyColor || 'bg-gray-400';
-                    // Accept image from body.imageUrl or nested creator.image/avatar
-                    base.imageUrl = base.imageUrl || (base.creator && (base.creator.image || base.creator.avatar)) || '';
+                    // Accept image from body.imageUrl or nested creator/image fields
+                    base.imageUrl = base.imageUrl || requesterAvatar || '';
                     // Compute a friendly time label from createdAt
                     base.timeAgo = base.timeAgo || timeAgoFromISO(base.createdAt);
                     // Sync bookmark state from backend
@@ -3649,7 +3656,7 @@ export default function RequestsFeed() {
                     if (creatorIds.length > 0) {
                         const fetched = await Promise.all(creatorIds.map(async (id) => {
                             try {
-                                const res = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/users/${id}`);
+                                const res = await fetch(`${getBackendBaseUrl()}/users/${id}`);
                                 if (!res.ok) return null;
                                 const body = await res.json();
                                 return body && body.user ? body.user : null;
@@ -3709,9 +3716,10 @@ export default function RequestsFeed() {
                 setRankedRequests(ranked);
             } catch (e) {
                 console.error('🔴🔴🔴 FETCH ERROR:', e);
-                // fallback: keep mockRequests if fetch fails
+                // fallback: only use mock data in development
                 try {
-                    let initial = calculateInfluenceAndRank(mockRequests);
+                    const useMock = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV);
+                    let initial = calculateInfluenceAndRank(useMock ? mockRequests : []);
 
                     // Even if backend fails, try to show local optimistic requests on top of mocks
                     try {
@@ -3731,7 +3739,7 @@ export default function RequestsFeed() {
                                     imageUrl: r.imageUrl || '',
                                 }));
                                 // Prepend
-                                initial = calculateInfluenceAndRank([...normalizedLocal, ...mockRequests]);
+                                initial = calculateInfluenceAndRank([...normalizedLocal, ...(useMock ? mockRequests : [])]);
                             }
                         }
                     } catch (ex) { }
@@ -3844,7 +3852,7 @@ export default function RequestsFeed() {
         try {
             const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
             if (!token) return;
-            fetch(`${window.location.protocol}//${window.location.hostname}:4000/requests/react/me`, {
+            fetch(`${getBackendBaseUrl()}/requests/react/me`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.json()).then(data => {
                 if (data && data.reactions) {
@@ -3924,7 +3932,7 @@ export default function RequestsFeed() {
                 const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
                 // console.log('Fetching bookmarks - has token:', !!token, 'auth.user:', auth.user?.id);
                 const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-                const res = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/bookmarks`, { headers });
+                const res = await fetch(`${getBackendBaseUrl()}/bookmarks`, { headers });
                 const data = await res.json();
                 // console.log('Bookmarks fetch response:', data);
                 if (!cancelled && data && data.success) {
@@ -3947,8 +3955,6 @@ export default function RequestsFeed() {
         const id = setInterval(fetchBookmarks, 5000);
         return () => { cancelled = true; clearInterval(id); };
     }, [auth.user]);
-    // id of the request that should briefly pulse (set immediately after pin)
-    const [pulseId, setPulseId] = useState(null);
 
     // Navigate to a specific request if coming from Bookmarks
     useEffect(() => {
@@ -4258,10 +4264,12 @@ export default function RequestsFeed() {
 
     // Auto-focus the matching request when arriving from a video option
     useEffect(() => {
+        let clearTimer = null;
         try {
             const params = new URLSearchParams(window.location.search || '');
             const reqIdParam = params.get('reqId');
-            let targetId = reqIdParam ? reqIdParam : null;
+            const focusParam = params.get('focus');
+            let targetId = focusParam || reqIdParam || null;
 
             if (!targetId && searchQuery) {
                 const qLower = searchQuery.toLowerCase();
@@ -4279,11 +4287,17 @@ export default function RequestsFeed() {
             }
 
             if (targetId) {
-                const el = document.getElementById(`request-card-${targetId}`);
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                const focusId = String(targetId);
+                setFocusRequestId(focusId);
+                const el = document.getElementById(`request-card-${focusId}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 try { localStorage.removeItem('focus_request_hint'); } catch (e) { }
+                clearTimer = setTimeout(() => setFocusRequestId(null), 3500);
             }
         } catch (e) { }
+        return () => {
+            if (clearTimer) clearTimeout(clearTimer);
+        };
     }, [rankedRequests, searchQuery]);
 
     const filterButtonStyle = (active) => ({
@@ -4299,7 +4313,10 @@ export default function RequestsFeed() {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-32 app-container-light">
-            <header className="sticky top-0 bg-white shadow-sm z-20 pb-2 border-b border-gray-100">
+            <header
+                className="sticky top-0 bg-white shadow-sm z-20 pb-2 border-b border-gray-100"
+                style={{ paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))', marginBottom: '4px' }}
+            >
                 <div className="p-4">
                     <div className="relative">
                         <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -4365,29 +4382,29 @@ export default function RequestsFeed() {
                                     <Eye className="w-5 h-5" />
                                 )}
                                 
-                                {/* Hint Popover - Positioned above and to the left */}
+                                {/* Hint Popover - Positioned below, constrained within viewport */}
                                 {showHideClaimedHint && (
-                                    <div className="absolute -top-40 -right-8 w-64 bg-white rounded-xl shadow-2xl border-2 p-4 z-50 animate-fade-in-up"
+                                    <div className="absolute top-full mt-3 right-0 w-64 max-w-[80vw] bg-white rounded-xl shadow-2xl border-2 p-4 z-50 animate-fade-in-up"
                                          style={{
                                             borderColor: 'var(--color-gold)',
                                             backgroundColor: 'var(--color-gold)',
                                          }}>
-                                        {/* Arrow pointing down to button */}
+                                        {/* Arrow pointing up to button */}
                                         <div 
-                                            className="absolute -bottom-2 right-6 w-4 h-4 rotate-45"
+                                            className="absolute -top-2 right-6 w-4 h-4 rotate-45"
                                             style={{
                                                 backgroundColor: 'var(--color-gold)',
-                                                borderRight: '2px solid var(--color-gold)',
-                                                borderBottom: '2px solid var(--color-gold)'
+                                                borderLeft: '2px solid var(--color-gold)',
+                                                borderTop: '2px solid var(--color-gold)'
                                             }}
                                         />
                                         
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex-1">
-                                                <p className="text-sm font-bold text-white flex items-center gap-1">
+                                                <p className="text-xs font-bold text-white flex items-center gap-1">
                                                     <span>👁️</span> Hide Claimed Requests
                                                 </p>
-                                                <p className="text-sm text-white mt-2 leading-snug font-medium">
+                                                <p className="text-xs text-white mt-2 leading-snug font-medium whitespace-normal break-words">
                                                     Click the eye icon to focus on available requests and hide the ones already claimed by others
                                                 </p>
                                             </div>
@@ -4721,7 +4738,7 @@ export default function RequestsFeed() {
                 </div>
             </header>
             {showSwipeEntrance && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center">
+                <div className="fixed inset-0 z-[999] flex items-center justify-center px-4">
                     <div className="absolute inset-0 bg-black/60" onClick={dismissSwipeEntrance} />
                     <div className="relative max-w-sm w-[90%] mx-auto">
                         <style>{`
@@ -4779,6 +4796,7 @@ export default function RequestsFeed() {
                                 isPinned={!!req.pinned}
                                 onTogglePin={() => togglePin(req.id)}
                                 pulseActive={pulseId === req.id}
+                                isFocused={focusRequestId && String(req.id) === String(focusRequestId)}
                                 onOpenProfile={handleOpenProfile}
                                 selectedLanguage={selectedLanguage}
                                 initialBookmarked={bookmarkedReqSet.has(String(req.id))}

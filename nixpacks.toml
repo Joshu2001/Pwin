@@ -1,4 +1,4 @@
-# Force Railway to only run the backend - skip root npm entirely
+# Run backend only - skip root npm entirely
 [phases.setup]
 nixPkgs = ["nodejs_24"]
 

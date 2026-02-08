@@ -5,106 +5,9 @@ import { ChevronLeft, ChevronDown, ChevronUp, Shield, FileText, Home, MoreHorizo
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations.js';
 import { useLanguage } from './LanguageContext.jsx';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
-// Bottom navigation bar component
-const BottomBar = () => {
-    const [activeTab, setActiveTab] = useState(null);
-    const navigatedRef = useRef(false);
-
-    const tabs = [
-        { name: 'Home', Icon: Home },
-        { name: 'Requests', Icon: FileText },
-        { name: 'Ideas', Icon: Pencil },
-        { name: 'More', Icon: MoreHorizontal },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{ 
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.name === activeTab;
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold)' }
-                        : { color: inactiveColor };
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                    const navigateToTab = (tabName) => {
-                        try {
-                            if (tabName === 'Home') {
-                                window.location.href = '/home.jsx';
-                                return;
-                            }
-                            if (tabName === 'Requests') {
-                                window.location.href = '/requests.jsx';
-                                return;
-                            }
-                            if (tabName === 'Ideas') {
-                                window.location.href = '/ideas';
-                                return;
-                            }
-                            if (tabName === 'More') {
-                                window.location.href = '/more.jsx';
-                                return;
-                            }
-                        } catch (e) {
-                            console.warn('Navigation failed', e);
-                        }
-                    };
-
-                    return (
-                        <div
-                            key={tab.name}
-                            className="relative flex flex-col items-center w-1/4 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { 
-                                        navigatedRef.current = true; 
-                                        navigateToTab(tab.name); 
-                                    }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { 
-                                        navigatedRef.current = true; 
-                                        navigateToTab(tab.name); 
-                                    }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { 
-                                        navigatedRef.current = false; 
-                                        e.preventDefault(); 
-                                        return; 
-                                    }
-                                    setActiveTab(tab.name);
-                                    navigateToTab(tab.name);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    <tab.Icon className="w-6 h-6" strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {tab.name}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
+// Bottom navigation bar component - removed, now using SharedBottomBar
 
 const Policies = () => {
     const navigate = useNavigate();
@@ -251,11 +154,17 @@ const Policies = () => {
     return (
         <div className="max-w-2xl mx-auto min-h-screen bg-gray-50 font-sans">
             {/* Header */}
-            <header className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20">
+                        <header
+                            className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20"
+                            style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+                        >
                 <div className="flex items-center space-x-4">
                     <ChevronLeft
                         className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900"
-                        onClick={() => navigate('/home')}
+                        onClick={() => {
+                            try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch (e) { }
+                            try { navigate('/home', { replace: true }); } catch (e) { }
+                        }}
                     />
                     <h1 className="text-2xl font-semibold text-gray-800">{getTranslation('Policies', selectedLanguage)}</h1>
                 </div>
@@ -374,7 +283,7 @@ const Policies = () => {
                 )}
             </div>
 
-            <BottomBar />
+            <SharedBottomBar selectedLanguage={selectedLanguage} />
         </div>
     );
 };

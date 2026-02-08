@@ -1,4 +1,4 @@
-# Ignore frontend files for Railway deployment
+# Ignore frontend files for backend-only deployment
 node_modules/
 android/
 ios/

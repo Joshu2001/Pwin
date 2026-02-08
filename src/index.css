@@ -137,10 +137,12 @@ body {
   }
 }
 
-/* Safe area and footer spacing for mobile apps */
-html {
-  /* iOS notch support */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+/* Safe area helpers (avoid global padding to prevent double offsets in WebView) */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
 }
 
 /* Content padding above footer - accounts for footer height + safe area */

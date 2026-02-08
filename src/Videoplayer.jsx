@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback, useContext } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useContext, useLayoutEffect } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext.jsx';
 import { useTheme } from './ThemeContext.jsx';
 import { getTranslation } from './translations.js';
+import { resolveMediaUrl } from './utils/media.js';
 import * as eventBus from './eventbus.js';
 import { PlayerContext } from './PlayerProvider.jsx';
 import FeedbackModal from './FeedbackModal.jsx'; // Feedback Modal
@@ -130,7 +131,7 @@ const CTAOverlay = ({ cta }) => {
 };
 
 // Video Ad Overlay Component with Preloading State and Exit Transitions
-const VideoAdOverlay = ({ ad, forceLandscapeCss }) => {
+const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 	const [videoReady, setVideoReady] = useState(false);
 	const [hasError, setHasError] = useState(false);
 	const [isClosing, setIsClosing] = useState(false);
@@ -163,6 +164,8 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss }) => {
 
 	const handleClose = () => {
 		setIsClosing(true);
+		// Notify parent so ad is removed from visibleAds (unblocks controls)
+		if (onDismiss) onDismiss(ad.id);
 		// Remove component after transition completes
 		setTimeout(() => setShouldRender(false), 600);
 	};
@@ -331,8 +334,9 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss }) => {
 										style={{
 											maxWidth: '100%',
 											maxHeight: '100vh',
-											width: 'auto',
-											height: 'auto',
+											width: '100%',
+											height: '100%',
+											objectFit: 'contain',
 											background: '#000',
 											display: 'block'
 										}}
@@ -394,6 +398,7 @@ const VideoPlayer = () => {
 	const [videoInfo, setVideoInfo] = useState(null);
 	const videoRef = useRef(null);
 	const containerRef = useRef(null);
+	const [videoMountTick, setVideoMountTick] = useState(0);
 	const player = useContext(PlayerContext) || {};
 	const globalVideoRef = player.videoRef;
 	const setSource = player.setSource;
@@ -419,12 +424,14 @@ const VideoPlayer = () => {
 
 				let info = null;
 
-				// Prefer router state payload when expanding from mini-player
+				// Prefer router state payload when expanding from mini-player or from home navigation
 				try {
-					if (location && location.state && location.state.miniPlayerData) {
-						const payload = location.state.miniPlayerData;
-						info = payload.video || payload || null;
-						if (info && !info.src) info.src = info.videoUrl || info.url || src || null;
+					if (location && location.state) {
+						const payload = location.state.miniPlayerData || location.state.video || null;
+						if (payload) {
+							info = payload.video || payload || null;
+							if (info && !info.src) info.src = info.videoUrl || info.url || src || null;
+						}
 					}
 				} catch (e) {
 					// ignore
@@ -517,6 +524,7 @@ const VideoPlayer = () => {
 				try { containerRef.current.appendChild(v); } catch { }
 				try { v.style.display = 'block'; v.className = 'w-full rounded-lg bg-black'; } catch { }
 				try { videoRef.current = v; } catch { }
+				try { setVideoMountTick((t) => t + 1); } catch { }
 			}
 		} catch (e) { }
 
@@ -534,13 +542,18 @@ const VideoPlayer = () => {
 					}
 				} catch { }
 				setSource(videoInfo.src, startTime, false);
+				// ensure local state has a URL so autoplay effects can kick in
+				try {
+					const resolvedSrc = resolveMediaUrl(videoInfo.src);
+					if (resolvedSrc && videoUrl !== resolvedSrc) setVideoUrl(resolvedSrc);
+				} catch { }
 			} else if (v && videoInfo.src) {
-				if (v.src !== videoInfo.src) { v.src = videoInfo.src; try { v.load(); } catch { } }
+				if (v.src !== (videoInfo.src ? resolveMediaUrl(videoInfo.src) : videoInfo.src)) { v.src = videoInfo.src ? resolveMediaUrl(videoInfo.src) : videoInfo.src; try { v.load(); } catch { } }
 				try { v.currentTime = 0; } catch { }
 				// AUTO-PLAY DISABLED: User must click play
 			}
 		} catch (e) { }
-	}, [videoInfo, globalVideoRef, setSource]);
+		}, [videoInfo, globalVideoRef, setSource, videoUrl]);
 
 	// Attach important event listeners to the global video element (previously inline JSX handlers)
 	useEffect(() => {
@@ -627,7 +640,7 @@ const VideoPlayer = () => {
 							const v = videoRef.current;
 							if (v) {
 								if (info.src || info.url) {
-									v.src = info.src || info.url;
+									v.src = resolveMediaUrl(info.src || info.url);
 									v.currentTime = 0;
 									// AUTO-PLAY DISABLED: User must click play
 								}
@@ -982,7 +995,7 @@ const VideoCard = ({ item, idx, filtered, onVideoClick, setToastMessage, toastTi
 			};
 
 			video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
-			video.src = videoUrl;
+			video.src = resolveMediaUrl(videoUrl);
 			video.load();
 
 			// Timeout after 5 seconds
@@ -1207,13 +1220,17 @@ function BottomAdPreviewBar({ profileName, profileAvatar, textItems, textInterva
 
 // --- Main Component ---
 
-export default function MobileVideoPlayer({ discoverItems = null, initialVideo = null, onChevronDown = null } = {}) {
+export default function MobileVideoPlayer({ discoverItems = null, initialVideo: initialVideoProp = null, onChevronDown = null } = {}) {
 
 	const selectedLanguage = typeof window !== 'undefined' ? (localStorage.getItem('regaarder_language') || 'English') : 'English';
 	const auth = useAuth();
 
 	const { accentColor: themeAccentColor } = useTheme(); // Get theme accent color
 	const [searchParams] = useSearchParams();
+	const location = useLocation();
+
+	// Merge initialVideo from prop OR from location.state (web route navigation)
+	const initialVideo = initialVideoProp || (location && location.state && location.state.video) || null;
 	
 	// Helper function to get max allowed quality based on subscription tier
 	const getMaxAllowedQuality = () => {
@@ -1283,11 +1300,17 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 
 	// Feedback modal is disabled - not showing to users
 
-	// start with no custom URL so the built-in fallback video is shown
-	const [videoUrl, setVideoUrl] = useState("");
+	// Initialize videoUrl immediately from initialVideo prop (avoid blank first frame)
+	const [videoUrl, setVideoUrl] = useState(() => {
+		if (initialVideo) {
+			const u = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
+			return u ? resolveMediaUrl(u) : '';
+		}
+		return '';
+	});
 	// Track current video metadata so dialogs (Report, Share, etc.) reflect the active media
-	const [videoTitle, setVideoTitle] = useState("What if the cold war went hot? an alternate history");
-	const [creatorName, setCreatorName] = useState("Krypton T");
+	const [videoTitle, setVideoTitle] = useState(() => (initialVideo && initialVideo.title) || "");
+	const [creatorName, setCreatorName] = useState(() => (initialVideo && initialVideo.author) || "");
 	const [notes, setNotes] = useState([]);
 	const [noteText, setNoteText] = useState("");
 	const [linkNoteTimestamp, setLinkNoteTimestamp] = useState(true);
@@ -1299,7 +1322,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			if (quickLoadData) {
 				const data = JSON.parse(quickLoadData);
 				if (data.url) {
-					setVideoUrl(data.url);
+					setVideoUrl(resolveMediaUrl(data.url));
 					if (data.title) setVideoTitle(data.title);
 					if (data.creator) setCreatorName(data.creator);
 					if (data.creatorName) setCreatorName(data.creatorName);
@@ -1342,6 +1365,9 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	const [liked, setLiked] = useState(false);
 	const [disliked, setDisliked] = useState(false); // Make sure this is declared if not already
 	const tapTimerRef = useRef(null); // NEW: ref for double-tap timer
+
+	// Heart explosion particles state for double-tap like animation
+	const [heartExplosions, setHeartExplosions] = useState([]);
 
 	// Sync Like/Dislike state from backend on video load
 	useEffect(() => {
@@ -1428,12 +1454,27 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	const draggingRef = useRef(false);
 	const [progressDragging, setProgressDragging] = useState(false);
 	const videoRef = useRef(null);
+	const [videoMountTick, setVideoMountTick] = useState(0);
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [duration, setDuration] = useState(0);
 
 	// NEW: Video overlays (links/images) that appear at specific times
 	const [videoOverlays, setVideoOverlays] = useState([]);
 	const [visibleOverlays, setVisibleOverlays] = useState([]);
+
+	// Ensure autoplay retries after the video element is mounted
+	useLayoutEffect(() => {
+		try {
+			if (videoRef.current) setVideoMountTick((t) => t + 1);
+		} catch { }
+	}, []);
+
+	// Bump mount tick on source changes so autoplay hooks re-run
+	useEffect(() => {
+		try {
+			if (videoRef.current) setVideoMountTick((t) => t + 1);
+		} catch { }
+	}, [videoUrl]);
 
 	// NEW: Video ads (bottom panel ads that appear at specific times)
 	// Initialize with test ads so they show immediately
@@ -1499,7 +1540,15 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	];
 	const [videoAds, setVideoAds] = useState([]);
 	const [visibleAds, setVisibleAds] = useState([]);
-	const [dismissedAdIds, setDismissedAdIds] = useState([]);
+	const dismissedAdIdsRef = useRef(new Set());
+	const adTimersRef = useRef(new Set()); // tracks ads that already have auto-dismiss timers
+
+	// Called by VideoAdOverlay when user closes an ad — removes it from visibleAds
+	// and prevents the timeupdate handler from re-adding it
+	const handleAdDismiss = useCallback((adId) => {
+		dismissedAdIdsRef.current.add(adId);
+		setVisibleAds(prev => prev.filter(a => a.id !== adId));
+	}, []);
 
 
 	// NEW: orientation + natural aspect
@@ -1507,6 +1556,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	const [naturalAspect, setNaturalAspect] = useState(16 / 9);
 	// Fallback CSS rotate when browser won't rotate
 	const [forceLandscapeCss, setForceLandscapeCss] = useState(false);
+	const [isFullscreen, setIsFullscreen] = useState(false);
 
 	// Discover panel search query (persisted so home<>discover can sync)
 	const [discoverQuery, setDiscoverQuery] = usePref('discover:query', '');
@@ -1627,15 +1677,15 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					setCurrentIndex(nextIdx);
 					try { setVideoTitle(info.title || 'Video'); } catch { }
 					try { setCreatorName(info.creator || info.channel || ''); } catch { }
-					try { if (info.url) setVideoUrl(info.url); else if (info.videoUrl) setVideoUrl(info.videoUrl); else if (info.src) setVideoUrl(info.src); } catch { }
+					try { if (info.url) setVideoUrl(resolveMediaUrl(info.url)); else if (info.videoUrl) setVideoUrl(resolveMediaUrl(info.videoUrl)); else if (info.src) setVideoUrl(resolveMediaUrl(info.src)); } catch { }
 					try { setControlsVisible(true); showCenterTemporarily(1600); } catch { }
-					try { setToastMessage('Next video'); if (toastTimerRef.current) clearTimeout(toastTimerRef.current); toastTimerRef.current = setTimeout(() => setToastMessage(''), 1400); } catch { }
+					try { showSwipeToast('Next video'); } catch { }
 				} else {
 					// fallback: if target looks like URL, just play it
 					if (typeof target === 'string' && /^(https?:)?\/\//.test(target)) {
 						playlistIndexRef.current = nextIdx;
 						setCurrentIndex(nextIdx);
-						try { setVideoUrl(target); setVideoTitle('Video'); setCreatorName(''); } catch { }
+						try { setVideoUrl(resolveMediaUrl(target)); setVideoTitle('Video'); setCreatorName(''); } catch { }
 					}
 				}
 			} catch (err) { }
@@ -2064,8 +2114,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	useEffect(() => {
 		if (!initialVideo) return;
 		try {
-			if (initialVideo.videoUrl) setVideoUrl(initialVideo.videoUrl);
-			else if (initialVideo.url) setVideoUrl(initialVideo.url);
+			if (initialVideo.videoUrl) setVideoUrl(resolveMediaUrl(initialVideo.videoUrl));
+			else if (initialVideo.url) setVideoUrl(resolveMediaUrl(initialVideo.url));
 			if (initialVideo.title) setVideoTitle(initialVideo.title);
 			if (initialVideo.author) setCreatorName(initialVideo.author);
 			// If the opener provided a seek time (restore from mini-player), preserve it
@@ -2073,24 +2123,25 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		} catch (e) { }
 	}, [initialVideo]);
 
-	// Read URL parameters and set video info if no initialVideo prop
+	// Read URL parameters and set video info if no initialVideo prop OR if videoUrl is still empty
 	useEffect(() => {
-		if (initialVideo) return; // Skip if initialVideo prop is provided
-
 		const src = searchParams.get('src');
 		const title = searchParams.get('title');
 		const channel = searchParams.get('channel');
 
-		if (src) {
-			setVideoUrl(src);
+		// If initialVideo already provided videoUrl, skip URL param loading
+		if (initialVideo && videoUrl) return;
+
+		if (src && !videoUrl) {
+			setVideoUrl(resolveMediaUrl(src));
 		}
-		if (title) {
+		if (title && !videoTitle) {
 			setVideoTitle(title);
 		}
-		if (channel) {
+		if (channel && !creatorName) {
 			setCreatorName(channel);
 		}
-	}, [searchParams, initialVideo]);
+	}, [searchParams, initialVideo, videoUrl]);
 
 	// Load overlays from videoInfo when it changes
 	useEffect(() => {
@@ -2141,10 +2192,29 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	useEffect(() => {
 		let allAds = [];
 		
+		// Debug: trace videoInfo and its ads property
+		console.log('[ADS] videoInfo:', videoInfo ? { id: videoInfo.id, title: videoInfo.title, hasAds: !!videoInfo.ads, adsType: typeof videoInfo.ads, adsKeys: videoInfo.ads ? Object.keys(videoInfo.ads) : 'N/A' } : 'null');
+		
+		// Normalize ad fields: map backend short names (logo, title, link, etc.) to expected default2 prefixed names
+		const normalizeAd = (ad) => {
+			if (!ad || ad.type !== 'default2') return ad;
+			return {
+				...ad,
+				default2Title: ad.default2Title || ad.title || '',
+				default2Description: ad.default2Description || ad.description || '',
+				default2Logo: ad.default2Logo || ad.logo || ad.image || '',
+				default2Image: ad.default2Image || ad.image || ad.logo || '',
+				default2Link: ad.default2Link || ad.link || '',
+				default2BgColor: ad.default2BgColor || ad.bgColor || '#ffffff',
+				default2TextColor: ad.default2TextColor || ad.textColor || '#111827',
+				default2LineColor: ad.default2LineColor || ad.lineColor || '#d946ef',
+			};
+		};
+		
 		// Load from nested structure: ads.bottom and ads.overlays
 		if (videoInfo && videoInfo.ads) {
 			if (Array.isArray(videoInfo.ads.bottom)) {
-				allAds = [...allAds, ...videoInfo.ads.bottom];
+				allAds = [...allAds, ...videoInfo.ads.bottom.map(normalizeAd)];
 			}
 			if (Array.isArray(videoInfo.ads.overlays)) {
 				// Note: overlays might be rendered differently, but we can handle them as ads too
@@ -2158,7 +2228,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		
 		// Also check for flat ads array (legacy format)
 		if (videoInfo && Array.isArray(videoInfo.ads) && videoInfo.ads.length > 0 && !videoInfo.ads[0].type) {
-			allAds = [...allAds, ...videoInfo.ads];
+			allAds = [...allAds, ...videoInfo.ads.map(normalizeAd)];
 		}
 		
 		// Debug: log when ads are loaded
@@ -2182,13 +2252,14 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		}
 
 		const currentTime = videoRef.current.currentTime;
+		const dismissed = dismissedAdIdsRef.current;
 		const visible = videoAds.filter(ad => {
+			if (dismissed.has(ad.id)) return false;
 			const startTime = ad.startTime || 0;
 			const endTime = startTime + (ad.duration || 3);
 			return currentTime >= startTime && currentTime < endTime;
 		});
 
-		console.log('Checking visible ads at time', currentTime, 'out of', videoAds.length, 'total ads, visible:', visible.length);
 		if (visible.length > 0) {
 			setVisibleAds(visible);
 		}
@@ -2201,16 +2272,13 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 
 		const handleTimeUpdate = () => {
 			const currentTime = v.currentTime;
+			const dismissed = dismissedAdIdsRef.current;
 			const visible = videoAds.filter(ad => {
+				if (dismissed.has(ad.id)) return false; // skip dismissed ads
 				const startTime = ad.startTime || 0;
 				const endTime = startTime + (ad.duration || 3);
 				return currentTime >= startTime && currentTime < endTime;
 			});
-			
-			// Debug: log when ads become visible
-			if (visible.length > 0) {
-				console.log('Visible ads at time', currentTime, ':', visible);
-			}
 			
 			setVisibleAds(visible);
 		};
@@ -2218,6 +2286,22 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		v.addEventListener('timeupdate', handleTimeUpdate);
 		return () => v.removeEventListener('timeupdate', handleTimeUpdate);
 	}, [videoAds]);
+
+	// Auto-dismiss default2 ads after their duration using a real timer
+	// (not dependent on video playback time, which may not advance if video is paused)
+	useEffect(() => {
+		visibleAds
+			.filter(ad => ad.type === 'default2' && ad.id && !adTimersRef.current.has(ad.id))
+			.forEach(ad => {
+				adTimersRef.current.add(ad.id);
+				const duration = ((ad.duration || 10) * 1000); // default 10 seconds
+				setTimeout(() => {
+					if (!dismissedAdIdsRef.current.has(ad.id)) {
+						handleAdDismiss(ad.id);
+					}
+				}, duration);
+			});
+	}, [visibleAds, handleAdDismiss]);
 
 	// AUTO-PLAY DISABLED: Users must manually click play to start video
 	// (previously attempted autoplay when initialVideo was provided)
@@ -2229,6 +2313,25 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	// global toast + haptic helpers for Share modal actions
 	const [toastMessage, setToastMessage] = useState("");
 	const toastTimerRef = useRef(null);
+
+	// Show "Next video" / "Previous video" toast only for first-time users
+	const swipeToastShownRef = useRef(false);
+	const showSwipeToast = useCallback((msg) => {
+		// Check if user has already seen swipe toasts
+		const key = 'vx:swipe-toast-seen';
+		try {
+			if (localStorage.getItem(key)) {
+				swipeToastShownRef.current = true;
+			}
+		} catch {}
+		if (swipeToastShownRef.current) return; // don't show again
+		// Mark as shown permanently
+		swipeToastShownRef.current = true;
+		try { localStorage.setItem(key, '1'); } catch {}
+		setToastMessage(msg);
+		if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+		toastTimerRef.current = setTimeout(() => setToastMessage(''), 1600);
+	}, []);
 	const shareContentRef = useRef(null);
 	const qrRef = useRef(null);
 
@@ -2459,7 +2562,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			const v = sp.get('video');
 			const t = sp.get('t');
 			if (v) {
-				try { setVideoUrl(decodeURIComponent(v)); } catch { setVideoUrl(v); }
+				try { setVideoUrl(resolveMediaUrl(decodeURIComponent(v))); } catch { setVideoUrl(resolveMediaUrl(v)); }
 				if (t != null) {
 					const n = parseInt(t, 10);
 					if (!Number.isNaN(n)) pendingDeepLinkTimeRef.current = n;
@@ -2484,7 +2587,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					try {
 						const v = videoRef.current;
 						if (v) {
-							try { v.src = videoUrl; } catch { }
+							try { v.src = resolveMediaUrl(videoUrl); } catch { }
 							try { v.currentTime = Math.max(0, time); } catch { }
 							// AUTO-PLAY DISABLED: Do not auto-play, respect user's autoPlayEnabled setting
 							try { setControlsVisible(true); showCenterTemporarily(2000); } catch { }
@@ -2963,8 +3066,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	const [progressColor, setProgressColor] = usePref('progressColor', themeAccentColor || "#9333ea");
 	// Loop + playback controls (persisted)
 	const [loopVideo, setLoopVideo] = usePref('loopVideo', false);
-	// Auto-play toggle (persisted, default OFF)
-	const [autoPlayEnabled, setAutoPlayEnabled] = usePref('autoPlayEnabled', false);
+	// Auto-play toggle (persisted, default ON)
+	const [autoPlayEnabled, setAutoPlayEnabled] = usePref('autoPlayEnabled', true);
 	const colorPresets = ['#ca8a04', '#a95bf3', '#dc2626', '#db2777', '#9333ea', '#c084fc', '#0891b2', '#059669', '#65a30d', '#84cc16', '#eab308', '#f59e0b'];
 
 	// Auto-play effect: if autoPlayEnabled is true and video loads, try to auto-play
@@ -2992,7 +3095,61 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		};
 		
 		tryAutoPlay();
-	}, [autoPlayEnabled, videoUrl]);
+	}, [autoPlayEnabled, videoUrl, videoMountTick]);
+
+	// Ensure videos auto-start on load (best-effort, muted to satisfy autoplay policies)
+	useEffect(() => {
+		const v = videoRef.current;
+		if (!v || !videoUrl || !autoPlayEnabled) return;
+
+		let cancelled = false;
+
+		const tryPlay = async () => {
+			if (cancelled) return;
+			try {
+				v.muted = true;
+				v.playsInline = true;
+				v.autoplay = true;
+				v.preload = 'auto';
+
+				const resolved = resolveMediaUrl(videoUrl);
+				if (resolved && v.src !== resolved) {
+					try { v.src = resolved; } catch { }
+					try { v.load(); } catch { }
+				}
+
+				const p = v.play();
+				if (p && typeof p.then === 'function') {
+					await p;
+					if (!cancelled) setIsPlaying(true);
+				}
+			} catch { }
+		};
+
+		const onCanPlay = () => { tryPlay(); };
+		const onVisibility = () => {
+			if (document.visibilityState === 'visible') tryPlay();
+		};
+
+		try { v.addEventListener('canplay', onCanPlay); } catch { }
+		try { v.addEventListener('loadeddata', onCanPlay); } catch { }
+		try { document.addEventListener('visibilitychange', onVisibility); } catch { }
+
+		// If already ready, try immediately
+		if (v.readyState >= 2) {
+			tryPlay();
+		} else {
+			// fallback: retry shortly after mount
+			setTimeout(() => { tryPlay(); }, 120);
+		}
+
+		return () => {
+			cancelled = true;
+			try { v.removeEventListener('canplay', onCanPlay); } catch { }
+			try { v.removeEventListener('loadeddata', onCanPlay); } catch { }
+			try { document.removeEventListener('visibilitychange', onVisibility); } catch { }
+		};
+	}, [videoUrl, autoPlayEnabled, videoMountTick]);
 
 	// Persist progressColor to backend preference
 	useEffect(() => {
@@ -3096,7 +3253,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 						if (newSrc && (v.currentSrc || v.src || '').split('?')[0] !== newSrc.split('?')[0]) {
 							const currentTime = v.currentTime || 0;
 							v.pause();
-							v.src = newSrc;
+							v.src = resolveMediaUrl(newSrc);
 							v.load();
 							v.currentTime = Math.max(0, Math.min(currentTime, v.duration || Infinity));
 							v.play().catch(() => {});
@@ -3150,7 +3307,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			const wasPlaying = !v.paused && !v.ended;
 			const currentTime = v.currentTime || 0;
 			v.pause();
-			v.src = newSrc;
+			v.src = resolveMediaUrl(newSrc);
 			// try to restore time and play
 			v.load();
 			v.currentTime = Math.max(0, Math.min(currentTime, v.duration || Infinity));
@@ -3290,18 +3447,6 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0, nextX: 0, nextY: 0 });
 	const floatMovedRef = useRef(false); // true when floating button moved (to suppress click->navigate)
 
-	// Miniplayer state: when true, the player shrinks to a small draggable overlay
-	const [isMiniplayer, setIsMiniplayer] = useState(false);
-	const [miniPos, setMiniPos] = useState({ right: 12, bottom: 84 });
-	const miniDragRef = useRef({ dragging: false, startX: 0, startY: 0, startRight: 12, startBottom: 84 });
-
-	// Helper to compute mini player dimensions based on current aspect/window
-	const computeMiniDims = () => {
-		const vw = (typeof window !== 'undefined') ? window.innerWidth : 800;
-		const miniW = Math.min(320, Math.max(140, Math.round(vw * 0.32)));
-		const miniH = Math.max(56, Math.round(miniW / Math.max(0.5, naturalAspect || (16 / 9))));
-		return { miniW, miniH };
-	};
 	const floatBtnRef = useRef(null);
 	const rafRef = useRef(null);
 	useEffect(() => {
@@ -3418,44 +3563,6 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
 	};
 
-	// Miniplayer drag handlers (for the small floating player)
-	const onMiniPointerDown = (e) => {
-		e.preventDefault();
-		const p = miniDragRef.current;
-		p.dragging = true;
-		const pointX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
-		const pointY = e.clientY ?? (e.touches && e.touches[0]?.clientY);
-		p.startX = pointX;
-		p.startY = pointY;
-		p.startRight = miniPos.right;
-		p.startBottom = miniPos.bottom;
-		if (e.target.setPointerCapture) try { e.target.setPointerCapture(e.pointerId); } catch { }
-		window.addEventListener('pointermove', onMiniPointerMove);
-		window.addEventListener('pointerup', onMiniPointerUp);
-	};
-
-	const onMiniPointerMove = (e) => {
-		const p = miniDragRef.current;
-		if (!p.dragging) return;
-		const pointX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
-		const pointY = e.clientY ?? (e.touches && e.touches[0]?.clientY);
-		if (typeof pointX !== 'number' || typeof pointY !== 'number') return;
-		const dx = pointX - p.startX;
-		const dy = pointY - p.startY;
-		// compute new right/bottom based on start values and pointer delta
-		const newRight = Math.max(8, Math.min(window.innerWidth - 80, Math.round(p.startRight - dx)));
-		const newBottom = Math.max(8, Math.min(window.innerHeight - 56, Math.round(p.startBottom - dy)));
-		setMiniPos({ right: newRight, bottom: newBottom });
-	};
-
-	const onMiniPointerUp = (e) => {
-		const p = miniDragRef.current;
-		if (!p.dragging) return;
-		p.dragging = false;
-		window.removeEventListener('pointermove', onMiniPointerMove);
-		window.removeEventListener('pointerup', onMiniPointerUp);
-		try { e.target?.releasePointerCapture?.(e.pointerId); } catch { }
-	};
 
 	// show toast briefly when locking; hide automatically
 	React.useEffect(() => {
@@ -3698,11 +3805,13 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	useEffect(() => {
 		const onFullChange = () => {
 			if (document.fullscreenElement || document.webkitFullscreenElement) {
+				setIsFullscreen(true);
 				// entering fullscreen: prefer landscape layout
 				setOrientation("landscape");
 				const isPortraitViewport = (typeof window !== "undefined") && window.innerHeight > window.innerWidth;
 				setForceLandscapeCss(isPortraitViewport);
 			} else {
+				setIsFullscreen(false);
 				// exiting fullscreen: restore based on natural aspect
 				setOrientation(naturalAspect < 1 ? "portrait" : "landscape");
 				setForceLandscapeCss(false);
@@ -3786,6 +3895,117 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		setControlsVisible(true);
 	}, []);
 
+	// Android Immersive Mode: Hide status bar and navigation bar on mount for full-screen experience
+	useLayoutEffect(() => {
+		if (typeof window === 'undefined') return;
+		
+		try {
+			// Try native Capacitor plugins for immersive mode (works on all Android versions)
+			const Cap = window.Capacitor || (typeof Capacitor !== 'undefined' ? Capacitor : null);
+			if (Cap && Cap.Plugins) {
+				// ImmersiveMode plugin (custom)
+				if (Cap.Plugins.ImmersiveMode) {
+					try { Cap.Plugins.ImmersiveMode.setImmersive({ enabled: true }); } catch (e) {}
+				}
+				// StatusBar plugin
+				if (Cap.Plugins.StatusBar) {
+					try { Cap.Plugins.StatusBar.hide(); } catch (e) {}
+					try { Cap.Plugins.StatusBar.setOverlaysWebView({ overlay: true }); } catch (e) {}
+				}
+				// NavigationBar / SystemBars plugin
+				if (Cap.Plugins.NavigationBar) {
+					try { Cap.Plugins.NavigationBar.hide(); } catch (e) {}
+				}
+				if (Cap.Plugins.SystemBars) {
+					try { Cap.Plugins.SystemBars.hide?.({ bar: 'StatusBar' }); } catch (e) {}
+					try { Cap.Plugins.SystemBars.hide?.({ bar: 'NavigationBar' }); } catch (e) {}
+				}
+			}
+
+			// Apply viewport meta tag for immersive experience on Android
+			let viewportMeta = document.querySelector('meta[name="viewport"]');
+			if (!viewportMeta) {
+				viewportMeta = document.createElement('meta');
+				viewportMeta.name = 'viewport';
+				document.head.appendChild(viewportMeta);
+			}
+			
+			// Set viewport to cover all available space including safe areas
+			viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1');
+			
+			// Try to hide the address bar and system UI
+			if (document.documentElement.requestFullscreen) {
+				// Modern fullscreen request (will trigger on user gesture if available)
+				// Don't auto-trigger; let user tap fullscreen button instead
+			}
+			
+			// Apply CSS to hide safe area padding on phones and make it truly immersive
+			const style = document.createElement('style');
+			style.textContent = `
+				html, body {
+					width: 100vw;
+					height: 100vh;
+					max-width: 100vw;
+					overflow: hidden;
+					margin: 0;
+					padding: 0;
+					border: 0;
+					background: #000;
+				}
+			`;
+			
+			// Store style for cleanup
+			const styleId = 'regaarder-immersive-style';
+			let existingStyle = document.getElementById(styleId);
+			if (existingStyle) existingStyle.remove();
+			
+			style.id = styleId;
+			document.head.appendChild(style);
+			
+			// NOTE: Do NOT lock orientation to landscape on mount.
+			// The player opens in portrait mode; landscape is handled by toggleFullscreen.
+			
+			// Hide scrollbars
+			document.documentElement.style.overflow = 'hidden';
+			document.body.style.overflow = 'hidden';
+			
+			return () => {
+				// Cleanup on unmount
+				try {
+					const style = document.getElementById(styleId);
+					if (style) style.remove();
+				} catch (e) {}
+				
+				// Restore immersive mode (show bars again)
+				try {
+					const Cap = window.Capacitor || (typeof Capacitor !== 'undefined' ? Capacitor : null);
+					if (Cap && Cap.Plugins) {
+						if (Cap.Plugins.ImmersiveMode) try { Cap.Plugins.ImmersiveMode.setImmersive({ enabled: false }); } catch (e) {}
+						if (Cap.Plugins.StatusBar) try { Cap.Plugins.StatusBar.show(); } catch (e) {}
+						if (Cap.Plugins.NavigationBar) try { Cap.Plugins.NavigationBar.show(); } catch (e) {}
+						if (Cap.Plugins.SystemBars) {
+							try { Cap.Plugins.SystemBars.show?.({ bar: 'StatusBar' }); } catch (e) {}
+							try { Cap.Plugins.SystemBars.show?.({ bar: 'NavigationBar' }); } catch (e) {}
+						}
+					}
+				} catch (e) {}
+				
+				// Try to unlock orientation on unmount
+				try {
+					if (window.screen && window.screen.orientation && window.screen.orientation.unlock) {
+						window.screen.orientation.unlock();
+					}
+				} catch (e) {}
+				
+				// Restore overflow
+				document.documentElement.style.overflow = '';
+				document.body.style.overflow = '';
+			};
+		} catch (e) {
+			// Ignore errors if APIs not available
+		}
+	}, []);
+
 	// when lock toggles, keep controls visible (do not auto-hide)
 	useEffect(() => {
 		setControlsVisible(true);
@@ -3799,6 +4019,30 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 	}, [showMenu, showCaptions, showShareModal, showCommentsModal]);
 
 	// NEW: tap handler (single tap shows controls; double tap likes center or seeks sides)
+	// Heart explosion: spawn 15 hearts flying radially from tap point
+	const triggerHeartExplosion = useCallback((clientX, clientY) => {
+		const id = Date.now();
+		const count = 15;
+		const particles = [];
+		for (let i = 0; i < count; i++) {
+			const angle = (360 / count) * i + (Math.random() * 24 - 12); // spread evenly with jitter
+			const rad = (angle * Math.PI) / 180;
+			const distance = 80 + Math.random() * 120; // how far each heart flies
+			const dx = Math.cos(rad) * distance;
+			const dy = Math.sin(rad) * distance;
+			const size = 16 + Math.random() * 14; // 16-30px
+			const duration = 600 + Math.random() * 400; // 600-1000ms
+			const delay = Math.random() * 80; // slight stagger
+			particles.push({ dx, dy, size, duration, delay, angle: Math.random() * 40 - 20 });
+		}
+		const explosion = { id, x: clientX, y: clientY, particles };
+		setHeartExplosions(prev => [...prev, explosion]);
+		// Auto-remove after longest animation
+		setTimeout(() => {
+			setHeartExplosions(prev => prev.filter(e => e.id !== id));
+		}, 1200);
+	}, []);
+
 	const handleVideoTap = (e) => {
 		e.stopPropagation();
 		if (locked) {
@@ -3831,13 +4075,9 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			tapTimerRef.current = null;
 
 			if (doubleTap) {
-				if (Math.abs(x - centerX) < centerZone) {
-					setLiked(true);
-				} else if (x < centerX) {
-					seekBy(-10);
-				} else {
-					seekBy(10);
-				}
+				// Double-tap anywhere → like the video + radial heart explosion
+				setLiked(true);
+				triggerHeartExplosion(e.clientX, e.clientY);
 			}
 		} else {
 			// single tap -> after debounce decide action: center toggles play, sides show controls
@@ -3998,18 +4238,16 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 							const p = src[prevIdx];
 							setVideoTitle(p.title || 'Video');
 							setCreatorName(p.creator || '');
-							setVideoUrl(p.url);
+							setVideoUrl(resolveMediaUrl(p.url));
 							setControlsVisible(true);
 							showCenterTemporarily(1600);
-							setToastMessage('Previous video');
-							if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-							toastTimerRef.current = setTimeout(() => setToastMessage(''), 1600);
+							showSwipeToast('Previous video');
 							setCurrentIndex(prevIdx);
 							setTimeout(async () => {
 								try {
 									const v = videoRef.current;
 									if (v) {
-										if (p.url) v.src = p.url;
+										if (p.url) v.src = resolveMediaUrl(p.url);
 										v.currentTime = 0;
 										// AUTO-PLAY DISABLED: Do not auto-play on tutorial swipe, respect autoPlayEnabled
 										try { v.pause(); } catch { }
@@ -4040,16 +4278,23 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 						};
 						setVideoTitle(next.title);
 						setCreatorName(next.creator);
-						setVideoUrl(next.url);
+						setVideoUrl(resolveMediaUrl(next.url));
+						// Reset ads/overlays from previous video
+						setVideoInfo(null);
+						setVideoAds([]);
+						setVisibleAds([]);
+						setVideoOverlays([]);
+						setVisibleOverlays([]);
+						dismissedAdIdsRef.current = new Set();
+						adTimersRef.current = new Set();
 						setControlsVisible(true);
 						showCenterTemporarily(1600);
-						setToastMessage('Next video');
-
+						showSwipeToast('Next video');
 						setTimeout(async () => {
 							try {
 								const v = videoRef.current;
 								if (v) {
-									v.src = next.url;
+									v.src = resolveMediaUrl(next.url);
 									v.currentTime = 0;
 									// AUTO-PLAY DISABLED: Do not auto-play on tutorial swipe, respect autoPlayEnabled
 									try { v.pause(); } catch { }
@@ -4100,11 +4345,17 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					setVideoTitle(next.title || 'Video');
 					setCreatorName(next.creator || '');
 					setVideoUrl(next.url || next.src || next.videoUrl);
+					// Reset ads/overlays from previous video
+					setVideoInfo(next.id ? next : null);
+					setVideoAds([]);
+					setVisibleAds([]);
+					setVideoOverlays([]);
+					setVisibleOverlays([]);
+					dismissedAdIdsRef.current = new Set();
+					adTimersRef.current = new Set();
 					setControlsVisible(true);
 					showCenterTemporarily(1600);
-					setToastMessage('Next video');
-					if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-					toastTimerRef.current = setTimeout(() => setToastMessage(''), 1600);
+					showSwipeToast('Next video');
 					setCurrentIndex(nextIdx);
 					setTimeout(async () => {
 						try {
@@ -4155,19 +4406,25 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 				if (prev && (prev.url || prev.src || prev.videoUrl)) {
 					setVideoTitle(prev.title || 'Video');
 					setCreatorName(prev.creator || '');
-					setVideoUrl(prev.url || prev.src || prev.videoUrl);
+					setVideoUrl(resolveMediaUrl(prev.url || prev.src || prev.videoUrl));
+					// Reset ads/overlays from previous video
+					setVideoInfo(prev.id ? prev : null);
+					setVideoAds([]);
+					setVisibleAds([]);
+					setVideoOverlays([]);
+					setVisibleOverlays([]);
+					dismissedAdIdsRef.current = new Set();
+					adTimersRef.current = new Set();
 					setControlsVisible(true);
 					showCenterTemporarily(1600);
-					setToastMessage('Previous video');
-					if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-					toastTimerRef.current = setTimeout(() => setToastMessage(''), 1600);
+					showSwipeToast('Previous video');
 					setCurrentIndex(prevIdx);
 					setTimeout(async () => {
 						try {
 							const v = videoRef.current;
 							if (v) {
 								const u = prev.url || prev.src || prev.videoUrl;
-								if (u) v.src = u;
+								if (u) v.src = resolveMediaUrl(u);
 								v.currentTime = 0;
 								// AUTO-PLAY DISABLED: Do not auto-play on swipe, respect autoPlayEnabled
 								try { v.pause(); } catch { }
@@ -4201,7 +4458,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		setSwipeTranslate(translate);
 	};
 
-	const onCenterPointerUp = (e) => {
+	const onCenterPointerUp = async (e) => {
 		// If a long-press timer was running, clear it
 		if (longPressTimerRef.current) {
 			clearTimeout(longPressTimerRef.current);
@@ -4226,36 +4483,54 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			const dx = clientX - (swipeStartRef.current.x || 0);
 			// if user swiped down far enough (and not a large horizontal move), treat as "previous video"
 			if (dy > 80 && Math.abs(dx) < 140) {
-				// load a previous/video placeholder
-				const prev = {
-					id: 'prev-placeholder-1',
-					url: 'https://www.w3schools.com/html/mov_bbb.mp4',
-					title: 'Big Buck Bunny (Preview)',
-					creator: 'Blender Foundation',
-					duration: 596,
-					thumbnail: ''
-				};
+				// load previous video from playlist (no external fallback)
+				const list = currentSourceRef.current || [];
+				let idx = currentIndexRef.current;
+				if (!Array.isArray(list) || list.length === 0 || typeof idx !== 'number' || idx <= 0) {
+					setSwipeTranslate(0);
+					setShowCarbonCopy(false);
+					setIsSwiping(false);
+					try { e.target?.releasePointerCapture?.(e.pointerId); } catch { }
+					return;
+				}
+				const prevKey = list[idx - 1];
 				try {
-					setVideoTitle(prev.title);
-					setCreatorName(prev.creator);
-					setVideoUrl(prev.url);
-					// ensure controls reveal and feedback
-					setControlsVisible(true);
-					showCenterTemporarily(1600);
-					setToastMessage('Previous video');
-
-					setTimeout(async () => {
-						try {
-							const v = videoRef.current;
-							if (v) {
-								v.src = prev.url;
-								v.currentTime = 0;
-								// AUTO-PLAY DISABLED: Do not auto-play on pointer up, respect autoPlayEnabled
-								try { v.pause(); } catch { }
-								setIsPlaying(false);
-							}
-						} catch (err) { /* ignore autoplay errors */ }
-					}, 120);
+					const mod = await import('./home.jsx');
+					const getVideoById = mod.getVideoById;
+					const VIDEOS = mod.VIDEOS || mod.default?.VIDEOS || mod.homeVideos || mod.discoverItems || null;
+					let prev = null;
+					if (typeof getVideoById === 'function') prev = getVideoById(prevKey);
+					if (!prev && Array.isArray(VIDEOS)) prev = VIDEOS.find(v => (v.id && String(v.id) === String(prevKey)) || (v.url && String(v.url) === String(prevKey)) || (v.src && String(v.src) === String(prevKey)));
+					if (!prev && typeof prevKey === 'string' && /^(https?:)?\/\//.test(prevKey)) prev = { id: prevKey, title: 'Video', src: prevKey };
+					if (prev) {
+						const resolved = resolveMediaUrl(prev.src || prev.url || '');
+						currentIndexRef.current = idx - 1;
+						setVideoTitle(prev.title || 'Video');
+						setCreatorName(prev.creator || prev.channel || '');
+						setVideoUrl(resolveMediaUrl(resolved));
+						// Reset ads/overlays from previous video
+						setVideoInfo(prev.id ? prev : null);
+						setVideoAds([]);
+						setVisibleAds([]);
+						setVideoOverlays([]);
+						setVisibleOverlays([]);
+						dismissedAdIdsRef.current = new Set();
+						adTimersRef.current = new Set();
+						setControlsVisible(true);
+						showCenterTemporarily(1600);
+						showSwipeToast('Previous video');
+						setTimeout(async () => {
+							try {
+								const v = videoRef.current;
+								if (v && resolved) {
+									v.src = resolveMediaUrl(resolved);
+									v.currentTime = 0;
+									try { v.pause(); } catch { }
+									setIsPlaying(false);
+								}
+							} catch (err) { }
+						}, 120);
+					}
 				} catch (err) { }
 				// snap panel closed and stop swiping
 				setSwipeTranslate(0);
@@ -4372,19 +4647,25 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			if (next && (next.url || next.src || next.videoUrl)) {
 				setVideoTitle(next.title || 'Video');
 				setCreatorName(next.creator || '');
-				setVideoUrl(next.url || next.src || next.videoUrl);
+				setVideoUrl(resolveMediaUrl(next.url || next.src || next.videoUrl));
+				// Reset videoInfo so ads/overlays from previous video are cleared
+				setVideoInfo(next.id ? next : null);
+				setVideoAds([]);
+				setVisibleAds([]);
+				setVideoOverlays([]);
+				setVisibleOverlays([]);
+				dismissedAdIdsRef.current = new Set();
+				adTimersRef.current = new Set();
 				setControlsVisible(true);
 				showCenterTemporarily(1600);
-				setToastMessage('Playing next video');
-				if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-				toastTimerRef.current = setTimeout(() => setToastMessage(''), 1600);
+				showSwipeToast('Next video');
 				setCurrentIndex(nextIdx);
 				setTimeout(async () => {
 					try {
 						const v = videoRef.current;
 						if (v) {
 							const u = next.url || next.src || next.videoUrl;
-							if (u) v.src = u;
+							if (u) v.src = resolveMediaUrl(u);
 							v.currentTime = 0;
 							// Auto-play is enabled, so try to play
 							const p = v.play();
@@ -4401,14 +4682,33 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 		}
 	};
 
+	// When rendered as overlay inside home.jsx (onChevronDown provided), use absolute positioning
+	// to avoid double position:fixed which breaks Android WebView rendering.
+	// When rendered as a route component (standalone), use position:fixed.
+	const isOverlay = !!onChevronDown;
+
 	// --- Render ---
 	return (
 		<div
-			className="bg-black h-screen w-full overflow-hidden flex flex-col px-4"
+			className="bg-black w-full overflow-hidden flex flex-col"
 			style={{
 				boxSizing: "border-box",
-				paddingTop: "env(safe-area-inset-top, 16px)",
-				paddingBottom: "env(safe-area-inset-bottom, 20px)"
+				margin: 0,
+				padding: 0,
+				border: 0,
+				position: isOverlay ? "absolute" : "fixed",
+				top: 0,
+				left: 0,
+				right: 0,
+				bottom: 0,
+				width: "100%",
+				height: "100%",
+				maxWidth: "100vw",
+				/* On Android: respect notches but don't add extra padding */
+				paddingLeft: "env(safe-area-inset-left, 0px)",
+				paddingRight: "env(safe-area-inset-right, 0px)",
+				paddingTop: "env(safe-area-inset-top, 0px)",
+				paddingBottom: "env(safe-area-inset-bottom, 0px)"
 			}}
 			onClick={(e) => {
 				// If the user taps outside the video container (and not on a button), hide controls.
@@ -4438,6 +4738,14 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					@keyframes vx-toast-in { 0% { transform: translateX(-50%) translateY(-10px); opacity: 0 } 100% { transform: translateX(-50%) translateY(0); opacity: 1 } }
 					/* White pulsing dot for Watch Together floating button */
 					@keyframes wt-pulse { 0% { transform: scale(1); opacity: 0.9 } 50% { transform: scale(1.6); opacity: 0.0 } 100% { transform: scale(1); opacity: 0.0 } }
+					
+					/* Heart Explosion - Radial firework animation for double-tap like */
+					@keyframes heart-explode {
+						0% { transform: translate(0, 0) scale(0.3) rotate(var(--heart-rot, 0deg)); opacity: 1; }
+						20% { transform: translate(calc(var(--heart-dx) * 0.6), calc(var(--heart-dy) * 0.6)) scale(1.1) rotate(var(--heart-rot, 0deg)); opacity: 1; }
+						60% { transform: translate(calc(var(--heart-dx) * 0.9), calc(var(--heart-dy) * 0.9)) scale(0.85) rotate(var(--heart-rot, 0deg)); opacity: 0.7; }
+						100% { transform: translate(var(--heart-dx), var(--heart-dy)) scale(0.4) rotate(var(--heart-rot, 0deg)); opacity: 0; }
+					}
 					
 					/* Bottom Ad Text Animations */
 					@keyframes fadeInText { 0% { opacity: 0; } 100% { opacity: 1; } }
@@ -4567,25 +4875,30 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					// backdrop overlay for top controls (auto-hideable)
 					className="w-full flex items-center justify-between"
 				style={{
-					// Force landscape: position at visual top (physical right)
-					position: forceLandscapeCss ? "fixed" : "relative",
-					left: forceLandscapeCss ? "50%" : -16,
+					// Use position:fixed when landscape OR when default2 ads are showing,
+					// so the top bar renders ABOVE the fullscreen ad overlay (zIndex 500 > 50).
+					position: (forceLandscapeCss || visibleAds.some(ad => ad.type === 'default2')) ? "fixed" : "relative",
+					left: forceLandscapeCss ? "50%" : 0,
 					right: forceLandscapeCss ? "auto" : 0,
-					top: forceLandscapeCss ? "50%" : "auto",
-					width: forceLandscapeCss ? "100vh" : "calc(100% + 32px)",
+					top: forceLandscapeCss ? "50%" : (visibleAds.some(ad => ad.type === 'default2') ? 0 : "auto"),
+					width: forceLandscapeCss ? "100vh" : "100%",
 					// Rotate 90deg and position at visual top (opposite of bottom bar)
 					transform: forceLandscapeCss ? "translate(-50%, -50%) rotate(90deg) translateY(calc(-50vw + 50%))" : "none",
 					transformOrigin: "center",
-					
-					paddingTop: 8,
+				
+					paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)",
 					paddingBottom: 8,
 					paddingLeft: forceLandscapeCss ? 20 : 16,
 					paddingRight: forceLandscapeCss ? 20 : 16,
+					marginTop: 4,
+					marginLeft: forceLandscapeCss ? "0" : "auto",
+					marginRight: forceLandscapeCss ? "0" : "auto",
 					zIndex: 500,
 					boxSizing: "border-box",
 					transition: "opacity 220ms ease, backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease, background 240ms ease",
-					opacity: controlsVisible || locked ? 1 : 0,
-					pointerEvents: controlsVisible || locked ? "auto" : "none",
+					// Always keep pointerEvents auto so chevron is always tappable
+					opacity: (controlsVisible || locked || visibleAds.some(ad => ad.type === 'default2')) ? 1 : 0,
+					pointerEvents: "auto",
 					// Frosted glass / muted background to keep focus on video
 					background: darkMode
 						? "linear-gradient(180deg, rgba(0,0,0,0.36), rgba(0,0,0,0.28))"
@@ -4601,77 +4914,63 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 				<button
 					className="p-1.5 rounded-full hover:bg-white/10"
 					style={{ color: darkMode ? "#fff" : "#111" }}
-					onClick={async (e) => {
+					onClick={(e) => {
 						try { e.stopPropagation(); } catch { }
-						try {
-							const v = videoRef.current;
-							const time = v ? (v.currentTime || 0) : 0;
-							const isPlayingNow = v ? (!v.paused && !v.ended) : false;
+						try { if (videoRef.current) videoRef.current.pause(); } catch { }
+						try { setIsPlaying(false); } catch { }
 
-							// Build mini player payload compatible with home.jsx
-							// Use local player state as the source of truth (avoid referencing `videoInfo` here)
-							const info = null;
-							const videoSrc = (v && (v.currentSrc || v.src)) || videoUrl || '';
-							const videoThumb = '';
-							const videoId = searchParams.get('id') || 'custom';
-
-							// Pause the video before navigating to miniplayer
-							if (v) {
-								try {
-									v.pause();
-									setIsPlaying(false);
-								} catch (e) { }
-							}
-
-							const stored = {
-								video: {
-									...(info || {}),
-									id: videoId,
-									title: videoTitle || (info && info.title) || null,
-									src: videoSrc,
-									url: videoSrc,
-									videoUrl: videoSrc,
-									thumbnail: videoThumb,
-									imageUrl: videoThumb,
-									author: creatorName || (info && info.author) || null,
-									creator: creatorName || (info && info.creator) || null,
-									channel: creatorName || (info && info.channel) || null
-								},
-								time: Math.floor(time || 0),
-								paused: true,
+						const v = videoRef.current;
+						const currentTime = v ? v.currentTime : 0;
+						const rawSrc = (v && (v.currentSrc || v.src)) || videoUrl || videoInfo?.src || videoInfo?.videoUrl || videoInfo?.url || searchParams.get('src') || '';
+						const videoSrc = resolveMediaUrl(rawSrc) || rawSrc;
+						const videoId = searchParams.get('id') || 'custom';
+						const stored = {
+							video: {
+								id: videoId,
 								title: videoTitle || null,
-								creatorName: creatorName || null,
-								progressColor: progressColor || null,
-								playbackSpeed: playbackSpeed || 1,
-								duration: v ? Math.floor(v.duration || 0) : 0
-							};
-							console.log('ChevronDown: storing miniPlayerData ->', stored);
-							try { localStorage.setItem('miniPlayerData', JSON.stringify(stored)); } catch (e) { }
-							
-							// If onChevronDown callback provided (used when videoplayer is an overlay), call it
-							if (onChevronDown && typeof onChevronDown === 'function') {
-								try {
-									onChevronDown(stored);
-									return; // Return early - don't emit events since callback handles it
-								} catch (err) {
-									console.error('onChevronDown callback failed', err);
-								}
-							}
-							
-							// Only emit events if callback wasn't provided (for standalone videoplayer)
-							try { if (typeof eventBus !== 'undefined' && eventBus.emit) { eventBus.emit('miniPlayerRequest', stored); eventBus.emit('switchToHome', stored); eventBus.emit('switchToHomeOnly', stored); } } catch (e) { }
+								src: videoSrc,
+								url: videoSrc,
+								videoUrl: videoSrc,
+								thumbnail: videoInfo?.thumbnail || videoInfo?.imageUrl || '',
+								imageUrl: videoInfo?.imageUrl || videoInfo?.thumbnail || '',
+								author: creatorName || null,
+								creator: creatorName || null,
+								channel: creatorName || null
+							},
+							time: Math.floor(currentTime || 0),
+							paused: false,
+							title: videoTitle || null,
+							creatorName: creatorName || null,
+							duration: v ? Math.floor(v.duration || 0) : 0
+						};
 
-							// Navigate to home with state (traditional page navigation)
-							try {
-								navigate('/home', { state: { miniPlayerData: stored } });
-							} catch (err) {
-								console.error('ChevronDown navigation failed', err);
-								// Fallback: try window location
-								try { window.location.href = '/home'; } catch (e) { }
-							}
-						} catch (err) {
-							console.error('ChevronDown error', err);
+						// If onChevronDown callback provided (used when videoplayer is an overlay), use it
+						// NOTE: Do NOT emit switchToHomeOnly or switchToHome here — the callback already
+						// handles the MiniPlayer transition within the same Home component instance.
+						// Emitting switchToHomeOnly causes App.jsx to replace the entire Routes tree with
+						// a standalone Home, destroying component state (refs, MiniPlayer close guards, etc.)
+						// and making all buttons unresponsive because the Routes tree is never restored.
+						if (onChevronDown && typeof onChevronDown === 'function') {
+							try { onChevronDown(stored); } catch { }
+							try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch { }
+							return;
 						}
+
+						// Store mini player data in localStorage and go back to home
+						// Use history.back() to return to the EXISTING home page instance
+						// instead of pushing a new /home route (which wouldn't have miniplayer state)
+						try { localStorage.setItem('miniPlayerData', JSON.stringify(stored)); } catch { }
+						try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('miniPlayerRequest', stored); } catch { }
+						try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('switchToHome', stored); } catch { }
+						try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch { }
+						// Go back so we return to the existing home component (preserves state + miniplayer)
+						try {
+							if (window.history && window.history.length > 1) {
+								window.history.back();
+							} else {
+								navigate('/home', { state: { miniPlayerData: stored }, replace: true });
+							}
+						} catch { try { navigate('/home', { state: { miniPlayerData: stored }, replace: true }); } catch { } }
 					}}
 				>
 					<ChevronDown />
@@ -4739,7 +5038,6 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					{/* Picture-in-Picture button */}
 					<button
 						className={`p-1.5 rounded-full hover:bg-white/10`}
-						aria-pressed={isMiniplayer}
 						onClick={(e) => {
 							e.stopPropagation();
 							// Get current video state
@@ -4816,14 +5114,72 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 				</div>
 			)}
 
-			{/* 2. Title & Metadata Section */}
-			{/* Always keep this block in the DOM to preserve layout.
-				    Use visibility+opacity so it hides visually but still reserves space,
-				    preventing the video container from shifting when controls hide. */}
-				<div
-					className="w-full mt-8 mb-4"
+			{/* Always-visible back/chevron button — ensures user can ALWAYS navigate back even when controls are hidden */}
+			<button
 				style={{
-					// Force landscape: rotate 90deg and stick near visual top (physical right), below top controls
+					position: 'absolute',
+					top: 'calc(env(safe-area-inset-top, 0px) + 18px)',
+					left: 16,
+					width: 44,
+					height: 44,
+					borderRadius: '50%',
+					background: (controlsVisible || locked || visibleAds.some(ad => ad.type === 'default2'))
+						? 'transparent' : 'rgba(0,0,0,0.45)',
+					border: 'none',
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+					zIndex: 9999,
+					pointerEvents: 'auto',
+					cursor: 'pointer',
+					opacity: (controlsVisible || locked || visibleAds.some(ad => ad.type === 'default2'))
+						? 0 : 0.85,
+					transition: 'opacity 220ms ease, background 220ms ease',
+					touchAction: 'manipulation',
+					WebkitTapHighlightColor: 'transparent',
+					color: '#fff',
+					padding: 0,
+				}}
+				onClick={(e) => {
+					try { e.stopPropagation(); } catch { }
+					try { if (videoRef.current) videoRef.current.pause(); } catch { }
+					try { setIsPlaying(false); } catch { }
+					const v = videoRef.current;
+					const currentTime = v ? v.currentTime : 0;
+					const rawSrc = (v && (v.currentSrc || v.src)) || videoUrl || '';
+					const videoSrc = resolveMediaUrl(rawSrc) || rawSrc;
+					const videoId = searchParams.get('id') || 'custom';
+					const stored = {
+						video: { id: videoId, title: videoTitle || null, src: videoSrc, url: videoSrc, videoUrl: videoSrc, thumbnail: '', imageUrl: '', author: creatorName || null, creator: creatorName || null, channel: creatorName || null },
+						time: Math.floor(currentTime || 0), paused: false, title: videoTitle || null, creatorName: creatorName || null, duration: v ? Math.floor(v.duration || 0) : 0
+					};
+					if (onChevronDown && typeof onChevronDown === 'function') {
+						try { onChevronDown(stored); } catch { }
+						try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch { }
+						return;
+					}
+					try { localStorage.setItem('miniPlayerData', JSON.stringify(stored)); } catch { }
+					try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('miniPlayerRequest', stored); } catch { }
+					try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('switchToHome', stored); } catch { }
+					try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch { }
+					try {
+						if (window.history && window.history.length > 1) {
+							window.history.back();
+						} else {
+							navigate('/home', { state: { miniPlayerData: stored }, replace: true });
+						}
+					} catch { try { navigate('/home', { state: { miniPlayerData: stored }, replace: true }); } catch { } }
+				}}
+				aria-label="Go back"
+			>
+				<ChevronDown size={24} />
+			</button>
+
+			{/* 2. Title & Metadata Section */}
+			{/* Keep in normal flow so layout is preserved. Use visibility+opacity for show/hide. */}
+			<div
+					className="w-full mt-0 mb-0 px-4"
+				style={{
 					position: forceLandscapeCss ? "fixed" : "relative",
 					left: forceLandscapeCss ? "50%" : "auto",
 					top: forceLandscapeCss ? "50%" : "auto",
@@ -4832,6 +5188,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					transform: forceLandscapeCss ? "translate(-50%, -50%) rotate(90deg) translateY(calc(-50vw + 120px))" : "none",
 					transformOrigin: "center",
 					zIndex: 450, // slightly below top controls
+					marginLeft: forceLandscapeCss ? "0" : "auto",
+					marginRight: forceLandscapeCss ? "0" : "auto",
 
 					visibility: controlsVisible ? "visible" : "hidden",
 					opacity: controlsVisible ? 1 : 0,
@@ -4840,25 +5198,26 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					pointerEvents: controlsVisible ? "auto" : "none"
 				}}
 			>
-				{/* Title Row with Chevron Right */}
+				{/* Title + Author + Badge */}
 				{!visibleAds.some(ad => ad.type === 'overlay' && (ad.overlayAdPosition === 'fullscreen' || ad.overlayAdPosition === 'videoPlayer')) && (
 					<>
-						<div className="flex items-start justify-between">
-							<h1 className="text-white text-lg font-normal leading-snug tracking-wide max-w-[90%]">
+						{/* Title with > arrow */}
+						<div className="flex items-center gap-2">
+							<h1 className="text-white text-base font-normal leading-snug tracking-wide" style={{ maxWidth: 'calc(100% - 36px)' }}>
 								{videoTitle}
 							</h1>
-							<button className="pt-1 text-gray-300">
-								<ChevronRight />
+							<button className="text-gray-300 flex-shrink-0" style={{ marginTop: 1 }}>
+								<ChevronRight size={18} />
 							</button>
 						</div>
 
 						{/* Author & Badge Row */}
-						<div className="flex items-center mt-3 space-x-3">
+						<div className="flex items-center mt-0.5 space-x-2">
 							<span className="text-gray-400 text-sm underline decoration-gray-500 underline-offset-2">
 								{creatorName}
 							</span>
 							<span
-								className="bg-[#1e2736] text-xs px-2.5 py-1 rounded-[6px] font-medium tracking-wide"
+								className="bg-[#1e2736] text-xs px-2 py-0.5 rounded-[6px] font-medium tracking-wide"
 								style={{ color: accentColor }}
 							>
 								Requested
@@ -4935,8 +5294,14 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			{/* 3. Center Video Area (Play Button) */}
 			{/* UPDATED: use handleVideoTap for tap handling and enable center swipe gestures */}
 			<div
-				className="flex-1 flex items-center justify-center relative video-center"
-				style={{ minHeight: 1, touchAction: "none" }} // capture both vertical & horizontal gestures for custom handling
+				className="flex-1 flex items-start justify-start relative video-center"
+				style={{
+					minHeight: 0,
+					touchAction: "none",
+					width: "100%",
+					overflow: "hidden",
+					paddingBottom: 0,
+				}} // capture both vertical & horizontal gestures for custom handling
 				onClick={handleVideoTap}
 				onPointerDown={onCenterPointerDown}
 				onPointerMove={onCenterPointerMove}
@@ -4944,73 +5309,66 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			>
 				{/* --- actual video element behind the controls (updated) --- */}
 				<div
-					// center wrapper slightly higher so video sits closer to the "Watch Together" button
+					// Use flex centering to avoid transforms on the normal playback path
 					style={{
-						position: "absolute",
-						left: "50%",
-						top: forceLandscapeCss ? "50%" : "30%",  // Center when in landscape rotation
-						transform: forceLandscapeCss ? "translate(-50%, -50%)" : "translate(-50%, -50%)",
-						width: forceLandscapeCss ? "100vh" : "100vw",  // Swap dimensions for landscape
-						height: forceLandscapeCss ? "100vw" : "auto",
-						zIndex: 10,
+						position: forceLandscapeCss ? "fixed" : "relative",
+						...(forceLandscapeCss ? { inset: 0 } : {}),
+						width: forceLandscapeCss ? "100vw" : "100%",
+						height: forceLandscapeCss ? "100vh" : "100%",
+						zIndex: forceLandscapeCss ? 30 : 10,
 						display: "flex",
-						alignItems: "center",
+						alignItems: forceLandscapeCss ? "center" : "flex-start",
 						justifyContent: "center",
-						background: "transparent",
-						transition: "all 200ms ease"
+						overflow: "hidden",
+						background: "#000",
 					}}
 				>
 					<div
 						ref={containerRef}
 						aria-hidden={false}
-						style={{
-							width: "auto",
-							maxHeight: forceLandscapeCss ? "100vw" : "calc(100vh - 48px - 140px)",
-							maxWidth: forceLandscapeCss ? "100vh" : "100vw",
+						style={forceLandscapeCss ? {
+							position: 'absolute',
+							top: '50%',
+							left: '50%',
+							width: '100vh',
+							height: '100vw',
+							transform: 'translate(-50%, -50%) rotate(90deg)',
+							transformOrigin: 'center center',
+							overflow: 'hidden',
+							background: '#000',
+						} : {
+							position: 'relative',
+							width: "100%",
+							height: "100%",
+							maxWidth: "100vw",
 							borderRadius: 0,
 							display: "block",
-							transform: forceLandscapeCss ? "rotate(90deg)" : undefined,
-							...(isMiniplayer ? (() => {
-								const miniW = Math.min(320, Math.max(140, Math.round((typeof window !== 'undefined' ? window.innerWidth : 800) * 0.32)));
-								const miniH = Math.max(56, Math.round(miniW / Math.max(0.5, naturalAspect || (16 / 9))));
-								return {
-									position: 'fixed',
-									width: miniW,
-									height: miniH,
-									right: miniPos.right,
-									bottom: miniPos.bottom,
-									zIndex: 60,
-									borderRadius: 8,
-									boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
-									background: '#000',
-									objectFit: 'cover'
-								};
-							})() : {})
+							overflow: 'hidden',
+							background: '#000',
 						}}
 					>
 						<video
 							ref={videoRef}
 							src={videoUrl}
-							className="w-full h-full object-contain bg-black"
+							className="w-full h-full bg-black"
+							autoPlay
+							muted
 							playsInline
 							webkit-playsinline="true"
-							crossOrigin="anonymous"
+							x5-video-player-type="h5"
+							x5-video-player-fullscreen="true"
+							x5-video-orientation="portrait"
 							preload="metadata"
-							fetchPriority="high"
-							style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+							fetchpriority="high"
+							poster="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+							style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: (isFullscreen || forceLandscapeCss) ? 'cover' : 'contain', background: '#000' }}
 							onLoadedMetadata={(e) => {
 								try {
 									const v = e.target;
 									setDuration(v.duration || 0);
 									setNaturalAspect((v.videoWidth && v.videoHeight) ? (v.videoWidth / v.videoHeight) : (16 / 9));
-									// Auto-play video when metadata is loaded - faster startup
-									try {
-										v.muted = true;
-										const p = v.play();
-										if (p && p.then) {
-											p.then(() => { try { v.muted = false; } catch (e) { } }).catch(() => { });
-										}
-									} catch (err) { }
+									// Keep muted; let user-initiated play handle audio to avoid autoplay policy issues
+									try { v.muted = true; } catch (err) { }
 								} catch (err) { }
 							}}
 							onTimeUpdate={(e) => {
@@ -5024,18 +5382,14 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 								try { if (videoRef.current) { /* playback ready */ } } catch { }
 							}}
 						/>
-					</div>
-
-					{/* Video Overlay Layer - renders links and images at specific times */}
-					<div
-						style={{
-							position: 'absolute',
-							inset: 0,
-							pointerEvents: 'none',
-							zIndex: 25,
-							transform: forceLandscapeCss ? 'rotate(90deg)' : 'none',
-							transformOrigin: 'center',
-						}}
+						{/* Video Overlay Layer - renders links and images at specific times */}
+						<div
+							style={{
+								position: 'absolute',
+								inset: 0,
+								pointerEvents: 'none',
+								zIndex: 25,
+							}}
 					>
 						{visibleOverlays.map((ov) => (
 							ov.type === 'link' ? (
@@ -5046,9 +5400,9 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 									rel="noopener noreferrer"
 									style={{
 										position: 'absolute',
-										bottom: `${(ov.positionY || 20)}px`,
-										left: `${(ov.positionX || 20)}px`,
-										padding: '12px 16px',
+										left: `${ov.positionX ?? 5}%`,
+										top: `${ov.positionY ?? 80}%`,
+										padding: '8px 14px',
 										borderRadius: '8px',
 										backgroundColor: `${ov.linkColor}33`,
 										border: `2px solid ${ov.linkColor}`,
@@ -5083,8 +5437,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 									key={ov.id}
 									style={{
 										position: 'absolute',
-										bottom: `${(ov.positionY || 20)}px`,
-										left: `${(ov.positionX || 20)}px`,
+										left: `${ov.positionX ?? 5}%`,
+										top: `${ov.positionY ?? 80}%`,
 										borderRadius: '8px',
 										overflow: 'hidden',
 										boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
@@ -5106,10 +5460,11 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 								</div>
 							)
 						))}
+						</div>
 					</div>
 
 					{/* Centered translucent play/pause overlay — also supports pointer tap */}
-					{controlsVisible && centerVisible && !isPlaying && !isMiniplayer && (
+					{controlsVisible && centerVisible && !isPlaying && (
 						<button
 							className="transform active:scale-95 transition-transform"
 							aria-label="Play"
@@ -5146,7 +5501,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 					)}
 
 					{/* When playing, show pause button in same central position for quick pause */}
-					{controlsVisible && centerVisible && isPlaying && !isMiniplayer && (
+					{controlsVisible && centerVisible && isPlaying && (
 						<button
 							className="transform active:scale-95 transition-transform"
 							aria-label="Pause"
@@ -5245,6 +5600,32 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 				)}
 			</div>
 
+			{/* Heart Explosion Particles (double-tap like animation) */}
+			{heartExplosions.map(exp => (
+				<div key={exp.id} style={{ position: 'fixed', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 9999 }}>
+					{exp.particles.map((p, i) => (
+						<div
+							key={i}
+							style={{
+								position: 'absolute',
+								left: exp.x,
+								top: exp.y,
+								'--heart-dx': `${p.dx}px`,
+								'--heart-dy': `${p.dy}px`,
+								'--heart-rot': `${p.angle}deg`,
+								animation: `heart-explode ${p.duration}ms cubic-bezier(0.25, 0.46, 0.45, 0.94) ${p.delay}ms forwards`,
+								willChange: 'transform, opacity',
+								pointerEvents: 'none',
+							}}
+						>
+							<svg width={p.size} height={p.size} viewBox="0 0 24 24" fill="#ff2d55" style={{ filter: 'drop-shadow(0 2px 6px rgba(255,45,85,0.5))' }}>
+								<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+							</svg>
+						</div>
+					))}
+				</div>
+			))}
+
 			{/* 4. Bottom Controls */}
 			{/* Hide bottom controls if fullscreen overlay or video player overlay is visible */}
 			{!visibleAds.some(ad => ad.type === 'overlay' && (ad.overlayAdPosition === 'fullscreen' || ad.overlayAdPosition === 'videoPlayer')) && (
@@ -5252,7 +5633,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 				className="w-full flex flex-col pb-2"
 				style={{
 					position: "fixed",
-					zIndex: 40,
+					zIndex: 500,
 					// Landscape: Rotate 90deg, stick to visual bottom (physical left)
 					left: forceLandscapeCss ? "50%" : 0,
 					right: forceLandscapeCss ? "auto" : 0,
@@ -5547,7 +5928,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			)}
 
 {/* 5. Ad Rendering by Type - displays ads with their custom designs */}
-		{!hasPaidPlan() && visibleAds && visibleAds.length > 0 && (
+		{visibleAds && visibleAds.length > 0 && (
 			<>
 				{/* Video Ads (9/16 aspect ratio overlay) */}
 				{visibleAds
@@ -5691,7 +6072,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 						</div>
 					))}
 
-				{/* Default 2 Ads (card-based with corner button) */}
+				{/* Default 2 Ads (card-based with corner button + close) */}
 				{visibleAds
 					.filter(ad => ad.type === 'default2')
 					.map((ad) => (
@@ -5719,6 +6100,35 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 								cursor: 'pointer'
 							}}
 						>
+							{/* Close (X) button — top-right of the overlay */}
+							<button
+								onClick={(e) => {
+									e.stopPropagation();
+									handleAdDismiss(ad.id);
+								}}
+								style={{
+									position: 'absolute',
+									top: 16,
+									right: 16,
+									width: 36,
+									height: 36,
+									borderRadius: '50%',
+									background: 'rgba(255,255,255,0.15)',
+									border: '1px solid rgba(255,255,255,0.3)',
+									color: '#fff',
+									fontSize: 20,
+									fontWeight: 700,
+									display: 'flex',
+									alignItems: 'center',
+									justifyContent: 'center',
+									cursor: 'pointer',
+									zIndex: 60,
+									backdropFilter: 'blur(8px)',
+									WebkitBackdropFilter: 'blur(8px)',
+									transition: 'all 0.2s ease'
+								}}
+								aria-label="Close ad"
+							>✕</button>
 							<div
 								style={{
 									width: '100%',
@@ -5735,7 +6145,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 								}}
 								onClick={(e) => e.stopPropagation()}
 							>
-								{/* Video Background Area with Corner Button */}
+								{/* Video Background Area */}
 								<div
 									style={{
 										flex: 1,
@@ -5748,43 +6158,19 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 										position: 'relative'
 									}}
 								>
-									Video Content Area
-
-									{/* Corner Button */}
-									<button
-										style={{
-											position: 'absolute',
-											bottom: 20,
-											right: 16,
-											padding: '10px 16px',
-											background: ad.default2BgColor || '#ffffff',
-											color: ad.default2TextColor || '#111827',
-											border: `2px solid ${ad.default2LineColor || '#d946ef'}`,
-											borderRadius: 8,
-											fontSize: 13,
-											fontWeight: 700,
-											cursor: 'pointer',
-											boxShadow: `0 4px 12px ${ad.default2LineColor || '#d946ef'}40`,
-											whiteSpace: 'nowrap',
-											zIndex: 10,
-											transition: 'all 0.2s ease'
-										}}
-										onMouseEnter={(e) => {
-											e.target.style.transform = 'translateY(-2px)';
-											e.target.style.boxShadow = `0 6px 16px ${ad.default2LineColor || '#d946ef'}60`;
-										}}
-										onMouseLeave={(e) => {
-											e.target.style.transform = 'translateY(0)';
-											e.target.style.boxShadow = `0 4px 12px ${ad.default2LineColor || '#d946ef'}40`;
-										}}
-										onClick={() => {
-											if (ad.default2Link) {
-												window.open(ad.default2Link, '_blank');
-											}
-										}}
-									>
-										Visit Link
-									</button>
+									{(ad.default2Image || ad.default2Logo || ad.imageUrl || ad.thumbnail) ? (
+										<img
+											src={ad.default2Image || ad.default2Logo || ad.imageUrl || ad.thumbnail}
+											alt={ad.default2Title || 'Ad'}
+											style={{
+												width: '100%',
+												height: '100%',
+												objectFit: 'cover'
+											}}
+										/>
+									) : (
+										<div>Video Content Area</div>
+									)}
 								</div>
 
 								{/* Cards Container */}
@@ -5879,8 +6265,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 						</div>
 					))}
 
-				{/* Overlay Ads (News Ticker) - Hidden for paid plan users */}
-				{!hasPaidPlan() && visibleAds
+				{/* Overlay Ads (News Ticker) */}
+				{visibleAds
 					.filter(ad => ad.type === 'overlay')
 					.map((ad) => {
 						const position = ad.overlayAdPosition || 'bottom';
@@ -6008,7 +6394,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 								</button>
 							</div>
 						) : isVideoPlayer ? (
-							<VideoAdOverlay key={ad.id || `video-player-ad-${Math.random()}`} ad={ad} forceLandscapeCss={forceLandscapeCss} />
+							<VideoAdOverlay key={ad.id || `video-player-ad-${Math.random()}`} ad={ad} forceLandscapeCss={forceLandscapeCss} onDismiss={handleAdDismiss} />
 						) : (
 							// Ticker Style (Top, Bottom, or Video Overlay)
 							<div
@@ -6133,8 +6519,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 						);
 					})}
 
-				{/* Bottom Ads - Using BottomAdPreviewBar with text rotation and animations - Hidden for paid plan users */}
-				{!hasPaidPlan() && visibleAds.filter(ad => !ad.type || ad.type === 'bottom').length > 0 && (
+				{/* Bottom Ads - Using BottomAdPreviewBar with text rotation and animations */}
+				{visibleAds.filter(ad => !ad.type || ad.type === 'bottom').length > 0 && (
 				<div
 					style={{
 						position: 'fixed',
@@ -6185,10 +6571,48 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			</>
 			)}
 
+			{/* Visit Link Button — renders at screen level, outside all ad containers */}
+			{visibleAds.filter(ad => ad.type === 'default2' && ad.default2Link).map((ad) => (
+				<button
+					key={`visit-link-${ad.id || 'default2'}`}
+					style={{
+						position: 'fixed',
+						bottom: 80,
+						left: 0,
+						margin: 0,
+						marginLeft: 0,
+						padding: '10px 18px',
+						background: ad.default2BgColor || '#ffffff',
+						color: ad.default2TextColor || '#111827',
+						border: `2px solid ${ad.default2LineColor || '#d946ef'}`,
+						borderLeft: 'none',
+						borderRadius: '0 8px 8px 0',
+						fontSize: 14,
+						fontWeight: 700,
+						cursor: 'pointer',
+						boxShadow: `0 4px 16px ${ad.default2LineColor || '#d946ef'}55`,
+						whiteSpace: 'nowrap',
+						zIndex: 9999,
+						pointerEvents: 'auto',
+						transition: 'all 0.2s ease',
+						letterSpacing: '0.3px',
+						transform: 'translateX(0)',
+					}}
+					onClick={(e) => {
+						e.stopPropagation();
+						if (ad.default2Link) {
+							window.open(ad.default2Link, '_blank');
+						}
+					}}
+				>
+					Visit Link
+				</button>
+			))}
+
 			{/* Modal: Options dialog (carbon copy style) */}
 			{showMenu && (
 				<div
-					className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center"
+					className="fixed inset-0 z-[1200] bg-black/60 flex items-end sm:items-center justify-center"
 					onClick={() => setShowMenu(false)}
 					style={{ backdropFilter: "none", WebkitBackdropFilter: "none", transition: "backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease, background 240ms ease" }}
 				>
@@ -6669,7 +7093,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			{/* Captions / Subtitle Settings Dialog (carbon copy style) */}
 			{showCaptions && (
 				<div
-					className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+					className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center"
 					onClick={() => setShowCaptions(false)}
 					style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', transition: 'backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease, background 240ms ease' }}
 				>
@@ -6857,7 +7281,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 			{/* Share Video dialog (opened from Options -> Share) */}
 			{showShareModal && (
 				<div
-					className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+					className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center"
 					onClick={() => setShowShareModal(false)}
 					style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: "none", WebkitBackdropFilter: "none", transition: "backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease, background 240ms ease" }}
 				>
@@ -7900,12 +8324,12 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 											<div key={bkKey} role="button" tabIndex={0} onClick={() => {
 												try {
 													setShowCarbonCopy(false);
-													if (svc.url) setVideoUrl(svc.url);
+													if (svc.url) setVideoUrl(resolveMediaUrl(svc.url));
 													setTimeout(() => {
 														try {
 															const v = videoRef.current;
 															if (v) {
-																if (svc.url) v.src = svc.url;
+																if (svc.url) v.src = resolveMediaUrl(svc.url);
 																try { v.currentTime = Math.max(0, Math.floor(b.time || 0)); } catch { }
 																try { const p = v.play(); if (p && p.catch) p.catch(() => { }); setIsPlaying(true); } catch { }
 																try { setControlsVisible(true); showCenterTemporarily(2000); } catch { }
@@ -7985,14 +8409,14 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 											<div key={likeKey} role="button" tabIndex={0} onClick={() => {
 												try {
 													setShowCarbonCopy(false);
-													if (likedItem.url) setVideoUrl(likedItem.url);
+													if (likedItem.url) setVideoUrl(resolveMediaUrl(likedItem.url));
 													setVideoTitle(likedItem.title || 'Video');
 													setCreatorName(likedItem.creatorName || '');
 													setTimeout(() => {
 														try {
 															const v = videoRef.current;
 															if (v) {
-																if (likedItem.url) v.src = likedItem.url;
+																if (likedItem.url) v.src = resolveMediaUrl(likedItem.url);
 																v.currentTime = 0;
 																try { const p = v.play(); if (p && p.catch) p.catch(() => { }); setIsPlaying(true); } catch { }
 																try { setControlsVisible(true); showCenterTemporarily(2000); } catch { }
@@ -8063,7 +8487,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 										// close discover panel
 										try { setShowCarbonCopy(false); } catch { }
 										// set URL and attempt playback
-										if (item.url) setVideoUrl(item.url);
+										if (item.url) setVideoUrl(resolveMediaUrl(item.url));
 										// ensure controls/center overlay reveal
 										try { setControlsVisible(true); showCenterTemporarily(2600); } catch { }
 										// brief feedback
@@ -8073,7 +8497,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo =
 											try {
 												const v = videoRef.current;
 												if (v) {
-													if (item.url) v.src = item.url;
+													if (item.url) v.src = resolveMediaUrl(item.url);
 													v.currentTime = 0;
 													await v.play();
 													setIsPlaying(true);
@@ -8418,7 +8842,7 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage }) => {
 	}, []);
 
 	return isOpen ? (
-		<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose} style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", transition: "backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease, background 240ms ease" }}>
+		<div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center" onClick={onClose} style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", transition: "backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease, background 240ms ease" }}>
 			<div
 				ref={modalRef}
 				className="modal-dialog w-full max-w-md bg-white rounded-t-2xl shadow-xl overflow-hidden flex flex-col"

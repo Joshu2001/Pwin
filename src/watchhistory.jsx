@@ -3,6 +3,8 @@ import React from 'react';
 import { History, Lightbulb, Home, FileText, MoreHorizontal, Pencil, CheckCircle, Search, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations.js';
+import { WEB_URL } from './config.js';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Get selected language
 const selectedLanguage = typeof window !== 'undefined' ? (localStorage.getItem('regaarder_language') || 'English') : 'English';
@@ -79,7 +81,7 @@ export function recordWatchProgress(payload = {}) {
 
     // Also persist to backend when available
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
       const token = localStorage.getItem('regaarder_token');
       fetch(`${BACKEND}/watch/history`, {
         method: 'POST',
@@ -106,7 +108,7 @@ export function recordWatchProgress(payload = {}) {
 
 export function getWatchHistory() {
   try {
-    const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
     const token = localStorage.getItem('regaarder_token');
     // Fetch remote history (token optional)
     const res = window.fetch ? null : null;
@@ -128,7 +130,7 @@ export function clearWatchHistory() {
     }
     _IN_MEMORY_HISTORY = null;
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
       const token = localStorage.getItem('regaarder_token');
       window.fetch && window.fetch(`${BACKEND}/watch/history`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} }).catch(() => { });
     } catch { }
@@ -164,7 +166,7 @@ const App = () => {
   React.useEffect(() => {
     (async () => {
       try {
-        const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
         const resp = await fetch(`${BACKEND}/videos`).then(r => r.json()).catch(() => null);
         const arr = resp && resp.success && Array.isArray(resp.videos) ? resp.videos : [];
         const idx = {};
@@ -201,18 +203,32 @@ const App = () => {
     } catch { return null; }
   };
 
-  const makeShareLink = (url, time = 0) => {
+  const makeShareLink = (videoOrUrl, time = 0) => {
     try {
-      const base = `${window.location.origin}/videoplayer`;
-      return `${base}?video=${encodeURIComponent(url)}&t=${Math.max(0, Math.floor(time || 0))}`;
-    } catch { return url; }
+      const t = Math.max(0, Math.floor(time || 0));
+      let id = null;
+      let url = null;
+      if (videoOrUrl && typeof videoOrUrl === 'object') {
+        id = videoOrUrl.id || videoOrUrl.videoId || null;
+        url = videoOrUrl.url || videoOrUrl.videoUrl || videoOrUrl.src || null;
+      } else {
+        url = videoOrUrl || null;
+      }
+      if (id) {
+        return `${WEB_URL}/share/video/${encodeURIComponent(id)}${t ? `?t=${encodeURIComponent(t)}` : ''}`;
+      }
+      if (url) {
+        return `${WEB_URL}/videoplayer?src=${encodeURIComponent(url)}${t ? `&t=${encodeURIComponent(t)}` : ''}`;
+      }
+      return WEB_URL;
+    } catch { return WEB_URL; }
   };
 
   const shareEntry = async (h) => {
     try {
       const m = getMetaFor(h) || {};
       const urlResolved = await resolveUrl(h.videoId) || h.videoId;
-      const link = urlResolved ? makeShareLink(urlResolved, h.lastWatchedTime) : window.location.href;
+      const link = urlResolved ? makeShareLink({ id: m.id, url: urlResolved }, h.lastWatchedTime) : window.location.href;
       const title = m.title || 'Watch this video';
       const text = `${title}${m.author ? ` • by ${m.author}` : ''}`;
       if (navigator.share) {
@@ -266,7 +282,7 @@ const App = () => {
       saveHistory(list);
       // backend delete
       try {
-        const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
         const token = localStorage.getItem('regaarder_token');
         window.fetch && window.fetch(`${BACKEND}/watch/history/${encodeURIComponent(videoId)}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} }).catch(() => { });
       } catch { }
@@ -287,9 +303,18 @@ const App = () => {
       <div className="w-full flex flex-col bg-white overflow-x-hidden">
 
         {/* === 1. Header === */}
-        <header className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20">
+        <header
+          className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center space-x-4">
-            <ChevronLeft className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900" onClick={() => navigate(-1)} />
+            <ChevronLeft
+              className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900"
+              onClick={() => {
+                try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch (e) { }
+                try { navigate('/home', { replace: true }); } catch (e) { }
+              }}
+            />
             <h1 className="text-xl font-semibold text-gray-800">{t('Watch History')}</h1>
           </div>
         </header>
@@ -370,12 +395,13 @@ const App = () => {
         </main>
 
         {/* === 3. Bottom Navigation Bar === */}
-        <BottomBar />
+        <SharedBottomBar selectedLanguage={selectedLanguage} />
 
         {/* === 4. Toast Notification (Overlay) === */}
         {showToast && (
           <div
-            className="fixed top-6 left-0 right-0 flex justify-center z-50"
+            className="fixed left-0 right-0 flex justify-center z-50"
+            style={{ top: 'calc(12px + env(safe-area-inset-top, 0px))' }}
             onTouchStart={(e) => {
               e.currentTarget.dataset.dragStartX = e.touches[0].clientX;
             }}
@@ -467,104 +493,6 @@ const NavItem = ({ icon: Icon, label, active, onClick, activeColor }) => {
         {label}
       </span>
     </a>
-  );
-};
-
-// BottomBar: verbatim styling/behavior adapted from `home.jsx` BottomBar
-const BottomBar = () => {
-  const [activeTab, setActiveTab] = React.useState(null);
-  const navigatedRef = React.useRef(false);
-
-  const tabs = [
-    { name: 'Home', label: t('Home'), icon: Home },
-    { name: 'Requests', label: t('Requests'), icon: FileText },
-    { name: 'Ideas', label: t('Ideas'), icon: Pencil },
-    { name: 'More', label: t('More'), icon: MoreHorizontal },
-  ];
-
-  const inactiveColor = 'rgb(107 114 128)';
-
-  return (
-    <div
-      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-      style={{
-        paddingTop: '10px',
-        paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-        minHeight: '70px'
-      }}
-    >
-      <div className="w-full flex justify-around items-center px-2">
-        {tabs.map((tab) => {
-          const isSelected = tab.name === activeTab;
-
-          const activeColorStyle = isSelected
-            ? { color: 'var(--color-gold)' }
-            : { color: inactiveColor };
-
-          const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-          const IconComp = tab.icon;
-
-          const navigateToTab = (tabName) => {
-            try {
-              if (tabName === 'Home') {
-                window.location.href = '/home.jsx';
-                return;
-              }
-              if (tabName === 'Requests') {
-                window.location.href = '/requests.jsx';
-                return;
-              }
-              if (tabName === 'Ideas') {
-                window.location.href = '/ideas';
-                return;
-              }
-              if (tabName === 'More') {
-                window.location.href = '/more.jsx';
-                return;
-              }
-            } catch (e) {
-              console.warn('Navigation failed', e);
-            }
-          };
-
-          return (
-            <div
-              key={tab.name}
-              className="relative flex flex-col items-center justify-center flex-1 focus:outline-none"
-            >
-              <button
-                className="flex flex-col items-center w-full"
-                onMouseDown={() => {
-                  setActiveTab(tab.name);
-                  if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                }}
-                onTouchStart={() => {
-                  setActiveTab(tab.name);
-                  if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                }}
-                onClick={(e) => {
-                  if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; }
-                  setActiveTab(tab.name);
-                  navigateToTab(tab.name);
-                }}
-              >
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                  <IconComp
-                    size={24}
-                    strokeWidth={isSelected ? 2 : 1.5}
-                    style={activeColorStyle}
-                  />
-                </div>
-                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                  {tab.label}
-                </span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 };
 

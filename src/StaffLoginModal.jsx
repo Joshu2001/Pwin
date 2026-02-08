@@ -13,6 +13,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [statusCheckEmail, setStatusCheckEmail] = useState('');
   const [accountStatus, setAccountStatus] = useState(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   // Login form
   const [loginData, setLoginData] = useState({
@@ -31,6 +32,35 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
     password3: ''
   });
 
+  // On mount: restore remembered credentials and auto-login if session exists
+  useEffect(() => {
+    // Check for existing valid session — auto-login without showing modal
+    try {
+      const savedSession = localStorage.getItem('staffSession');
+      if (savedSession) {
+        const session = JSON.parse(savedSession);
+        if (session && session.employeeId) {
+          // Session exists — auto-restore login
+          if (onLoginSuccess) onLoginSuccess(session);
+          if (onClose) onClose();
+          return;
+        }
+      }
+    } catch { }
+
+    // Restore remembered credentials
+    try {
+      const saved = localStorage.getItem('staffRememberedCredentials');
+      if (saved) {
+        const creds = JSON.parse(saved);
+        if (creds && creds.employeeId) {
+          setLoginData(creds);
+          setRememberMe(true);
+        }
+      }
+    } catch { }
+  }, []);
+
   // Fetch next employee ID when switching to signup mode
   useEffect(() => {
     if (mode === 'signup' && nextEmployeeId === null) {
@@ -40,7 +70,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
   const fetchNextEmployeeId = async () => {
     try {
-      const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
       const res = await fetch(`${BACKEND}/staff/next-employee-id`);
       const data = await res.json();
       if (data.nextEmployeeId) {
@@ -59,7 +89,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
     setIsCheckingStatus(true);
     try {
-      const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
       const res = await fetch(`${BACKEND}/staff/check-account-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -124,7 +154,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
       const res = await fetch(`${BACKEND}/staff/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -138,8 +168,16 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
         return;
       }
 
-      // Store staff session
+      // Store staff session (persists until manual logout)
       localStorage.setItem('staffSession', JSON.stringify(data.employee));
+
+      // Save or clear remembered credentials based on Remember Me checkbox
+      if (rememberMe) {
+        localStorage.setItem('staffRememberedCredentials', JSON.stringify(loginData));
+      } else {
+        localStorage.removeItem('staffRememberedCredentials');
+      }
+
       onLoginSuccess(data.employee);
       onClose();
     } catch (err) {
@@ -167,7 +205,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const BACKEND = `${window.location.protocol}//${window.location.hostname}:4000`;
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
       const res = await fetch(`${BACKEND}/staff/create-account`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -416,6 +454,41 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
                 {showPassword3 ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            {/* Remember Me checkbox */}
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              fontSize: '14px',
+              color: '#374151',
+              cursor: 'pointer',
+              userSelect: 'none',
+              padding: '2px 0'
+            }}>
+              <div
+                onClick={() => setRememberMe(!rememberMe)}
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 4,
+                  border: rememberMe ? '2px solid #3b82f6' : '2px solid #d1d5db',
+                  backgroundColor: rememberMe ? '#3b82f6' : '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  flexShrink: 0
+                }}
+              >
+                {rememberMe && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </div>
+              <span onClick={() => setRememberMe(!rememberMe)}>Remember Me</span>
+            </label>
             <button
               onClick={handleLogin}
               disabled={loading}

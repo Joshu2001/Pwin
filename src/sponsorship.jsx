@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, FileText, Pencil, MoreHorizontal, Crown, ArrowLeft, ChevronRight, ChevronLeft, Shield, Lock, Gift, Star, CheckCircle2, X, Video, Users, TrendingDown, MonitorPlay, Zap, Eye, RotateCw, Sparkles, Ban, BarChart3, Clock, Target, Unlock, Percent, Share2, Headphones } from 'lucide-react';
 import { getTranslation } from './translations.js';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Reuse the same accent/color tokens from advertisewithus.jsx
 const getCssVar = (name, fallback) => {
@@ -57,99 +58,7 @@ const alaCarteItems = [
     }
 ];
 
-// Footer component copied exactly from advertisewithus.jsx (BottomBar)
-const BottomBar = () => {
-    const [activeTab, setActiveTab] = useState('Home');
-    const navigatedRef = useRef(false);
-    const language = localStorage.getItem('regaarder_language') || 'English';
-    const t = (key) => getTranslation(key, language);
-
-    const tabs = [
-        { name: 'Home', Icon: Home },
-        { name: 'Requests', Icon: FileText },
-        { name: 'Ideas', Icon: Pencil },
-        { name: 'More', Icon: MoreHorizontal },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.name === activeTab;
-
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold)' }
-                        : { color: inactiveColor };
-
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                                    const navigateToTab = (tabName) => {
-                                        try {
-                                            if (tabName === 'Home') {
-                                                window.location.href = '/home.jsx';
-                                                return;
-                                            }
-                                            if (tabName === 'Requests') {
-                                                window.location.href = '/requests.jsx';
-                                                return;
-                                            }
-                                            if (tabName === 'Ideas') {
-                                                window.location.href = '/ideas';
-                                                return;
-                                            }
-                                            if (tabName === 'More') {
-                                                window.location.href = '/more.jsx';
-                                                return;
-                                            }
-                                        } catch (e) {
-                                            console.warn('Navigation failed', e);
-                                        }
-                                    };
-
-                    return (
-                        <div
-                            key={tab.name}
-                            className="relative flex flex-col items-center w-1/4 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; }
-                                    setActiveTab(tab.name);
-                                    navigateToTab(tab.name);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    <tab.Icon className="w-6 h-6" strokeWidth={isSelected ? 2 : 1.5} style={activeColorStyle} />
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {t(tab.name)}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
+// Footer component - removed, now using SharedBottomBar
 
 const PlanCard = ({ title, subtitle = null, priceMonthly, oldPriceMonthly, features = [], cta, ctaLink = null, themeColor = ACCENT_COLOR, badge = null, savingLabel = null, billingPeriod = 'monthly', annualDiscount = 0.17, onCtaClick = null }) => {
     const displayPrice = (monthly) => formatPrice(monthly, billingPeriod, annualDiscount);
@@ -887,7 +796,7 @@ const Sponsorships = () => {
                                             planKey.replace('Creator', '').toLowerCase() : 
                                             planKey.toLowerCase();
                                         
-                                        fetch(`http://localhost:4000${endpoint}`, {
+                                        fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}${endpoint}`, {
                                             method: 'POST',
                                             headers: {
                                                 'Authorization': `Bearer ${token}`,
@@ -915,7 +824,7 @@ const Sponsorships = () => {
                 </div>
             )}
             {/* Bottom footer */}
-            <BottomBar />
+            <SharedBottomBar selectedLanguage={localStorage.getItem('regaarder_language') || 'English'} />
         </div>
     );
 };

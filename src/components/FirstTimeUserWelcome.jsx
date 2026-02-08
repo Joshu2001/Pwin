@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Globe, ChevronDown, X } from 'lucide-react';
+import { Globe, ChevronDown, X, UserCircle, Video } from 'lucide-react';
 import { getTranslation } from '../translations.js';
 
 // Language Selector Button (Top Header)
@@ -153,7 +153,7 @@ export const RoleSelectionModal = ({
       )}
 
       {/* Main Role Selection Modal */}
-      <div className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl animate-in fade-in scale-in duration-300">
+      <div className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl animate-in fade-in scale-in duration-300 relative">
         {/* Language Button in corner */}
         <button
           onClick={(e) => {
@@ -173,27 +173,41 @@ export const RoleSelectionModal = ({
           {getTranslation('Who are you?', selectedLanguage)}
         </p>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-4">
           {/* User Option */}
           <button
             onClick={() => onSelectRole('user')}
-            className="flex flex-col items-center justify-center p-6 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group"
+            className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group text-left"
           >
-            <div className="text-4xl mb-3">👤</div>
-            <span className="font-semibold text-gray-800 group-hover:text-blue-600">
-              {getTranslation('User', selectedLanguage)}
-            </span>
+            <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
+              <UserCircle className="w-6 h-6 text-blue-600" strokeWidth={1.8} />
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-gray-900 group-hover:text-blue-700">
+                {getTranslation('Continue as a User', selectedLanguage)}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {getTranslation('Watch, request, and discover content', selectedLanguage)}
+              </div>
+            </div>
           </button>
 
           {/* Creator Option */}
           <button
             onClick={() => onSelectRole('creator')}
-            className="flex flex-col items-center justify-center p-6 border-2 border-gray-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all duration-200 group"
+            className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all duration-200 group text-left"
           >
-            <div className="text-4xl mb-3">🎬</div>
-            <span className="font-semibold text-gray-800 group-hover:text-purple-600">
-              {getTranslation('Creator', selectedLanguage)}
-            </span>
+            <div className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center">
+              <Video className="w-6 h-6 text-purple-600" strokeWidth={1.8} />
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-gray-900 group-hover:text-purple-700">
+                {getTranslation('Continue as a Creator', selectedLanguage)}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {getTranslation('Get paid creating what people ask for', selectedLanguage)}
+              </div>
+            </div>
           </button>
         </div>
       </div>

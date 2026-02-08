@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#000000</color>
+    <color name="colorPrimaryDark">#000000</color>
+    <color name="colorAccent">#D4AF37</color>
+    <!-- Dark grey status bar and navigation bar -->
+    <color name="statusBarColor">#000000</color>
+    <color name="navigationBarColor">#FFFFFF</color>
+</resources>

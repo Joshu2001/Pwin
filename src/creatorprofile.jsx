@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Menu, Bell, Settings, Search, Star, TrendingUp, Trophy, Home, FileText, Lightbulb, MoreHorizontal, MoreVertical, Heart, ThumbsDown, Eye, MessageSquare, Share2, Palette, Shield, Globe, Gift, DollarSign, Users, Monitor, BookOpen, History, Scissors, Zap, CreditCard, Crown, Tag, User, Folder, Shuffle, Camera, Pencil, PencilLine, ShoppingBag, Video, Sparkles, Pin, Bookmark, Info, EyeOff, Flag, Check, AlertCircle, AlertTriangle, Sun, Moon, ArrowLeft, VolumeX, Play, Pause, Save, ChevronDown, Upload, CheckCircle, Mail, ChevronUp, ChevronLeft, Clapperboard, Coins } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations';
+import { WEB_URL } from './config';
 
 // Utility function to format numbers as 1k, 1m, etc.
 const formatNumber = (num) => {
@@ -376,6 +377,7 @@ const StatCard = ({ label, value, selectedLanguage = 'English' }) => (
 );
 
 const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTip, selectedCTAs, onCTAClick, availableTags, onShowToast, isSharedLink = false, selectedLanguage = 'English' }) => {
+    const navigate = useNavigate();
     const [editingField, setEditingField] = useState(null);
     const [tempPrice, setTempPrice] = useState(profile.price);
     const [tempPricingType, setTempPricingType] = useState(profile.pricingType || 'One Time');
@@ -407,7 +409,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/following/${profile.id}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -439,7 +441,9 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
         : "Your idea → {creator}'s next video";
 
     const handleShare = async () => {
-        const url = `${window.location.origin}/@${profile?.handle || 'user'}?request=true`;
+        // Use real production domain for profile links
+        const key = profile?.handle || profile?.id || profile?.email || profile?.name || 'user';
+        const url = `${WEB_URL}/share/profile/${encodeURIComponent(String(key).replace(/^@/, ''))}`;
         const successData = { title: "Link Copied", subtitle: "Profile link copied to clipboard" };
 
         const onCopySuccess = () => {
@@ -494,7 +498,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                 return;
             }
 
-            const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
             const endpoint = isFollowing ? '/unfollow' : '/follow';
 
             setFollowActive(true);
@@ -587,7 +591,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
 
             const fd = new FormData();
             fd.append('image', file);
-            const res = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/photo`, {
+            const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/photo`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: fd
@@ -610,7 +614,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                     onUpdate('image', data.url);
                     // persist via creator/complete
                     try {
-                        await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/complete`, {
+                        await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                             body: JSON.stringify({ image: data.url })
@@ -623,7 +627,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                     onUpdate('document', data.url);
                     setPreviewDocument(prev => ({ ...(prev || {}), url: data.url }));
                     try {
-                        await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/complete`, {
+                        await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                             body: JSON.stringify({ document: data.url })
@@ -660,6 +664,20 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
 
     const handleVideoEdit = () => {
         fileInputRef.current.click();
+    };
+
+    const handleBackNavigation = () => {
+        try {
+            const redirectTo = localStorage.getItem('redirectBackTo');
+            const targetUrl = redirectTo === 'creatorDashboard' ? '/creatordashboard' : '/home';
+            if (redirectTo === 'creatorDashboard') {
+                localStorage.removeItem('redirectBackTo');
+            }
+            navigate(targetUrl);
+        } catch (e) {
+            console.warn('Navigation failed', e);
+            window.location.href = '/home';
+        }
     };
 
     return (
@@ -699,7 +717,10 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
             <div className="absolute top-0 left-0 right-0 h-48 bg-gradient-to-br from-purple-950 via-red-600 to-orange-500" style={{ borderBottomLeftRadius: '20px', borderBottomRightRadius: '20px' }}></div>
 
             {/* Top Navigation */}
-            <div className="relative z-10 flex justify-between items-center px-4 pt-4 text-white">
+            <div
+                className="relative z-10 flex justify-between items-center px-4 text-white"
+                style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+            >
                 <button
                     className={`w-11 h-11 flex items-center justify-center bg-black/20 rounded-full backdrop-blur-sm hover:bg-black/30 transition ${typeof backActive !== 'undefined' ? (backActive ? 'scale-95 opacity-90' : '') : ''}`}
                     onClick={() => {
@@ -708,16 +729,11 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                             // set a transient active state visible to the user
                             /* eslint-disable no-unused-expressions */
                             (typeof setBackActive === 'function') && setBackActive(true);
-                            const redirectTo = localStorage.getItem('redirectBackTo');
-                            const targetUrl = redirectTo === 'creatorDashboard' ? '/creatordashboard' : '/home.jsx';
-                            if (redirectTo === 'creatorDashboard') {
-                                localStorage.removeItem('redirectBackTo');
-                            }
-                            setTimeout(() => { window.location.href = targetUrl; }, 120);
+                            setTimeout(() => { handleBackNavigation(); }, 120);
                             setTimeout(() => { (typeof setBackActive === 'function') && setBackActive(false); }, 420);
                         } catch (e) {
                             console.warn('Navigation failed', e);
-                            window.location.href = '/home.jsx';
+                            window.location.href = '/home';
                         }
                     }}
                 >
@@ -1231,7 +1247,7 @@ const AllVideosPopup = ({ videos, creatorId, onClose, onDelete, isPreview = fals
             if (!creatorId) return;
             setIsLoading(true);
             try {
-                const BACKEND = import.meta.env.VITE_BACKEND || 'http://localhost:5000';
+                const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
                 const response = await fetch(`${BACKEND}/videos/${creatorId}`, {
                     credentials: 'include'
                 });
@@ -1901,8 +1917,9 @@ const AboutSection = ({ profile, onUpdate, isPreviewMode, selectedLanguage = 'En
 
 const ShareProfile = ({ profile, onCopy, selectedLanguage = 'English' }) => {
     const handleCopy = async () => {
-        // Construct the profile URL (using current origin + handle for demo)
-        const url = `${window.location.origin}/@${profile?.handle || 'user'}?request=true`;
+        // Construct the profile URL using production domain
+        const key = profile?.handle || profile?.id || profile?.email || profile?.name || 'user';
+        const url = `${WEB_URL}/share/profile/${encodeURIComponent(String(key).replace(/^@/, ''))}`;
 
         const successData = { title: "Link Copied", subtitle: "Profile link copied to clipboard" };
 
@@ -2037,8 +2054,9 @@ const Toast = ({ data, onClose }) => {
     return (
         <div
             ref={toastRef}
-            className={`fixed top-6 left-1/2 transform -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl min-w-[280px] max-w-[360px] transition-all duration-300 cursor-grab select-none backdrop-blur-xl ${isDismissing ? 'opacity-0 scale-95 -translate-y-4' : 'opacity-100 scale-100'}`}
+            className={`fixed left-1/2 transform -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl min-w-[280px] max-w-[360px] transition-all duration-300 cursor-grab select-none backdrop-blur-xl ${isDismissing ? 'opacity-0 scale-95 -translate-y-4' : 'opacity-100 scale-100'}`}
             style={{
+                top: 'calc(12px + env(safe-area-inset-top, 0px))',
                 transform: `translateX(calc(-50% + ${swipeOffset}px))`,
                 animation: isDismissing ? 'none' : 'toastSlideDown 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
                 background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
@@ -2557,9 +2575,7 @@ const SponsorPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
     // Get backend URL dynamically
     const getBackendUrl = () => {
         if (window && window.__BACKEND_URL__) return window.__BACKEND_URL__;
-        const protocol = window.location.protocol;
-        const hostname = window.location.hostname;
-        return `${protocol}//${hostname}:4000`;
+        return 'https://pwin.onrender.com';
     };
 
     // Process payment and redirect to PayPal
@@ -3012,7 +3028,7 @@ const App = () => {
                 // Extract handle from /@handle URL pattern
                 const pathHandle = window.location.pathname.startsWith('/@') ? window.location.pathname.slice(2).split('?')[0] : null;
                 const isSharedLink = params.get('shared') === 'true' || params.get('request') === 'true';
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 
                 // Use handle from URL path, query params, or default
                 const finalHandle = pathHandle || handle;
@@ -3054,7 +3070,6 @@ const App = () => {
                     if (safeUser.image) { 
                         try { 
                             const u = new URL(safeUser.image); 
-                            if (u.hostname === 'localhost') u.hostname = window.location.hostname; 
                             if (window && window.location && window.location.protocol) u.protocol = window.location.protocol; 
                             safeUser.image = u.toString(); 
                         } catch (e) { } 
@@ -3130,7 +3145,7 @@ const App = () => {
                     if (stored && typeof stored === 'object') {
                         const safeStored = { ...stored };
                         if (safeStored.image && String(safeStored.image).startsWith('blob:')) safeStored.image = '';
-                        if (safeStored.image) { try { const u = new URL(safeStored.image); if (u.hostname === 'localhost') u.hostname = window.location.hostname; if (window && window.location && window.location.protocol) u.protocol = window.location.protocol; safeStored.image = u.toString(); } catch (e) { } }
+                        if (safeStored.image) { try { const u = new URL(safeStored.image); if (window && window.location && window.location.protocol) u.protocol = window.location.protocol; safeStored.image = u.toString(); } catch (e) { } }
                         if (safeStored.document && String(safeStored.document).startsWith('blob:')) safeStored.document = '';
                         
                         // Fetch videos for stats
@@ -3192,7 +3207,7 @@ const App = () => {
             try {
                 if (!profile.id) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 
                 // Fetch fresh user data to get updated stats
                 const res = await fetch(`${BACKEND}/users/${encodeURIComponent(profile.id)}`);
@@ -3230,7 +3245,7 @@ const App = () => {
             }
 
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 
                 // Fetch all videos to recalculate stats
                 const videosRes = await fetch(`${BACKEND}/videos`);
@@ -3745,7 +3760,7 @@ const App = () => {
                     console.warn('No authentication token. Featured video saved locally only.');
                     return;
                 }
-                const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -3775,7 +3790,7 @@ const App = () => {
                     console.warn('No authentication token. Featured video deleted locally only.');
                     return;
                 }
-                const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -3811,7 +3826,7 @@ const App = () => {
             }
 
             const payload = { [field]: value };
-            const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/complete`, {
+            const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3905,7 +3920,7 @@ const App = () => {
                     console.warn('No authentication token. Categories saved locally only.');
                     return;
                 }
-                const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -3949,7 +3964,7 @@ const App = () => {
                     console.warn('No authentication token. Template saved locally only.');
                     return;
                 }
-                const response = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

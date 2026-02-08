@@ -168,7 +168,7 @@ const SupportTicketPanel = ({ selectedLanguage = 'English' }) => {
   const getBackendUrl = () => {
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;
-    return window.__BACKEND_URL__ || `${protocol}//${hostname}:4000`;
+    return window.__BACKEND_URL__ || 'https://pwin.onrender.com';
   };
 
   // Fetch tickets

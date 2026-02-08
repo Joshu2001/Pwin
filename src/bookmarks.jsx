@@ -7,8 +7,8 @@ import { getTranslation } from './translations';
 const GOLD_COLOR = '#CB8B04';
 
 const BACKEND_URL = typeof window !== 'undefined'
-  ? (window.__BACKEND_URL__ || `${window.location.protocol}//${window.location.hostname}:4000`)
-  : 'http://localhost:4000';
+  ? (window.__BACKEND_URL__ || 'https://pwin.onrender.com')
+  : 'https://pwin.onrender.com';
 
 const formatSeconds = (s) => {
   try { const n = Math.max(0, Math.floor(Number(s)||0)); const m = Math.floor(n/60); const sec = String(n%60).padStart(2,'0'); return `${m}:${sec}`; } catch { return '0:00'; }
@@ -109,7 +109,10 @@ export default function BookmarksPage() {
   return (
     <div className="flex justify-center min-h-screen w-full bg-white relative">
       <div className="w-full flex flex-col bg-white overflow-auto">
-        <header className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20">
+        <header
+          className="bg-white border-b border-gray-100 p-4 sticky top-0 z-20"
+          style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+        >
           <div className="flex items-center space-x-4">
             <ChevronLeft className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900" onClick={() => navigate(-1)} />
             <h1 className="text-xl font-semibold text-gray-800">{t('Bookmarks')}</h1>

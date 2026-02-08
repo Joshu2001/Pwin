@@ -3,6 +3,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Bell, CheckCircle, Rocket, Trophy, ChevronLeft, Settings, ChevronRight, MessageSquare, PlayCircle, Star, CornerUpRight, Send, X, Lightbulb, Trash2, Archive, Filter } from 'lucide-react';
 import { translations, getTranslation } from './translations.js';
+import { resolveMediaUrl } from './utils/media.js';
 
 // Utility for relative time
 const timeAgo = (iso) => {
@@ -118,7 +119,7 @@ const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId,
   const otherPerson = (thread.from && thread.from.id !== currentUserId) ? thread.from : (thread.to && thread.to.id !== currentUserId ? thread.to : { name: 'Unknown' });
 
   // Fetch profile picture if not already in the thread
-  const [profilePic, setProfilePic] = React.useState(otherPerson.avatar || null);
+  const [profilePic, setProfilePic] = React.useState(resolveMediaUrl(otherPerson.avatar) || null);
 
   React.useEffect(() => {
     if (!profilePic && otherPerson && otherPerson.id) {
@@ -127,14 +128,14 @@ const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId,
         try {
           const token = localStorage.getItem('regaarder_token');
           if (!token) return;
-          const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+          const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
           const res = await fetch(`${BACKEND}/user/${otherPerson.id}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (res.ok) {
             const data = await res.json();
             if (data.user && data.user.profilePicture) {
-              setProfilePic(data.user.profilePicture);
+              setProfilePic(resolveMediaUrl(data.user.profilePicture));
             }
           }
         } catch (e) { }
@@ -520,12 +521,16 @@ const App = ({ onClose }) => {
     try {
       const token = localStorage.getItem('regaarder_token');
       if (!token) return;
-      const res = await fetch(`${window.location.protocol}//${window.location.hostname}:4000/notifications`, {
+      const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/notifications`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         const data = await res.json();
-        const arr = (data && data.notifications) || [];
+        let arr = (data && data.notifications) || [];
+        const pendingIds = pendingDeleteIdsRef.current;
+        if (pendingIds && pendingIds.size) {
+          arr = arr.filter((item) => !pendingIds.has(String(item.id)));
+        }
         const uid = data.userId;
         setUserId(uid);
 
@@ -638,6 +643,7 @@ const App = ({ onClose }) => {
 
   const [toast, setToast] = React.useState(null);
   const deleteTimerRef = React.useRef(null);
+  const pendingDeleteIdsRef = React.useRef(new Set());
 
   // Handler for dismissing (local hide, reappear on refresh)
   const handleDismiss = (thread) => {
@@ -649,12 +655,20 @@ const App = ({ onClose }) => {
     // 1. Remove from UI immediately
     setGroupedSuggestions(prev => prev.filter(t => t.id !== thread.id));
 
+    const itemsToDelete = thread.items || [thread];
+    itemsToDelete.forEach((item) => {
+      if (item && item.id != null) pendingDeleteIdsRef.current.add(String(item.id));
+    });
+
     // 2. Show Toast with Undo
     if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
 
     setToast({
       message: 'Conversation deleted',
       onUndo: () => {
+        itemsToDelete.forEach((item) => {
+          if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
+        });
         // Restore
         setGroupedSuggestions(prev => {
           const arr = [...prev, thread];
@@ -667,19 +681,35 @@ const App = ({ onClose }) => {
     });
 
     // 3. Set timer to actually delete from backend
-    deleteTimerRef.current = setTimeout(() => {
+    deleteTimerRef.current = setTimeout(async () => {
       // Perform backend delete for all items in thread
       const token = localStorage.getItem('regaarder_token');
       if (!token) return;
-      const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
 
-      const items = thread.items || [thread];
-      items.forEach(item => {
-        fetch(`${BACKEND}/notifications/${item.id}`, {
+      const results = await Promise.all((itemsToDelete || []).map((item) => {
+        if (!item || item.id == null) return Promise.resolve(false);
+        return fetch(`${BACKEND}/notifications/${item.id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
-        }).catch(console.warn);
+        }).then((res) => res.ok).catch(() => false);
+      }));
+
+      const allOk = results.length ? results.every(Boolean) : true;
+
+      itemsToDelete.forEach((item) => {
+        if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
       });
+
+      if (!allOk) {
+        setGroupedSuggestions(prev => {
+          if (prev.some(t => t.id === thread.id)) return prev;
+          const arr = [...prev, thread];
+          return arr.sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
+        });
+      } else {
+        fetchNotifications();
+      }
 
       setToast(null);
     }, 4000); // 4 seconds undo window
@@ -690,7 +720,7 @@ const App = ({ onClose }) => {
     const token = localStorage.getItem('regaarder_token');
     if (!token) return;
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'http://localhost:4000';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
       await fetch(`${BACKEND}/suggestion`, {
         method: 'POST',
         headers: {
@@ -841,7 +871,10 @@ const App = ({ onClose }) => {
         <div className="w-full sm:max-w-sm bg-white shadow-2xl flex flex-col sm:rounded-2xl overflow-hidden">
 
           {/* Header (Top of the Screen) */}
-          <header className="p-4 pl-12 border-b border-gray-100 flex items-center justify-start relative">
+          <header
+            className="p-4 pl-12 border-b border-gray-100 flex items-center justify-start relative"
+            style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}
+          >
             {/* Back button - positioned absolute left */}
             <ChevronLeft
               onClick={handleClose}
