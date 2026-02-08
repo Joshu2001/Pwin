@@ -146,48 +146,7 @@
     "hiddenAt": null,
     "ads": {
       "bottom": [],
-      "overlays": [
-        {
-          "id": "overlay-1769328953658-kvd3g3lgk",
-          "type": "overlay",
-          "overlayAdCompanyName": "hh",
-          "overlayAdText": "",
-          "overlayAdTextItems": [
-            {
-              "id": 1769133835383,
-              "text": "",
-              "duration": 5
-            }
-          ],
-          "overlayAdEmoji": "❓❓",
-          "overlayAdBgColor": "#E41E24",
-          "overlayAdTextColor": "#fff",
-          "overlayBrandBgColor": "#ffffff",
-          "overlayBrandTextColor": "#000000",
-          "overlayAdOpacity": 1,
-          "overlayTagOpacity": 1,
-          "overlayAdPosition": "videoPlayer",
-          "overlayBtnText": "Learn More",
-          "overlayProfileUrl": "",
-          "overlayVideoUrl": "https://pwin.onrender.com/uploads/intro-1769133731669-778882.mp4",
-          "overlayExitTransition": "fade",
-          "overlayBadgeType": "ad",
-          "overlayBadgeColor": "#ff0000",
-          "overlayBadgeLogo": "",
-          "overlayBadgePosition": "top-left-video",
-          "overlayCtaText": "",
-          "overlayCtaColor": "#4B9EFF",
-          "overlayCtaType": "text",
-          "overlayCtaMedia": "",
-          "overlayCtaDelay": 0,
-          "overlayCtaDuration": 3,
-          "overlayTextAnimation": "marquee",
-          "startTime": 5,
-          "duration": 30,
-          "appliedAt": "2026-01-25T08:15:53.658Z",
-          "appliedBy": 1000
-        }
-      ]
+      "overlays": []
     }
   },
   {

@@ -280,25 +280,25 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 				if (ad.link) window.open(ad.link, '_blank');
 			}}
 		>
-			{/* Inner content - only fade in on video ready, but overlay always stays opaque */}
+			{/* Inner content - fade in only when video is ready to play (hides YouTube logo/controls during load) */}
 			<div style={{
-				opacity: videoReady || isYouTube(ad.overlayVideoUrl) ? 1 : 0,
+				opacity: videoReady ? 1 : 0,
 				transition: 'opacity 0.3s ease-out',
 				width: '100%',
 				height: '100%',
 				display: 'flex',
 				flexDirection: 'column',
 				position: 'relative',
-				pointerEvents: videoReady || isYouTube(ad.overlayVideoUrl) ? 'auto' : 'none',
+				pointerEvents: videoReady ? 'auto' : 'none',
 				...getExitAnimation()
 			}}>
 				{/* Player Context Badge */}
 				{renderBadge(true)}
 
-				<div style={{ flex: 1, width: '100%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+				<div style={{ flex: 1, width: '100%', overflow: 'hidden', position: 'relative' }}>
 					
-					{/* Video Wrapper */}
-					<div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%', display: 'flex', justifyContent: 'center' }}>
+					{/* Video Wrapper — fills entire container for full-width playback */}
+					<div style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
 						
 						{/* Video Context Badge */}
 						{renderBadge(false)}
@@ -311,12 +311,14 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 									<iframe
 										width="100%"
 										height="100%"
-										src={`https://www.youtube.com/embed/${youtubeId}?modestbranding=1&controls=1&fs=1&autoplay=1`}
+										src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1`}
 										frameBorder="0"
 										allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-										allowFullScreen
-										style={{ background: '#000' }}
-										onLoad={() => setVideoReady(true)}
+										style={{ background: '#000', width: '100%', height: '100%', border: 'none', display: 'block' }}
+										onLoad={() => {
+											// Delay slightly to let YouTube render first frame before revealing
+											setTimeout(() => setVideoReady(true), 600);
+										}}
 									/>
 								);
 							} else {
@@ -350,8 +352,8 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 											}
 										}}
 										style={{
-											maxWidth: '100%',
-											maxHeight: '100vh',
+											position: 'absolute',
+											inset: 0,
 											width: '100%',
 											height: '100%',
 											objectFit: 'contain',
@@ -365,6 +367,8 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 							<div
 								ref={(el) => { if (el && !videoReady) setVideoReady(true); }}
 								style={{
+									position: 'absolute',
+									inset: 0,
 									display: 'flex',
 									flexDirection: 'column',
 									alignItems: 'center',
