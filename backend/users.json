@@ -98,7 +98,7 @@
       {
         "id": "premium",
         "name": "Premium & Elegant",
-        "emoji": "?é©",
+        "emoji": "‚≠ê",
         "description": "Sophisticated, refined tone for artistic creators",
         "isOpen": false,
         "templates": [
@@ -129,7 +129,7 @@
       {
         "id": "personal",
         "name": "Personal & Ownership",
-        "emoji": "??",
+        "emoji": "‚ù§Ô∏è",
         "description": "Triggers co-creation feelings and influence",
         "isOpen": false,
         "templates": [
@@ -195,7 +195,7 @@
       {
         "id": "weekend",
         "name": "Weekend / Emotional",
-        "emoji": "??",
+        "emoji": "‚òÄÔ∏è",
         "description": "Netflix-like, entertainment-focused prompts",
         "isOpen": false,
         "templates": [
@@ -293,7 +293,7 @@
       {
         "id": "playful",
         "name": "Playful & Light",
-        "emoji": "??",
+        "emoji": "üòÑ",
         "description": "Fun, softly persuasive approach",
         "isOpen": false,
         "templates": [
@@ -343,7 +343,7 @@
       {
         "id": "entertainment",
         "name": "Entertainment",
-        "emoji": "?é¨",
+        "emoji": "üé¨",
         "description": "Fun, engaging content for everyone",
         "isOpen": false,
         "templates": [
@@ -362,7 +362,7 @@
       {
         "id": "educational",
         "name": "Educational",
-        "emoji": "??",
+        "emoji": "üìö",
         "description": "Perfect for educators and explainers",
         "isOpen": false,
         "templates": [
@@ -421,7 +421,7 @@
       {
         "id": "diy",
         "name": "DIY / Science",
-        "emoji": "?ß¨",
+        "emoji": "üî¨",
         "description": "Curiosity + excitement + creation for makers",
         "isOpen": false,
         "templates": [
@@ -481,7 +481,7 @@
       {
         "id": "debates",
         "name": "Debates / Philosophy",
-        "emoji": "?ó£Ô∏?,
+        "emoji": "üí¨",
         "description": "Thought leadership + perspective + dialogue",
         "isOpen": false,
         "templates": [
@@ -540,7 +540,7 @@
       {
         "id": "creative",
         "name": "Creative / Art",
-        "emoji": "?é®",
+        "emoji": "üé®",
         "description": "Inspiration + collaboration + beauty",
         "isOpen": false,
         "templates": [
@@ -599,7 +599,7 @@
       {
         "id": "academic",
         "name": "Educational / Academic",
-        "emoji": "??",
+        "emoji": "üéì",
         "description": "Clarity + curiosity + learning satisfaction",
         "isOpen": false,
         "templates": [
@@ -659,7 +659,7 @@
       {
         "id": "travel",
         "name": "Travel / Culture",
-        "emoji": "??",
+        "emoji": "‚úàÔ∏è",
         "description": "Discovery + immersion + wonder",
         "count": 2,
         "isOpen": false,
@@ -719,7 +719,7 @@
       {
         "id": "motivation",
         "name": "Motivation / Lifestyle",
-        "emoji": "?§Ô?",
+        "emoji": "üí™",
         "description": "Inspiration + empathy + relatability",
         "isOpen": false,
         "templates": [
@@ -778,7 +778,7 @@
       {
         "id": "podcasts",
         "name": "Podcasts & Conversations",
-        "emoji": "??Ô∏?,
+        "emoji": "üéß",
         "description": "Curiosity + intimacy + authenticity",
         "isOpen": false,
         "templates": [
@@ -837,7 +837,7 @@
       {
         "id": "journalistic",
         "name": "Journalistic Investigations",
-        "emoji": "?ïµÔ∏?,
+        "emoji": "üì∞",
         "description": "Intrigue + justice + curiosity",
         "isOpen": false,
         "templates": [
@@ -896,7 +896,7 @@
       {
         "id": "entrepreneurship",
         "name": "Entrepreneurship & Success",
-        "emoji": "?íº",
+        "emoji": "üöÄ",
         "description": "Ambition + inspiration + insight",
         "isOpen": false,
         "templates": [
@@ -955,7 +955,7 @@
       {
         "id": "business_history",
         "name": "Business History",
-        "emoji": "??Ô∏?,
+        "emoji": "üèõÔ∏è",
         "description": "Curiosity + admiration + intelligence",
         "isOpen": false,
         "templates": [
@@ -1014,7 +1014,7 @@
       {
         "id": "fashion",
         "name": "Modeling & Fashion",
-        "emoji": "??",
+        "emoji": "üëó",
         "description": "Aspiration + artistry + self-expression",
         "isOpen": false,
         "templates": [
@@ -1073,7 +1073,7 @@
       {
         "id": "psychology",
         "name": "Psychology & Behavior",
-        "emoji": "?ß©",
+        "emoji": "üß†",
         "description": "Curiosity + relatability + intellect",
         "isOpen": false,
         "templates": [
@@ -1132,7 +1132,7 @@
       {
         "id": "health",
         "name": "Health & Fitness",
-        "emoji": "?ß¨",
+        "emoji": "üèãÔ∏è",
         "description": "Motivation + trust + self-improvement",
         "isOpen": false,
         "templates": [

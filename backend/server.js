@@ -218,7 +218,12 @@ function normalizeUserFields(u) {
 function readUsers() {
   try {
     if (!fs.existsSync(DATA_FILE)) return [];
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
+    let raw = fs.readFileSync(DATA_FILE, 'utf8');
+    // Strip BOM if present
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    // Remove control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F-0x9F) that break JSON.parse
+    // Keep \t (0x09), \n (0x0A), \r (0x0D) which are valid in JSON whitespace
+    raw = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
     const parsed = JSON.parse(raw || '[]');
     if (!Array.isArray(parsed)) {
       console.error('readUsers: DATA_FILE is not an array, got', typeof parsed);
@@ -363,7 +368,17 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ status: 'ok', version: '2.0.0' });
+});
+
+// Keep /healthz for backwards compatibility (Render health checks)
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ status: 'ok', version: '2.0.0' });
+});
+
+// Version endpoint to verify deployment
+app.get('/version', (req, res) => {
+  res.json({ version: '2.0.0', deployed: new Date().toISOString(), features: ['creators-endpoint', 'normalize-fields', 'user-id-lookup'] });
 });
 
 // Get all marketplace products
@@ -1540,10 +1555,12 @@ app.get('/creators', (req, res) => {
       );
       if (user) {
         const { passwordHash, password_hash, token, ...pub } = user;
+        const img = pub.image || pub.avatar || pub.profileImage || creator.image || null;
         const merged = {
           ...pub,
           isCreator: true,
-          image: pub.image || pub.avatar || creator.image || null,
+          image: img,
+          profileImage: img,
           name: pub.name || creator.name,
           id: pub.id || creator.id,
         };
@@ -1551,7 +1568,7 @@ app.get('/creators', (req, res) => {
         addedIds.add(pub.id);
         if (pub.email) addedIds.add(pub.email);
       } else {
-        creators.push({ ...creator, isCreator: true });
+        creators.push({ ...creator, isCreator: true, profileImage: creator.image || null });
         if (creator.id) addedIds.add(creator.id);
       }
     });
@@ -1599,6 +1616,8 @@ app.get('/users', (req, res) => {
         return name.includes(q) || handle.includes(q) || email.includes(q);
       });
     }
+    // Add profileImage alias for frontend compatibility
+    results = results.map(u => ({ ...u, profileImage: u.image || u.avatar || u.profileImage || null }));
     console.log(`[GET /users] returning ${results.length} results (creatorsOnly=${creatorsOnly}, q=${q || 'none'})`);
     return res.json({ users: results });
   } catch (err) {
@@ -1692,6 +1711,8 @@ app.get('/users/:id', (req, res) => {
     }
     
     const { passwordHash, password_hash, token, ...publicUser } = u;
+    // Add profileImage alias for frontend compatibility
+    publicUser.profileImage = publicUser.image || publicUser.avatar || publicUser.profileImage || null;
     return res.json({ user: publicUser });
   } catch (err) {
     console.error('get user by id error', err);
