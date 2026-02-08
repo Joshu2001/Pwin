@@ -4,6 +4,7 @@ import { X, Menu, Bell, Settings, Search, Star, TrendingUp, Trophy, Home, FileTe
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations';
 import { WEB_URL } from './config';
+import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Utility function to format numbers as 1k, 1m, etc.
 const formatNumber = (num) => {
@@ -108,107 +109,9 @@ const Icon = ({ name, size = 20, className = '', ...props }) => {
     return <Component size={size} className={className} {...props} />;
 };
 
+// BottomBar is now using SharedBottomBar from components/SharedBottomBar.jsx
 const BottomBar = ({ selectedLanguage = 'English' }) => {
-    const [activeTab, setActiveTab] = useState('');
-    const navigatedRef = useRef(false);
-
-    // The Requests tab should always be available in the footer.
-    const tabs = [
-        { name: 'Home', icon: 'home' },
-        { name: 'Requests', icon: 'requests' },
-        { name: 'Ideas', icon: 'pencil' },
-        { name: 'More', icon: 'more' },
-    ];
-
-    const inactiveColor = 'rgb(107 114 128)';
-
-    return (
-        <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
-            style={{
-                paddingTop: '10px',
-                paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                minHeight: '70px'
-            }}
-        >
-            <div className="w-full flex justify-around items-center px-2">
-                {tabs.map((tab) => {
-                    const isSelected = tab.name === activeTab;
-
-                    const activeColorStyle = isSelected
-                        ? { color: 'var(--color-gold)' }
-                        : { color: inactiveColor };
-
-                    const textWeight = isSelected ? 'font-semibold' : 'font-normal';
-
-                    const navigateToTab = (tabName) => {
-                        try {
-                            if (tabName === 'Home') {
-                                const redirectTo = localStorage.getItem('redirectBackTo');
-                                if (redirectTo === 'creatorDashboard') {
-                                    localStorage.removeItem('redirectBackTo');
-                                    window.location.href = '/creatordashboard';
-                                } else {
-                                    window.location.href = '/home.jsx';
-                                }
-                                return;
-                            }
-                            if (tabName === 'Requests') {
-                                window.location.href = '/requests.jsx';
-                                return;
-                            }
-                            if (tabName === 'Ideas') {
-                                window.location.href = '/ideas';
-                                return;
-                            }
-                            if (tabName === 'More') {
-                                window.location.href = '/more.jsx';
-                                return;
-                            }
-                        } catch (e) {
-                            console.warn('Navigation failed', e);
-                        }
-                    };
-
-                    return (
-                        <div
-                            key={tab.name}
-                            className="relative flex flex-col items-center justify-center flex-1 focus:outline-none"
-                        >
-                            <button
-                                className="flex flex-col items-center w-full h-full justify-center"
-                                onMouseDown={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onTouchStart={() => {
-                                    setActiveTab(tab.name);
-                                    if (!navigatedRef.current) { navigatedRef.current = true; navigateToTab(tab.name); }
-                                }}
-                                onClick={(e) => {
-                                    if (navigatedRef.current) { navigatedRef.current = false; e.preventDefault(); return; }
-                                    setActiveTab(tab.name);
-                                    navigateToTab(tab.name);
-                                }}
-                            >
-                                <div className="w-12 h-12 flex items-center justify-center rounded-xl transition-colors">
-                                    <Icon
-                                        name={tab.icon}
-                                        size={24}
-                                        strokeWidth={isSelected ? 2 : 1.5}
-                                        style={activeColorStyle}
-                                    />
-                                </div>
-                                <span className={`text-xs leading-tight mt-1 ${textWeight}`} style={activeColorStyle}>
-                                    {getTranslation(tab.name, selectedLanguage)}
-                                </span>
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
+    return <SharedBottomBar selectedLanguage={selectedLanguage} />;
 };
 
 const EditIcon = ({ onClick }) => (

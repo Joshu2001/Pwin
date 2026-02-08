@@ -241,18 +241,19 @@ const RequestDetailsModal = ({ isOpen, onClose, requestData = {}, selectedLangua
         <>
             {/* Backdrop */}
             <div 
-                className="fixed inset-0 bg-black/40 z-40"
+                className="fixed inset-0 bg-black/40 z-[60]"
                 onClick={onClose}
                 style={{ animation: 'fadeIn 280ms ease-out' }}
             />
             {/* Modal */}
             <div 
-                className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+                className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center"
+                style={{ padding: '16px', paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
                 onClick={(e) => e.target === e.currentTarget && onClose()}
             >
                 <div 
-                    className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-                    style={{ animation: 'slideUp 300ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+                    className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-y-auto"
+                    style={{ animation: 'slideUp 300ms cubic-bezier(0.16, 1, 0.3, 1)', maxHeight: 'calc(90vh - env(safe-area-inset-bottom, 0px))' }}
                 >
                     <style>{`
                         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
@@ -561,6 +562,12 @@ const ClaimStatusPanel = ({
     const [isReuploading, setIsReuploading] = useState(false);
     const [publishStep, setPublishStep] = useState('form');
     const [previewData, setPreviewData] = useState(null);
+
+    // YouTube link states for video and thumbnail
+    const [videoLinkMode, setVideoLinkMode] = useState(false);
+    const [videoLinkUrl, setVideoLinkUrl] = useState('');
+    const [thumbnailLinkMode, setThumbnailLinkMode] = useState(false);
+    const [thumbnailLinkUrl, setThumbnailLinkUrl] = useState('');
 
     // Status steps for the claim workflow (used to render the tracker and labels)
     const steps = [
@@ -1383,34 +1390,96 @@ const ClaimStatusPanel = ({
                                     {publishStep === 'form' && (
                                         <>
                                             <div className="mb-6">
-                                                <div className="text-sm font-medium text-gray-700 mb-2">{getTranslation('Upload Video', selectedLanguage)} <span className="text-red-500">*</span></div>
-                                                <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={(e) => {
-                                                    const file = e.target.files && e.target.files[0];
-                                                    if (file) {
-                                                        setVideoFile(file);
-                                                        const url = URL.createObjectURL(file);
-                                                        setVideoPreview(url);
-                                                    }
-                                                }} />
-
-                                                <div onClick={() => videoInputRef.current && videoInputRef.current.click()} className="w-full rounded-lg border-2 border-dashed border-gray-200 h-44 flex items-center justify-center cursor-pointer">
-                                                    {videoPreview ? (
-                                                        <video src={videoPreview} className="max-h-[160px] max-w-full" controls />
-                                                    ) : (
-                                                        <div className="text-center text-gray-500">
-                                                            <div className="w-12 h-12 rounded-md bg-[var(--color-gold-light-bg)] mx-auto mb-3 flex items-center justify-center text-[var(--color-gold)]">
-                                                                <Video size={20} className="text-[var(--color-gold)]" />
-                                                            </div>
-                                                            <div>{getTranslation('Click to upload video', selectedLanguage)}</div>
-                                                            <div className="text-xs text-gray-400 mt-1">{getTranslation('MP4, MOV or WebM · Max 500MB', selectedLanguage)}</div>
-                                                        </div>
-                                                    )}
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="text-sm font-medium text-gray-700">{getTranslation('Upload Video', selectedLanguage)} <span className="text-red-500">*</span></div>
+                                                    <button type="button" onClick={() => { setVideoLinkMode(!videoLinkMode); if (!videoLinkMode) { setVideoFile(null); setVideoPreview(null); } else { setVideoLinkUrl(''); } }} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                                                        <Link2 size={12} />
+                                                        {videoLinkMode ? getTranslation('Upload file instead', selectedLanguage) : getTranslation('Add YouTube link', selectedLanguage)}
+                                                    </button>
                                                 </div>
-                                                {videoFile && <div className="text-xs text-gray-500 mt-2">{getTranslation('Selected:', selectedLanguage)} {videoFile.name} ({Math.round(videoFile.size / 1024 / 1024)} MB)</div>}
+                                                {videoLinkMode ? (
+                                                    <>
+                                                        <input
+                                                            type="url"
+                                                            value={videoLinkUrl}
+                                                            onChange={(e) => setVideoLinkUrl(e.target.value)}
+                                                            placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+                                                            className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm mb-2"
+                                                        />
+                                                        {videoLinkUrl && (videoLinkUrl.includes('youtube.com') || videoLinkUrl.includes('youtu.be')) && (() => {
+                                                            let ytId = '';
+                                                            if (videoLinkUrl.includes('youtu.be/')) ytId = videoLinkUrl.split('youtu.be/')[1].split('?')[0];
+                                                            else { try { ytId = new URL(videoLinkUrl).searchParams.get('v') || ''; } catch {} }
+                                                            if (!ytId) return null;
+                                                            return (
+                                                                <div className="w-full rounded-lg overflow-hidden border border-gray-200 h-44 relative bg-black">
+                                                                    <iframe
+                                                                        src={`https://www.youtube-nocookie.com/embed/${ytId}?modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1`}
+                                                                        className="w-full h-full border-0"
+                                                                        allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
+                                                                        style={{ pointerEvents: 'none' }}
+                                                                    />
+                                                                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 48, background: 'linear-gradient(to bottom, #000 40%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+                                                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 40, background: 'linear-gradient(to top, #000 40%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                        <div className="text-xs text-gray-400 mt-1">{getTranslation('YouTube videos will play without YouTube branding', selectedLanguage)}</div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={(e) => {
+                                                            const file = e.target.files && e.target.files[0];
+                                                            if (file) {
+                                                                setVideoFile(file);
+                                                                const url = URL.createObjectURL(file);
+                                                                setVideoPreview(url);
+                                                            }
+                                                        }} />
+
+                                                        <div onClick={() => videoInputRef.current && videoInputRef.current.click()} className="w-full rounded-lg border-2 border-dashed border-gray-200 h-44 flex items-center justify-center cursor-pointer">
+                                                            {videoPreview ? (
+                                                                <video src={videoPreview} className="max-h-[160px] max-w-full" controls />
+                                                            ) : (
+                                                                <div className="text-center text-gray-500">
+                                                                    <div className="w-12 h-12 rounded-md bg-[var(--color-gold-light-bg)] mx-auto mb-3 flex items-center justify-center text-[var(--color-gold)]">
+                                                                        <Video size={20} className="text-[var(--color-gold)]" />
+                                                                    </div>
+                                                                    <div>{getTranslation('Click to upload video', selectedLanguage)}</div>
+                                                                    <div className="text-xs text-gray-400 mt-1">{getTranslation('MP4, MOV or WebM · Max 500MB', selectedLanguage)}</div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {videoFile && <div className="text-xs text-gray-500 mt-2">{getTranslation('Selected:', selectedLanguage)} {videoFile.name} ({Math.round(videoFile.size / 1024 / 1024)} MB)</div>}
+                                                    </>
+                                                )}
                                             </div>
 
                                             <div className="mb-6">
-                                                <div className="text-sm font-medium text-gray-700 mb-2">{getTranslation('Video Thumbnail', selectedLanguage)} <span className="text-red-500">*</span></div>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="text-sm font-medium text-gray-700">{getTranslation('Video Thumbnail', selectedLanguage)} <span className="text-red-500">*</span></div>
+                                                    <button type="button" onClick={() => { setThumbnailLinkMode(!thumbnailLinkMode); if (!thumbnailLinkMode) { setThumbnailFile(null); setThumbnailPreview(null); } else { setThumbnailLinkUrl(''); } }} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                                                        <Link2 size={12} />
+                                                        {thumbnailLinkMode ? getTranslation('Upload file instead', selectedLanguage) : getTranslation('Add link instead', selectedLanguage)}
+                                                    </button>
+                                                </div>
+                                                {thumbnailLinkMode ? (
+                                                    <>
+                                                        <input
+                                                            type="url"
+                                                            value={thumbnailLinkUrl}
+                                                            onChange={(e) => { setThumbnailLinkUrl(e.target.value); if (e.target.value) { setThumbnailPreview(e.target.value); } }}
+                                                            placeholder="https://example.com/thumbnail.jpg"
+                                                            className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm mb-2"
+                                                        />
+                                                        {thumbnailLinkUrl && (
+                                                            <div className="w-full rounded-lg overflow-hidden border border-gray-200 h-32 bg-gray-50">
+                                                                <img src={thumbnailLinkUrl} alt="Thumbnail preview" className="object-cover w-full h-full" onError={(e) => { e.target.style.display = 'none'; }} />
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <>
                                                 <input ref={thumbInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
                                                     const file = e.target.files && e.target.files[0];
                                                     if (file) {
@@ -1432,6 +1501,8 @@ const ClaimStatusPanel = ({
                                                 </div>
 
                                                 {thumbnailFile && <div className="text-xs text-gray-500 mt-2">{getTranslation('Selected:', selectedLanguage)} {thumbnailFile.name} ({Math.round(thumbnailFile.size / 1024)} KB)</div>}
+                                                    </>
+                                                )}
 
                                                 {/* Adjust thumbnail control */}
                                                 {thumbnailPreview && (
@@ -1874,8 +1945,8 @@ const ClaimStatusPanel = ({
                                             onClick={async () => {
                                                 setValidationError('');
                                                 // basic validation (same as before)
-                                                if (!videoFile) { setValidationError('Please upload a video before continuing.'); return; }
-                                                if (!thumbnailFile) { setValidationError('Please upload a thumbnail before continuing.'); return; }
+                                                if (!videoFile && !videoLinkUrl) { setValidationError('Please upload a video or add a YouTube link before continuing.'); return; }
+                                                if (!thumbnailFile && !thumbnailLinkUrl) { setValidationError('Please upload a thumbnail or add a link before continuing.'); return; }
                                                 if (!videoTitle || videoTitle.trim().length === 0) { setValidationError(getTranslation('Please add a video title before continuing.', selectedLanguage)); return; }
                                                 if (!category) { setValidationError(getTranslation('Please select a category for your video.', selectedLanguage)); return; }
                                                 // Script type and script file are now optional - no validation needed
@@ -2012,9 +2083,9 @@ const ClaimStatusPanel = ({
                                                             hasThumbnail: !!thumbnailFile
                                                         });
 
-                                                        // Upload thumbnail
-                                                        let thumbnailUrl = thumbnailPreview;
-                                                        if (thumbnailFile && thumbnailFile instanceof File) {
+                                                        // Upload thumbnail (or use link URL)
+                                                        let thumbnailUrl = thumbnailLinkUrl || thumbnailPreview;
+                                                        if (!thumbnailLinkUrl && thumbnailFile && thumbnailFile instanceof File) {
                                                             const thumbFormData = new FormData();
                                                             thumbFormData.append('photo', thumbnailFile);
 
@@ -2033,9 +2104,9 @@ const ClaimStatusPanel = ({
                                                             }
                                                         }
 
-                                                        // Upload video
-                                                        let videoUrl = videoPreview;
-                                                        if (videoFile && videoFile instanceof File) {
+                                                        // Upload video (or use YouTube link URL)
+                                                        let videoUrl = videoLinkUrl || videoPreview;
+                                                        if (!videoLinkUrl && videoFile && videoFile instanceof File) {
                                                             const videoFormData = new FormData();
                                                             videoFormData.append('video', videoFile);
 
