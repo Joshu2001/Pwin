@@ -566,8 +566,7 @@ const ClaimStatusPanel = ({
     // YouTube link states for video and thumbnail
     const [videoLinkMode, setVideoLinkMode] = useState(false);
     const [videoLinkUrl, setVideoLinkUrl] = useState('');
-    const [thumbnailLinkMode, setThumbnailLinkMode] = useState(false);
-    const [thumbnailLinkUrl, setThumbnailLinkUrl] = useState('');
+const [videoLinkDuration, setVideoLinkDuration] = useState('');
 
     // Status steps for the claim workflow (used to render the tracker and labels)
     const steps = [
@@ -1425,6 +1424,16 @@ const ClaimStatusPanel = ({
                                                             );
                                                         })()}
                                                         <div className="text-xs text-gray-400 mt-1">{getTranslation('YouTube videos will play without YouTube branding', selectedLanguage)}</div>
+                                                        <div className="mt-2">
+                                                            <label className="text-xs font-medium text-gray-600 mb-1 block">{getTranslation('Video Duration (optional)', selectedLanguage)}</label>
+                                                            <input
+                                                                type="text"
+                                                                value={videoLinkDuration || ''}
+                                                                onChange={(e) => setVideoLinkDuration(e.target.value)}
+                                                                placeholder="e.g. 3:45"
+                                                                className="w-32 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                                                            />
+                                                        </div>
                                                     </>
                                                 ) : (
                                                     <>
@@ -2125,9 +2134,12 @@ const ClaimStatusPanel = ({
                                                             }
                                                         }
 
-                                                        // Calculate video duration from the video file
+                                                        // Calculate video duration from the video file or user input
                                                         let videoDuration = '0:00';
-                                                        if (videoFile) {
+                                                        if (videoLinkUrl && videoLinkDuration) {
+                                                            // Use creator-provided duration for YouTube/link videos
+                                                            videoDuration = videoLinkDuration.includes(':') ? videoLinkDuration : `${videoLinkDuration}:00`;
+                                                        } else if (videoFile) {
                                                             try {
                                                                 const videoElement = document.createElement('video');
                                                                 videoElement.preload = 'metadata';

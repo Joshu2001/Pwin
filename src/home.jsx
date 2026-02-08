@@ -4199,6 +4199,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     likes: freshVideo.likes || 0,
                                     comments: freshVideo.comments || 0,
                                     duration: freshVideo.duration || 0,
+                                    time: freshVideo.time || '',
                                     overlays: overlays,
                                     ads: freshVideo.ads || {},
                                 };
@@ -4211,7 +4212,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                             localStorage.setItem('videoplayer_quick_load', JSON.stringify({
                                                 url: initialVideoData.videoUrl || initialVideoData.url,
                                                 title: initialVideoData.title || '',
-                                                creator: initialVideoData.author || ''
+                                                creator: initialVideoData.author || '',
+                                                time: initialVideoData.time || ''
                                             }));
                                         } catch { }
                                         const params = new URLSearchParams();

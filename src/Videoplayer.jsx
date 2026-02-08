@@ -717,13 +717,35 @@ const VideoPlayer = () => {
 		);
 	}
 
+	// YouTube URL detection for desktop player
+	const desktopIsYouTube = videoInfo && videoInfo.src && (videoInfo.src.includes('youtube.com') || videoInfo.src.includes('youtu.be'));
+	const desktopYtId = (() => {
+		if (!desktopIsYouTube || !videoInfo?.src) return '';
+		const url = videoInfo.src;
+		if (url.includes('youtu.be/')) return url.split('youtu.be/')[1].split(/[?&#]/)[0];
+		if (url.includes('youtube.com')) { try { return new URL(url).searchParams.get('v') || ''; } catch { return ''; } }
+		return '';
+	})();
+
 	return (
 		<div className="min-h-screen bg-white p-6">
 			<div className="max-w-4xl mx-auto">
 				<h1 className="text-2xl font-semibold text-gray-800 mb-2">{videoInfo.title}</h1>
 				{videoInfo.channel && <p className="text-sm text-gray-500 mb-4">{videoInfo.channel}</p>}
 
-				{videoInfo.src ? (
+				{desktopIsYouTube && desktopYtId ? (
+					<div className="w-full rounded-lg bg-black relative" style={{ aspectRatio: '16/9', overflow: 'hidden' }}>
+						<iframe
+							src={`https://www.youtube-nocookie.com/embed/${desktopYtId}?autoplay=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1`}
+							className="w-full h-full border-0"
+							allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+							style={{ width: '100%', height: '100%' }}
+							title="Video player"
+						/>
+						<div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 72, background: 'linear-gradient(to bottom, #000 50%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+						<div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 56, background: 'linear-gradient(to top, #000 50%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+					</div>
+				) : videoInfo.src ? (
 					<div ref={containerRef} className="w-full rounded-lg bg-black" />
 				) : (
 					<div className="p-6 bg-[var(--color-gold-cream)] rounded-md text-[var(--color-gold)]" style={{ borderColor: 'var(--color-gold-light)', borderStyle: 'solid' }}>
@@ -1016,12 +1038,26 @@ const VideoCard = ({ item, idx, filtered, onVideoClick, setToastMessage, toastTi
 	const [loadedDuration, setLoadedDuration] = useState(0);
 	const [thumbnail, setThumbnail] = useState(item.thumbnail || item.imageUrl);
 
-	// Load video metadata from item's URL
+	// Helper: detect YouTube URLs
+	const isYTUrl = (url) => url && (url.includes('youtube.com') || url.includes('youtu.be'));
+
+	// Load video metadata from item's URL (skip for YouTube URLs — native <video> can't play them)
 	useEffect(() => {
 		let cancelled = false;
 		
 		const videoUrl = item.url || item.videoUrl;
 		if (!videoUrl) return;
+
+		// YouTube URLs can't be loaded by <video> element — parse duration from item.time instead
+		if (isYTUrl(videoUrl)) {
+			if (item.time) {
+				const parts = (item.time || '').split(':');
+				if (parts.length === 2) {
+					setLoadedDuration((parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0));
+				}
+			}
+			return;
+		}
 
 		try {
 			const video = document.createElement('video');
@@ -1344,10 +1380,39 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	const [videoUrl, setVideoUrl] = useState(() => {
 		if (initialVideo) {
 			const u = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
-			return u ? resolveMediaUrl(u) : '';
+			if (!u) return '';
+			// Don't run resolveMediaUrl on YouTube URLs — they are external
+			if (u.includes('youtube.com') || u.includes('youtu.be')) return u;
+			return resolveMediaUrl(u);
 		}
 		return '';
 	});
+	// YouTube URL detection helpers (reused from OverlayAdPlayer)
+	const isYouTubeUrl = (url) => url && (url.includes('youtube.com') || url.includes('youtu.be'));
+	const getYouTubeVideoId = (url) => {
+		if (!url) return '';
+		if (url.includes('youtu.be/')) return url.split('youtu.be/')[1].split(/[?&#]/)[0];
+		if (url.includes('youtube.com')) { try { return new URL(url).searchParams.get('v') || ''; } catch { return ''; } }
+		return '';
+	};
+
+	// Track whether the current video is a YouTube embed
+	const [isYouTubeVideo, setIsYouTubeVideo] = useState(() => {
+		if (initialVideo) {
+			const u = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
+			return isYouTubeUrl(u);
+		}
+		return false;
+	});
+	const [youTubeId, setYouTubeId] = useState(() => {
+		if (initialVideo) {
+			const u = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
+			return getYouTubeVideoId(u);
+		}
+		return '';
+	});
+	const ytIframeRef = useRef(null);
+
 	// Track current video metadata so dialogs (Report, Share, etc.) reflect the active media
 	const [videoTitle, setVideoTitle] = useState(() => (initialVideo && initialVideo.title) || "");
 	const [creatorName, setCreatorName] = useState(() => (initialVideo && initialVideo.author) || "");
@@ -1362,10 +1427,27 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 			if (quickLoadData) {
 				const data = JSON.parse(quickLoadData);
 				if (data.url) {
-					setVideoUrl(resolveMediaUrl(data.url));
+					// Check if the URL is a YouTube link
+					if (isYouTubeUrl(data.url)) {
+						setIsYouTubeVideo(true);
+						setYouTubeId(getYouTubeVideoId(data.url));
+						setVideoUrl(data.url); // keep raw URL for reference
+					} else {
+						setIsYouTubeVideo(false);
+						setYouTubeId('');
+						setVideoUrl(resolveMediaUrl(data.url));
+					}
 					if (data.title) setVideoTitle(data.title);
 					if (data.creator) setCreatorName(data.creator);
 					if (data.creatorName) setCreatorName(data.creatorName);
+					// Parse duration from quick_load data.time if available
+					if (data.time) {
+						const parts = (data.time || '').split(':');
+						if (parts.length === 2) {
+							const secs = (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
+							if (secs > 0) setDuration(secs);
+						}
+					}
 				}
 				// Clear after loading so it doesn't persist
 				localStorage.removeItem('videoplayer_quick_load');
@@ -1497,6 +1579,32 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	const [videoMountTick, setVideoMountTick] = useState(0);
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [duration, setDuration] = useState(0);
+
+	// For YouTube videos, initialize duration from video metadata since <video> onLoadedMetadata won't fire
+	useEffect(() => {
+		if (isYouTubeVideo && duration === 0) {
+			// Try initialVideo.duration (numeric seconds) first
+			if (initialVideo && initialVideo.duration && initialVideo.duration > 0) {
+				setDuration(initialVideo.duration);
+			}
+			// Try initialVideo.time (string "M:SS") as fallback
+			else if (initialVideo && initialVideo.time) {
+				const parts = (initialVideo.time || '').split(':');
+				if (parts.length === 2) {
+					const secs = (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
+					if (secs > 0) setDuration(secs);
+				}
+			}
+		}
+	}, [isYouTubeVideo, initialVideo]);
+
+	// For YouTube videos, mark as playing after a brief delay (autoplay=1)
+	useEffect(() => {
+		if (isYouTubeVideo && youTubeId) {
+			const timer = setTimeout(() => setIsPlaying(true), 1500);
+			return () => clearTimeout(timer);
+		}
+	}, [isYouTubeVideo, youTubeId]);
 
 	// NEW: Video overlays (links/images) that appear at specific times
 	const [videoOverlays, setVideoOverlays] = useState([]);
@@ -1717,7 +1825,26 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					setCurrentIndex(nextIdx);
 					try { setVideoTitle(info.title || 'Video'); } catch { }
 					try { setCreatorName(info.creator || info.channel || ''); } catch { }
-					try { if (info.url) setVideoUrl(resolveMediaUrl(info.url)); else if (info.videoUrl) setVideoUrl(resolveMediaUrl(info.videoUrl)); else if (info.src) setVideoUrl(resolveMediaUrl(info.src)); } catch { }
+					try {
+						const newUrl = info.url || info.videoUrl || info.src || '';
+						if (isYouTubeUrl(newUrl)) {
+							setIsYouTubeVideo(true);
+							setYouTubeId(getYouTubeVideoId(newUrl));
+							setVideoUrl(newUrl);
+						} else {
+							setIsYouTubeVideo(false);
+							setYouTubeId('');
+							setVideoUrl(resolveMediaUrl(newUrl));
+						}
+						// Parse duration from video info time field
+						if (info.time) {
+							const parts = (info.time || '').split(':');
+							if (parts.length === 2) {
+								const secs = (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
+								if (secs > 0) setDuration(secs);
+							}
+						}
+					} catch { }
 					try { setControlsVisible(true); showCenterTemporarily(1600); } catch { }
 					try { showSwipeToast('Next video'); } catch { }
 				} else {
@@ -1725,7 +1852,18 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					if (typeof target === 'string' && /^(https?:)?\/\//.test(target)) {
 						playlistIndexRef.current = nextIdx;
 						setCurrentIndex(nextIdx);
-						try { setVideoUrl(resolveMediaUrl(target)); setVideoTitle('Video'); setCreatorName(''); } catch { }
+						try {
+							if (isYouTubeUrl(target)) {
+								setIsYouTubeVideo(true);
+								setYouTubeId(getYouTubeVideoId(target));
+								setVideoUrl(target);
+							} else {
+								setIsYouTubeVideo(false);
+								setYouTubeId('');
+								setVideoUrl(resolveMediaUrl(target));
+							}
+							setVideoTitle('Video'); setCreatorName('');
+						} catch { }
 					}
 				}
 			} catch (err) { }
@@ -3670,10 +3808,26 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 
 	// play/pause helper
 	const togglePlay = async () => {
-		const v = videoRef.current;
-		if (!v) return;
 		// Block play/pause while an overlay ad is showing
 		if (visibleAds && visibleAds.some(a => a.type === 'overlay')) return;
+
+		// YouTube videos: use postMessage to control the iframe
+		if (isYouTubeVideo && ytIframeRef.current) {
+			try {
+				if (isPlaying) {
+					ytIframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo' }), '*');
+					setIsPlaying(false);
+				} else {
+					ytIframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
+					setIsPlaying(true);
+				}
+				try { showCenterTemporarily(); } catch { }
+			} catch { }
+			return;
+		}
+
+		const v = videoRef.current;
+		if (!v) return;
 		try {
 			if (v.paused || v.ended) {
 				await v.play();
@@ -5391,41 +5545,62 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 							background: '#000',
 						}}
 					>
-						<video
-							ref={videoRef}
-							src={videoUrl}
-							className="w-full h-full bg-black"
-							autoPlay
-							muted
-							playsInline
-							webkit-playsinline="true"
-							x5-video-player-type="h5"
-							x5-video-player-fullscreen="true"
-							x5-video-orientation="portrait"
-							preload="metadata"
-							fetchpriority="high"
-							poster="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-							style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: (isFullscreen || forceLandscapeCss) ? 'cover' : 'contain', background: '#000' }}
-							onLoadedMetadata={(e) => {
-								try {
-									const v = e.target;
-									setDuration(v.duration || 0);
-									setNaturalAspect((v.videoWidth && v.videoHeight) ? (v.videoWidth / v.videoHeight) : (16 / 9));
-									// Keep muted; let user-initiated play handle audio to avoid autoplay policy issues
-									try { v.muted = true; } catch (err) { }
-								} catch (err) { }
-							}}
-							onTimeUpdate={(e) => {
-								try { if (!draggingRef.current) setProgress(e.target.currentTime / (e.target.duration || 1)); } catch (err) { }
-							}}
-							onEnded={handleVideoEnded}
-							onPause={() => setIsPlaying(false)}
-							onPlay={() => setIsPlaying(true)}
-							onCanPlay={() => {
-								// Triggered when enough data is loaded to play - fastest feedback
-								try { if (videoRef.current) { /* playback ready */ } } catch { }
-							}}
-						/>
+						{/* YouTube embed OR native <video> element */}
+						{isYouTubeVideo && youTubeId ? (
+							<>
+								<iframe
+									ref={ytIframeRef}
+									src={`https://www.youtube-nocookie.com/embed/${youTubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
+									className="w-full h-full border-0"
+									allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+									allowFullScreen={false}
+									style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#000', pointerEvents: 'none' }}
+									title="Video player"
+								/>
+								{/* Gradient covers to hide YouTube branding — top (title/channel) */}
+								<div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 72, background: 'linear-gradient(to bottom, #000 50%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+								{/* Gradient covers to hide YouTube branding — bottom (logo/progress) */}
+								<div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 56, background: 'linear-gradient(to top, #000 50%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+								{/* Click-blocking overlay so taps go to our controls, not YouTube */}
+								<div style={{ position: 'absolute', inset: 0, zIndex: 3 }} />
+							</>
+						) : (
+							<video
+								ref={videoRef}
+								src={videoUrl}
+								className="w-full h-full bg-black"
+								autoPlay
+								muted
+								playsInline
+								webkit-playsinline="true"
+								x5-video-player-type="h5"
+								x5-video-player-fullscreen="true"
+								x5-video-orientation="portrait"
+								preload="metadata"
+								fetchpriority="high"
+								poster="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+								style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: (isFullscreen || forceLandscapeCss) ? 'cover' : 'contain', background: '#000' }}
+								onLoadedMetadata={(e) => {
+									try {
+										const v = e.target;
+										setDuration(v.duration || 0);
+										setNaturalAspect((v.videoWidth && v.videoHeight) ? (v.videoWidth / v.videoHeight) : (16 / 9));
+										// Keep muted; let user-initiated play handle audio to avoid autoplay policy issues
+										try { v.muted = true; } catch (err) { }
+									} catch (err) { }
+								}}
+								onTimeUpdate={(e) => {
+									try { if (!draggingRef.current) setProgress(e.target.currentTime / (e.target.duration || 1)); } catch (err) { }
+								}}
+								onEnded={handleVideoEnded}
+								onPause={() => setIsPlaying(false)}
+								onPlay={() => setIsPlaying(true)}
+								onCanPlay={() => {
+									// Triggered when enough data is loaded to play - fastest feedback
+									try { if (videoRef.current) { /* playback ready */ } } catch { }
+								}}
+							/>
+						)}
 						{/* Video Overlay Layer - renders links and images at specific times */}
 						<div
 							style={{
