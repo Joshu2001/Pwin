@@ -5491,7 +5491,9 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
             } catch (e) { }
         } catch (e) { console.warn('persist creator failed', e); }
         if (onFocusChange) try { onFocusChange(false); } catch (e) { }
-        // navigate to ideas page so user can type request immediately with creator selected
+        // Switch to ideas tab using FooterTabSwitcher's global setter (same mechanism as SharedBottomBar)
+        try { if (window.setFooterTab) window.setFooterTab('ideas'); } catch (e) { }
+        // Also navigate via React Router for URL sync
         try { 
             if (navigate) navigate('/ideas');
             else window.location.href = '/ideas';

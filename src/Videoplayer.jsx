@@ -136,6 +136,8 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 	const [hasError, setHasError] = useState(false);
 	const [isClosing, setIsClosing] = useState(false);
 	const [shouldRender, setShouldRender] = useState(true);
+	const retryCountRef = useRef(0);
+	const adVideoRef = useRef(null);
 
 	// Determine transition effect
 	const transitionEffect = ad.overlayExitTransition || 'fade';
@@ -320,16 +322,32 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 							} else {
 								return (
 									<video
+										ref={adVideoRef}
 										src={ad.overlayVideoUrl}
 										autoPlay
 										muted={false}
 										playsInline
+										crossOrigin="anonymous"
 										onCanPlay={() => setVideoReady(true)}
 										onLoadedData={() => setVideoReady(true)}
 										onError={(e) => {
-											console.error("Ad video failed to load", e);
-											setHasError(true);
-											setVideoReady(true);
+											console.error('Ad video failed to load (attempt ' + (retryCountRef.current + 1) + ')', e);
+											if (retryCountRef.current < 2) {
+												retryCountRef.current += 1;
+												// Retry after a delay (server may be waking up)
+												setTimeout(() => {
+													try {
+														const v = adVideoRef.current;
+														if (v) {
+															v.src = ad.overlayVideoUrl + (ad.overlayVideoUrl.includes('?') ? '&' : '?') + '_r=' + retryCountRef.current;
+															v.load();
+														}
+													} catch (err) { console.warn('Ad video retry failed', err); }
+												}, 1500 * retryCountRef.current);
+											} else {
+												setHasError(true);
+												setVideoReady(true);
+											}
 										}}
 										style={{
 											maxWidth: '100%',
@@ -353,15 +371,24 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 									justifyContent: 'center',
 									width: '100%',
 									height: '100%',
-									background: '#1a1a1a'
+									background: ad.overlayAdBgColor || '#1a1a1a',
+									padding: 20
 								}}
 							>
-								{/* Play button icon */}
-								<div style={{ fontSize: 64, marginBottom: 16 }}>▶️</div>
-								<div style={{ fontSize: 16, lineHeight: 1.6, fontWeight: 600, color: '#fff' }}>
+								{/* Branded ad content */}
+								{ad.overlayAdEmoji && <div style={{ fontSize: 56, marginBottom: 16 }}>{ad.overlayAdEmoji}</div>}
+								{ad.overlayAdCompanyName && <div style={{ fontSize: 20, fontWeight: 700, color: ad.overlayAdTextColor || '#fff', marginBottom: 12, textAlign: 'center' }}>{ad.overlayAdCompanyName}</div>}
+								<div style={{ fontSize: 16, lineHeight: 1.6, fontWeight: 600, color: ad.overlayAdTextColor || '#fff', textAlign: 'center' }}>
 									<div style={{ marginBottom: 8 }}>{ad.overlayAdText || 'Advertisement'}</div>
-									<div style={{ fontSize: 13, opacity: 0.8 }}>{ad.overlayBtnText || 'Watch Now'}</div>
 								</div>
+								{ad.overlayBtnText && (
+									<button
+										style={{ marginTop: 16, padding: '10px 28px', background: 'rgba(255,255,255,0.2)', color: ad.overlayAdTextColor || '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+										onClick={() => { if (ad.link) window.open(ad.link, '_blank'); }}
+									>
+										{ad.overlayBtnText}
+									</button>
+								)}
 							</div>
 						)}
 					</div>
