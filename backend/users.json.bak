@@ -1,0 +1,1239 @@
+[
+  {
+    "id": "user-1766857658728",
+    "email": "jshsajous@gmail.com",
+    "name": "Joshuar",
+    "passwordHash": "$2a$10$qxV674/gnxSih1CY3rXjjOw441ufnAILbG4E48OogNsynCnjUb94S",
+    "createdAt": "2025-12-27T17:47:38.728Z",
+    "token": "65d79fe4c4d4c361802ea7ab88eee331",
+    "isCreator": true,
+    "creatorSince": "2026-01-27T23:46:58.866Z",
+    "image": "https://pwin.onrender.com/uploads/intro-1768835099597-749836.png",
+    "price": "788",
+    "bio": "Christ is King",
+    "tagline": "",
+    "following": [
+      "user-1767585399609"
+    ],
+    "introVideo": "https://pwin.onrender.com/uploads/intro-1768835099796-529216.mp4",
+    "streak": 6,
+    "lastStreakDate": "2026-01-19",
+    "lastClaimReset": "2026-01-15",
+    "dailyClaimCount": 1,
+    "dailyClaimEarnings": 25,
+    "referralCode": "8FFF9AD7",
+    "warnings": 1,
+    "lastWarning": "2026-01-20T04:14:21.492Z",
+    "shadowBanned": true,
+    "shadowBannedAt": "2026-01-20T05:55:37.115Z",
+    "shadowBanReason": "Low-quality or repetitive content",
+    "followers": 1,
+    "views": 4
+  },
+  {
+    "id": "user-1767159330204",
+    "email": "js@gmail.com",
+    "name": "js",
+    "passwordHash": "$2a$10$eY4Ki8gngjW3rsToIWVfmOffujEFgrCNXA2JZT0./wr2yA2jfBXVi",
+    "createdAt": "2025-12-31T05:35:30.204Z",
+    "token": "d6ee93d7a807c03e530ac44ade007afe",
+    "isCreator": true,
+    "creatorSince": "2025-12-31T05:35:35.473Z"
+  },
+  {
+    "id": "user-1767166657751",
+    "email": "john@john.com",
+    "name": "John",
+    "passwordHash": "$2a$10$Lu9pC2MjD8thsXEceYUai.Ktgly8Bn0ZFouihOTnAvFyklnyYKxtq",
+    "createdAt": "2025-12-31T07:37:37.751Z",
+    "token": "e8c38620090e3ad7b78e385322ed7b89",
+    "isCreator": true,
+    "creatorSince": "2025-12-31T07:37:44.251Z"
+  },
+  {
+    "id": "user-1767585399609",
+    "email": "paul@regaarder.com",
+    "name": "Paul",
+    "passwordHash": "$2a$10$3scbR.60iq4sY22opnPw8O8Ar0GvjkLI7i2GdYaWLhH0PbLyVLKnS",
+    "createdAt": "2026-01-05T03:56:39.609Z",
+    "token": "413b511b09ae758ef51f04acd8a12703",
+    "isCreator": true,
+    "creatorSince": "2026-01-28T02:33:15.385Z",
+    "image": "https://pwin.onrender.com/uploads/intro-1769567593224-795236.jpg",
+    "following": [
+      "user-1767585399609",
+      "user-1766857658728"
+    ],
+    "streak": 1,
+    "lastStreakDate": "2026-01-27",
+    "bio": "History like you never heard it before...",
+    "categories": [
+      {
+        "id": "custom",
+        "name": "Your Templates",
+        "icon": "user",
+        "count": 0,
+        "isOpen": true,
+        "templates": []
+      },
+      {
+        "id": "default",
+        "name": "Default",
+        "icon": "sparkles",
+        "count": 1,
+        "isOpen": true,
+        "templates": [
+          {
+            "id": 1,
+            "text": "Tell {creator} what video(s) to create next",
+            "selected": false
+          },
+          {
+            "id": 2,
+            "text": "Your idea ??{creator}'s next video",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "premium",
+        "name": "Premium & Elegant",
+        "emoji": "?Ž©",
+        "description": "Sophisticated, refined tone for artistic creators",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "p1",
+            "label": "Work with a creator you admire",
+            "text": "Commission a video from {creator}",
+            "selected": false
+          },
+          {
+            "id": "p2",
+            "label": "Your idea ??{creator}'s next video",
+            "text": "Inspire {creator}'s next creation",
+            "selected": false
+          },
+          {
+            "id": "p3",
+            "text": "Collaborate with {creator} on a new video",
+            "selected": false
+          },
+          {
+            "id": "p4",
+            "text": "Shape {creator}'s next masterpiece",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "personal",
+        "name": "Personal & Ownership",
+        "emoji": "??",
+        "description": "Triggers co-creation feelings and influence",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "po1",
+            "label": "You decide what happens next",
+            "text": "Make {creator} create your idea",
+            "selected": false
+          },
+          {
+            "id": "po2",
+            "text": "You decide what {creator} creates next",
+            "selected": false
+          },
+          {
+            "id": "po3",
+            "label": "Your influence, their creation",
+            "text": "Be part of {creator}'s next video",
+            "selected": false
+          },
+          {
+            "id": "po4",
+            "text": "Turn your idea into {creator}'s next release",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "action",
+        "name": "Action-Oriented",
+        "icon": "zap",
+        "description": "Exciting, energetic marketing-style CTAs",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "ao1",
+            "label": "Ready to see your idea come to life?",
+            "text": "Get your custom video from {creator} now",
+            "selected": false
+          },
+          {
+            "id": "ao2",
+            "text": "Start your request ??{creator} is taking ideas",
+            "selected": false
+          },
+          {
+            "id": "ao3",
+            "text": "Send your idea ??{creator} might make it next!",
+            "selected": false
+          },
+          {
+            "id": "ao4",
+            "text": "Your story could become {creator}'s next video",
+            "selected": false
+          },
+          {
+            "id": "ao5",
+            "text": "Pitch your idea ??watch {creator} bring it to life",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "weekend",
+        "name": "Weekend / Emotional",
+        "emoji": "??",
+        "description": "Netflix-like, entertainment-focused prompts",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "w1",
+            "text": "What do you want to watch {creator} create this weekend?",
+            "selected": false
+          },
+          {
+            "id": "w2",
+            "text": "Tell {creator} your idea",
+            "selected": false
+          },
+          {
+            "id": "w3",
+            "text": "Request from {creator}",
+            "selected": false
+          },
+          {
+            "id": "w4",
+            "text": "{creator} is taking requests",
+            "selected": false
+          },
+          {
+            "id": "w5",
+            "text": "Your weekend idea ??{creator}'s next creation",
+            "selected": false
+          },
+          {
+            "id": "w6",
+            "text": "What should {creator} film next for you?",
+            "selected": false
+          },
+          {
+            "id": "w7",
+            "text": "Need something new to watch? Ask {creator} to create it",
+            "selected": false
+          },
+          {
+            "id": "w8",
+            "text": "What's the next video you'd love {creator} to make?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "conversational",
+        "name": "Conversational",
+        "icon": "message",
+        "description": "Warm, human, and effortless tone",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "c1",
+            "text": "What do you want {creator} to make next?",
+            "selected": false
+          },
+          {
+            "id": "c2",
+            "text": "Got a topic you'd love {creator} to cover?",
+            "selected": false
+          },
+          {
+            "id": "c3",
+            "text": "Your idea could be {creator}'s next video",
+            "selected": false
+          },
+          {
+            "id": "c4",
+            "text": "Ask {creator} to bring your idea to life",
+            "selected": false
+          },
+          {
+            "id": "c5",
+            "text": "What would you love to see {creator} create?",
+            "selected": false
+          },
+          {
+            "id": "c6",
+            "text": "Tell {creator} your idea ??they'll make it happen",
+            "selected": false
+          },
+          {
+            "id": "c7",
+            "text": "You imagine it. {creator} creates it.",
+            "selected": false
+          },
+          {
+            "id": "c8",
+            "text": "Let's turn your idea into {creator}'s next hit",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "playful",
+        "name": "Playful & Light",
+        "emoji": "??",
+        "description": "Fun, softly persuasive approach",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "pl1",
+            "text": "Got a wild idea? Drop it for {creator}",
+            "selected": false
+          },
+          {
+            "id": "pl2",
+            "text": "Give {creator} a challenge ??what should they make?",
+            "selected": false
+          },
+          {
+            "id": "pl3",
+            "text": "Your wish, {creator}'s camera",
+            "selected": false
+          },
+          {
+            "id": "pl4",
+            "text": "Go on, make {creator} work for it ??",
+            "selected": false
+          },
+          {
+            "id": "pl5",
+            "text": "You think it, {creator} films it",
+            "selected": false
+          },
+          {
+            "id": "pl6",
+            "text": "One click away from seeing your idea come alive",
+            "subtext": "Request from {creator}",
+            "selected": false
+          },
+          {
+            "id": "pl7",
+            "text": "Inspire {creator}'s next upload",
+            "selected": false
+          },
+          {
+            "id": "pl8",
+            "text": "Start something new with {creator} today",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "entertainment",
+        "name": "Entertainment",
+        "emoji": "?Ž¬",
+        "description": "Fun, engaging content for everyone",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "ent1",
+            "text": "What should {creator} react to next?",
+            "selected": false
+          },
+          {
+            "id": "ent2",
+            "text": "Suggest a movie or show for {creator} to review",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "educational",
+        "name": "Educational",
+        "emoji": "??",
+        "description": "Perfect for educators and explainers",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "t1",
+            "text": "Got a tech problem? Ask {creator} to break it down",
+            "selected": false
+          },
+          {
+            "id": "t2",
+            "text": "What gadget or tool should {creator} review next?",
+            "selected": false
+          },
+          {
+            "id": "t3",
+            "text": "Let {creator} explain the tech behind your favorite thing",
+            "selected": false
+          },
+          {
+            "id": "t4",
+            "text": "Your question ??{creator}'s next tech deep dive",
+            "selected": false
+          },
+          {
+            "id": "t5",
+            "text": "Curious about how something works? Ask {creator}",
+            "selected": false
+          },
+          {
+            "id": "t6",
+            "text": "Tell {creator} which tech mystery to uncover",
+            "selected": false
+          },
+          {
+            "id": "t7",
+            "text": "Your idea could power {creator}'s next innovation video",
+            "selected": false
+          },
+          {
+            "id": "t8",
+            "text": "What should {creator} decode next in tech?",
+            "selected": false
+          },
+          {
+            "id": "t9",
+            "text": "Tech confusing you? Let {creator} make sense of it",
+            "selected": false
+          },
+          {
+            "id": "t10",
+            "text": "Give {creator} a tech challenge ??what should they test?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "diy",
+        "name": "DIY / Science",
+        "emoji": "?§¬",
+        "description": "Curiosity + excitement + creation for makers",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "d1",
+            "text": "What experiment should {creator} try next?",
+            "selected": false
+          },
+          {
+            "id": "d2",
+            "text": "Got a crazy idea? Let {creator} test it!",
+            "selected": false
+          },
+          {
+            "id": "d3",
+            "text": "Tell {creator} what to build or blow up (safely)",
+            "selected": false
+          },
+          {
+            "id": "d4",
+            "text": "Your curiosity ??{creator}'s next experiment",
+            "selected": false
+          },
+          {
+            "id": "d5",
+            "text": "Let {creator} bring your science idea to life",
+            "selected": false
+          },
+          {
+            "id": "d6",
+            "text": "What if {creator} tested your theory next?",
+            "selected": false
+          },
+          {
+            "id": "d7",
+            "text": "Got a DIY hack in mind? Share it with {creator}",
+            "selected": false
+          },
+          {
+            "id": "d8",
+            "text": "You imagine it. {creator} builds it.",
+            "selected": false
+          },
+          {
+            "id": "d9",
+            "text": "Your idea might just explode ??in a good way",
+            "subtext": "Share with {creator}",
+            "selected": false
+          },
+          {
+            "id": "d10",
+            "text": "Ask {creator} to turn your idea into a science project",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "debates",
+        "name": "Debates / Philosophy",
+        "emoji": "?—£ï¸?,
+        "description": "Thought leadership + perspective + dialogue",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "db1",
+            "text": "Let {creator} unpack your big question",
+            "selected": false
+          },
+          {
+            "id": "db2",
+            "text": "What issue should {creator} dive into next?",
+            "selected": false
+          },
+          {
+            "id": "db3",
+            "text": "Join the conversation ??what should {creator} discuss?",
+            "selected": false
+          },
+          {
+            "id": "db4",
+            "text": "Your idea could spark {creator}'s next debate",
+            "selected": false
+          },
+          {
+            "id": "db5",
+            "text": "What truth do you want {creator} to tackle?",
+            "selected": false
+          },
+          {
+            "id": "db6",
+            "text": "Got a topic {creator} should debate next?",
+            "selected": false
+          },
+          {
+            "id": "db7",
+            "text": "What question deserves {creator}'s take?",
+            "selected": false
+          },
+          {
+            "id": "db8",
+            "text": "Tell {creator} which side you want them to argue",
+            "selected": false
+          },
+          {
+            "id": "db9",
+            "text": "Your question ??{creator}'s next discussion",
+            "selected": false
+          },
+          {
+            "id": "db10",
+            "text": "Challenge {creator} ??what should they debate?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "creative",
+        "name": "Creative / Art",
+        "emoji": "?Ž¨",
+        "description": "Inspiration + collaboration + beauty",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "cr1",
+            "text": "Got a concept {creator} should turn into art?",
+            "selected": false
+          },
+          {
+            "id": "cr2",
+            "text": "Tell {creator} what to create next ??song, sketch, or scene",
+            "selected": false
+          },
+          {
+            "id": "cr3",
+            "text": "Your vision ??{creator}'s next masterpiece",
+            "selected": false
+          },
+          {
+            "id": "cr4",
+            "text": "What should {creator} draw, compose, or craft?",
+            "selected": false
+          },
+          {
+            "id": "cr5",
+            "text": "Inspire {creator}'s next creative work",
+            "selected": false
+          },
+          {
+            "id": "cr6",
+            "text": "Let {creator} bring your imagination to life",
+            "selected": false
+          },
+          {
+            "id": "cr7",
+            "text": "You dream it, {creator} makes it",
+            "selected": false
+          },
+          {
+            "id": "cr8",
+            "text": "Your emotion ??{creator}'s next piece",
+            "selected": false
+          },
+          {
+            "id": "cr9",
+            "text": "Co-create something beautiful with {creator}",
+            "selected": false
+          },
+          {
+            "id": "cr10",
+            "text": "Share an idea, and let {creator} create around it",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "academic",
+        "name": "Educational / Academic",
+        "emoji": "??",
+        "description": "Clarity + curiosity + learning satisfaction",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "ac1",
+            "text": "Tell {creator} what you want to learn next",
+            "selected": false
+          },
+          {
+            "id": "ac2",
+            "text": "What concept should {creator} break down for you?",
+            "selected": false
+          },
+          {
+            "id": "ac3",
+            "text": "Turn your confusion into {creator}'s next explainer",
+            "selected": false
+          },
+          {
+            "id": "ac4",
+            "text": "Ask {creator} to teach what you've always wondered",
+            "selected": false
+          },
+          {
+            "id": "ac5",
+            "text": "Your question starts the next lesson",
+            "subtext": "Ask {creator}",
+            "selected": false
+          },
+          {
+            "id": "ac6",
+            "text": "Got a topic you want {creator} to explain?",
+            "selected": false
+          },
+          {
+            "id": "ac7",
+            "text": "Ask {creator} to simplify something complex",
+            "selected": false
+          },
+          {
+            "id": "ac8",
+            "text": "Your question could become {creator}'s next lesson",
+            "selected": false
+          },
+          {
+            "id": "ac9",
+            "text": "Let {creator} turn your curiosity into a clear answer",
+            "selected": false
+          },
+          {
+            "id": "ac10",
+            "text": "What topic should {creator} make easier to understand?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "travel",
+        "name": "Travel / Culture",
+        "emoji": "??",
+        "description": "Discovery + immersion + wonder",
+        "count": 2,
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "tr1",
+            "text": "Where should {creator} go next?",
+            "selected": false
+          },
+          {
+            "id": "tr2",
+            "text": "Tell {creator} what place or story to explore",
+            "selected": false
+          },
+          {
+            "id": "tr3",
+            "text": "Your curiosity ??{creator}'s next destination",
+            "selected": false
+          },
+          {
+            "id": "tr4",
+            "text": "What culture should {creator} uncover next?",
+            "selected": false
+          },
+          {
+            "id": "tr5",
+            "text": "Suggest {creator}'s next adventure",
+            "selected": false
+          },
+          {
+            "id": "tr6",
+            "text": "Got a place you wish you could visit? Send {creator}",
+            "selected": false
+          },
+          {
+            "id": "tr7",
+            "text": "Let {creator} capture your story idea on the road",
+            "selected": false
+          },
+          {
+            "id": "tr8",
+            "text": "What story from the world should {creator} tell?",
+            "selected": false
+          },
+          {
+            "id": "tr9",
+            "text": "Your idea could guide {creator}'s next journey",
+            "selected": false
+          },
+          {
+            "id": "tr10",
+            "text": "Point {creator}'s camera to your curiosity",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "motivation",
+        "name": "Motivation / Lifestyle",
+        "emoji": "?¤ï?",
+        "description": "Inspiration + empathy + relatability",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "m1",
+            "text": "Let {creator} create something meaningful for you",
+            "selected": false
+          },
+          {
+            "id": "m2",
+            "text": "Your idea ??{creator}'s next motivation video",
+            "selected": false
+          },
+          {
+            "id": "m3",
+            "text": "What story should {creator} tell to lift others?",
+            "selected": false
+          },
+          {
+            "id": "m4",
+            "text": "You share. {creator} inspires.",
+            "selected": false
+          },
+          {
+            "id": "m5",
+            "text": "Your experience could spark {creator}'s next message",
+            "selected": false
+          },
+          {
+            "id": "m6",
+            "text": "What topic should {creator} inspire next?",
+            "selected": false
+          },
+          {
+            "id": "m7",
+            "text": "Got a life question? Ask {creator} to talk about it",
+            "selected": false
+          },
+          {
+            "id": "m8",
+            "text": "Your struggle could inspire {creator}'s next video",
+            "selected": false
+          },
+          {
+            "id": "m9",
+            "text": "Tell {creator} what message people need to hear",
+            "selected": false
+          },
+          {
+            "id": "m10",
+            "text": "What truth should {creator} share next?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "podcasts",
+        "name": "Podcasts & Conversations",
+        "emoji": "??ï¸?,
+        "description": "Curiosity + intimacy + authenticity",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "pc1",
+            "text": "What topic should {creator} discuss next?",
+            "selected": false
+          },
+          {
+            "id": "pc2",
+            "text": "Who do you want {creator} to talk with?",
+            "selected": false
+          },
+          {
+            "id": "pc3",
+            "text": "Got a deep question? Let {creator} unpack it",
+            "selected": false
+          },
+          {
+            "id": "pc4",
+            "text": "Your question ??{creator}'s next podcast episode",
+            "selected": false
+          },
+          {
+            "id": "pc5",
+            "text": "Which conversation should {creator} start?",
+            "selected": false
+          },
+          {
+            "id": "pc6",
+            "text": "Tell {creator} what voices need to be heard",
+            "selected": false
+          },
+          {
+            "id": "pc7",
+            "text": "What idea should {creator} debate next?",
+            "selected": false
+          },
+          {
+            "id": "pc8",
+            "text": "Request a one-on-one talk on your favorite topic",
+            "selected": false
+          },
+          {
+            "id": "pc9",
+            "text": "Your idea could become {creator}'s next dialogue",
+            "selected": false
+          },
+          {
+            "id": "pc10",
+            "text": "What discussion do you want {creator} to open up?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "journalistic",
+        "name": "Journalistic Investigations",
+        "emoji": "?•µï¸?,
+        "description": "Intrigue + justice + curiosity",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "j1",
+            "text": "What story should {creator} investigate next?",
+            "selected": false
+          },
+          {
+            "id": "j2",
+            "text": "Which mystery do you want {creator} to uncover?",
+            "selected": false
+          },
+          {
+            "id": "j3",
+            "text": "Got a lead or hidden truth? Send it to {creator}",
+            "selected": false
+          },
+          {
+            "id": "j4",
+            "text": "Tell {creator} what deserves a spotlight",
+            "selected": false
+          },
+          {
+            "id": "j5",
+            "text": "Your curiosity ??{creator}'s next investigation",
+            "selected": false
+          },
+          {
+            "id": "j6",
+            "text": "What issue should {creator} expose next?",
+            "selected": false
+          },
+          {
+            "id": "j7",
+            "text": "Help {creator} reveal what's been ignored",
+            "selected": false
+          },
+          {
+            "id": "j8",
+            "text": "Which hidden story should {creator} chase?",
+            "selected": false
+          },
+          {
+            "id": "j9",
+            "text": "Request {creator} to dig into what matters to you",
+            "selected": false
+          },
+          {
+            "id": "j10",
+            "text": "What truth do you want {creator} to uncover?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "entrepreneurship",
+        "name": "Entrepreneurship & Success",
+        "emoji": "?’¼",
+        "description": "Ambition + inspiration + insight",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "e1",
+            "text": "Your curiosity ??{creator}'s next business story",
+            "selected": false
+          },
+          {
+            "id": "e2",
+            "text": "What lessons should {creator} reveal next?",
+            "selected": false
+          },
+          {
+            "id": "e3",
+            "text": "Who built it best? Tell {creator} to unpack their story",
+            "selected": false
+          },
+          {
+            "id": "e4",
+            "text": "Ask {creator} to uncover how they made it happen",
+            "selected": false
+          },
+          {
+            "id": "e5",
+            "text": "Which success story deserves {creator}'s spotlight?",
+            "selected": false
+          },
+          {
+            "id": "e6",
+            "text": "What brand or founder should {creator} decode next?",
+            "selected": false
+          },
+          {
+            "id": "e7",
+            "text": "Whose success story should {creator} break down next?",
+            "selected": false
+          },
+          {
+            "id": "e8",
+            "text": "Got a business hero? Ask {creator} to analyze them",
+            "selected": false
+          },
+          {
+            "id": "e9",
+            "text": "What startup story do you want {creator} to tell?",
+            "selected": false
+          },
+          {
+            "id": "e10",
+            "text": "Which entrepreneur's journey inspires you most?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "business_history",
+        "name": "Business History",
+        "emoji": "??ï¸?,
+        "description": "Curiosity + admiration + intelligence",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "bh1",
+            "text": "Which company should {creator} analyze next?",
+            "selected": false
+          },
+          {
+            "id": "bh2",
+            "text": "What business story do you want {creator} to uncover?",
+            "selected": false
+          },
+          {
+            "id": "bh3",
+            "text": "Ask {creator} to explain how your favorite brand really makes money",
+            "selected": false
+          },
+          {
+            "id": "bh4",
+            "text": "Your curiosity ??{creator}'s next company deep dive",
+            "selected": false
+          },
+          {
+            "id": "bh5",
+            "text": "Which business legacy should {creator} explore?",
+            "selected": false
+          },
+          {
+            "id": "bh6",
+            "text": "Tell {creator} which strategy to decode next",
+            "selected": false
+          },
+          {
+            "id": "bh7",
+            "text": "What startup or empire fascinates you most?",
+            "selected": false
+          },
+          {
+            "id": "bh8",
+            "text": "Ask {creator} to dissect your favorite brand",
+            "selected": false
+          },
+          {
+            "id": "bh9",
+            "text": "What can we learn from history's greatest companies?",
+            "selected": false
+          },
+          {
+            "id": "bh10",
+            "text": "Let {creator} reveal how success was engineered",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "fashion",
+        "name": "Modeling & Fashion",
+        "emoji": "??",
+        "description": "Aspiration + artistry + self-expression",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "f1",
+            "text": "What look should {creator} model next?",
+            "selected": false
+          },
+          {
+            "id": "f2",
+            "text": "Got a concept? Ask {creator} to bring it to life",
+            "selected": false
+          },
+          {
+            "id": "f3",
+            "text": "Your style idea ??{creator}'s next photo or video",
+            "selected": false
+          },
+          {
+            "id": "f4",
+            "text": "What fashion era or trend should {creator} recreate?",
+            "selected": false
+          },
+          {
+            "id": "f5",
+            "text": "Tell {creator} what vibe to embody next",
+            "selected": false
+          },
+          {
+            "id": "f6",
+            "text": "Your vision could shape {creator}'s next shoot",
+            "selected": false
+          },
+          {
+            "id": "f7",
+            "text": "What aesthetic should {creator} explore next?",
+            "selected": false
+          },
+          {
+            "id": "f8",
+            "text": "Suggest a creative look or concept for {creator}",
+            "selected": false
+          },
+          {
+            "id": "f9",
+            "text": "Help {creator} design their next masterpiece",
+            "selected": false
+          },
+          {
+            "id": "f10",
+            "text": "What style moment do you want {creator} to capture?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "psychology",
+        "name": "Psychology & Behavior",
+        "emoji": "?§©",
+        "description": "Curiosity + relatability + intellect",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "psy1",
+            "text": "Ask {creator} to explain a mystery of human nature",
+            "selected": false
+          },
+          {
+            "id": "psy2",
+            "text": "Tell {creator} what behavior fascinates you most",
+            "selected": false
+          },
+          {
+            "id": "psy3",
+            "text": "What makes people tick? Let {creator} find out",
+            "selected": false
+          },
+          {
+            "id": "psy4",
+            "text": "Request {creator} to decode your curiosity",
+            "selected": false
+          },
+          {
+            "id": "psy5",
+            "text": "Your thought ??{creator}'s next mind experiment",
+            "selected": false
+          },
+          {
+            "id": "psy6",
+            "text": "What human behavior should {creator} analyze next?",
+            "selected": false
+          },
+          {
+            "id": "psy7",
+            "text": "Got a question about people? Ask {creator}",
+            "selected": false
+          },
+          {
+            "id": "psy8",
+            "text": "Your idea ??{creator}'s next psychological breakdown",
+            "selected": false
+          },
+          {
+            "id": "psy9",
+            "text": "Which bias or habit should {creator} explore?",
+            "selected": false
+          },
+          {
+            "id": "psy10",
+            "text": "What social experiment should {creator} run?",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "id": "health",
+        "name": "Health & Fitness",
+        "emoji": "?§¬",
+        "description": "Motivation + trust + self-improvement",
+        "isOpen": false,
+        "templates": [
+          {
+            "id": "h1",
+            "text": "What routine should {creator} test next?",
+            "selected": false
+          },
+          {
+            "id": "h2",
+            "text": "Ask {creator} to demystify a fitness myth",
+            "selected": false
+          },
+          {
+            "id": "h3",
+            "text": "What wellness hack do you want {creator} to verify?",
+            "selected": false
+          },
+          {
+            "id": "h4",
+            "text": "Suggest a body or mind challenge for {creator}",
+            "selected": false
+          },
+          {
+            "id": "h5",
+            "text": "Let {creator} test your fitness idea",
+            "selected": false
+          },
+          {
+            "id": "h6",
+            "text": "What challenge should {creator} try next?",
+            "selected": false
+          },
+          {
+            "id": "h7",
+            "text": "Got a health goal? Ask {creator} to tackle it",
+            "selected": false
+          },
+          {
+            "id": "h8",
+            "text": "Your idea ??{creator}'s next fitness experiment",
+            "selected": false
+          },
+          {
+            "id": "h9",
+            "text": "What topic should {creator} break down for you?",
+            "selected": false
+          },
+          {
+            "id": "h10",
+            "text": "Tell {creator} what transformation you want to see",
+            "selected": false
+          }
+        ]
+      }
+    ],
+    "introVideo": "https://pwin.onrender.com/uploads/intro-1769337727265-229504.mp4",
+    "lastClaimReset": "2026-01-14",
+    "dailyClaimCount": 1,
+    "dailyClaimEarnings": 133,
+    "referralCode": "F874FD7C",
+    "warnings": 7,
+    "lastWarning": "2026-01-20T04:53:02.875Z",
+    "shadowBanned": true,
+    "shadowBannedAt": "2026-01-22T13:48:48.345Z",
+    "shadowBanReason": "Content violates platform guidelines",
+    "handle": "paul",
+    "followers": 1,
+    "pricingType": "Recurrent",
+    "price": "50",
+    "tag": "Entertainment",
+    "views": 1
+  },
+  {
+    "id": "user-1768222892161",
+    "email": "alle@alle.com",
+    "name": "Alle",
+    "passwordHash": "$2a$10$DT1NEPWdFf7USjWrbGuE9ePrBsqZu7DwgCLdWj2Vp/ugA7.j5IS8.",
+    "createdAt": "2026-01-12T13:01:32.161Z",
+    "passwordChangedAt": "2026-01-12T13:01:32.161Z",
+    "token": "7dd1b909742066bfda3a20daab8a0198",
+    "streak": 1,
+    "lastStreakDate": "2026-01-25"
+  },
+  {
+    "id": "user-1769577843824",
+    "email": "lex@regaarder.com",
+    "name": "Lex",
+    "passwordHash": "$2a$10$SxzV.G/TFcUsDNZ2pZ8Kle2Fe6gMZM0zDA4KOWylKwL.3L0XcoliC",
+    "referralCode": "FF9A5173",
+    "referrerId": null,
+    "referralCount": 0,
+    "createdAt": "2026-01-28T05:24:03.824Z",
+    "passwordChangedAt": "2026-01-28T05:24:03.824Z",
+    "token": "eba2803c75214fce8d89991ed4004ac9",
+    "following": [
+      "user-1766857658728"
+    ],
+    "streak": 1,
+    "lastStreakDate": "2026-01-28",
+    "isCreator": true,
+    "creatorSince": "2026-01-28T11:39:28.304Z"
+  }
+]

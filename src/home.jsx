@@ -2196,12 +2196,24 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
         checkFollowStatus();
     }, [creatorId, username, name, BACKEND]);
 
-    // Update data with current follower count
-    const data = {
+    // Update data with current follower count — sanitize all fields to prevent
+    // "Objects are not valid as a React child" crash when backend returns unexpected types
+    const rawData = {
         ...initialData,
         stats: {
             ...initialData.stats,
             followers: followerCount
+        }
+    };
+    const data = {
+        ...rawData,
+        bio: (rawData.bio && typeof rawData.bio === 'string') ? rawData.bio : (rawData.bio && typeof rawData.bio !== 'object' ? String(rawData.bio) : null),
+        joinedDate: (typeof rawData.joinedDate === 'string' || typeof rawData.joinedDate === 'number') ? rawData.joinedDate : '',
+        stats: {
+            videos: Number(rawData.stats?.videos) || 0,
+            requests: Number(rawData.stats?.requests) || 0,
+            followers: Number(rawData.stats?.followers) || 0,
+            following: Number(rawData.stats?.following) || 0,
         }
     };
 
@@ -5388,6 +5400,9 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                     image: img || u.image || u.avatar || u.photoURL || null,
                     avatar: img || u.avatar || u.image || null,
                     photoURL: img || u.photoURL || u.image || null,
+                    // Ensure price and followers are always carried through
+                    price: u.price || u.pricePerRequest || null,
+                    followers: u.followers || u.followers_count || u.followersCount || null,
                 };
             });
 
@@ -5408,10 +5423,11 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                                         ...c,
                                         ...u,
                                         isCreator: true,
-                                        image: normalizeImageUrl(u.image || u.avatar || c.image),
-                                        avatar: normalizeImageUrl(u.avatar || u.image || c.avatar),
-                                        photoURL: normalizeImageUrl(u.photoURL || u.image || c.image),
+                                        image: normalizeImageUrl(u.image || u.avatar || u.profileImage || c.image),
+                                        avatar: normalizeImageUrl(u.avatar || u.image || u.profileImage || c.avatar),
+                                        photoURL: normalizeImageUrl(u.photoURL || u.image || u.profileImage || c.image),
                                         followers: u.followers || u.followers_count || 0,
+                                        price: u.price || u.pricePerRequest || c.price || null,
                                     };
                                 }
                             }
@@ -5454,6 +5470,7 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
     const selectCreator = (creator) => {
         try {
             const followers = creator.followersCount || creator.followers || creator.stats?.followers || creator.followers_count || null;
+            const img = normalizeImageUrl(creator.image || creator.avatar || creator.profileImage || creator.photoURL || null);
             const creatorObj = {
                 id: creator.id || creator.handle || creator.username || String(creator.name || '').replace(/^@+/, '').toLowerCase(),
                 name: creator.handle ? `@${creator.handle}` : (creator.username ? `@${creator.username}` : (creator.name || '')),
@@ -5461,10 +5478,11 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                 handle: creator.handle || creator.username,
                 username: creator.username || creator.handle,
                 email: creator.email || null,
-                image: normalizeImageUrl(creator.image || creator.avatar || creator.photoURL || null),
-                photoURL: normalizeImageUrl(creator.image || creator.avatar || creator.photoURL || null),
+                image: img,
+                photoURL: img,
+                profileImage: img,
                 followers,
-                price: creator.price || 0
+                price: creator.price || creator.pricePerRequest || 0
             };
             try {
                 window.localStorage.setItem(SELECTED_CREATOR_KEY, JSON.stringify(creatorObj));
@@ -5563,8 +5581,9 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                             const handle = u.username || u.handle || '';
                             const followers = u.followersCount || u.followers || u.stats?.followers || u.followers_count || null;
                             const subtitle = handle
-                                ? `@${handle}${followers ? ` • ${followers} followers` : ''}`
-                                : (followers ? `${followers} followers` : (u.tagline || u.category || (u.isCreator ? 'Creator' : 'User')));
+                                ? `@${handle}${followers ? ` • ${followers} followers` : ''}${u.price ? ` • $${u.price}` : ''}`
+                                : (followers ? `${followers} followers${u.price ? ` • $${u.price}` : ''}` : (u.price ? `$${u.price}` : (u.tagline || u.category || (u.isCreator ? 'Creator' : 'User'))));
+                            const displayImg = u.image || u.avatar || u.profileImage || u.photoURL || null;
                             return (
                             <button
                                 key={u.id || u.email || idx}
@@ -5573,11 +5592,11 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                                 className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between ${highlight === idx ? 'bg-gray-50' : ''}`}
                             >
                                 <div className="flex items-center" style={{ flex: 1, minWidth: 0 }}>
-                                    {u.image ? (
-                                        <img src={u.image} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" style={{ flexShrink: 0 }} onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
+                                    {displayImg ? (
+                                        <img src={displayImg} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" style={{ flexShrink: 0 }} onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
                                     ) : null}
                                     {/* First-letter avatar fallback — always rendered, hidden when image loads */}
-                                    <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: ['#f87171','#34d399','#a78bfa','#60a5fa','#fbbf24','#ec4899','#fb923c','#4ade80'][(u.name || 'U').charCodeAt(0) % 8], display: u.image ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 12, color: '#fff', fontSize: 18, fontWeight: 700, textTransform: 'uppercase' }}>
+                                    <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: ['#f87171','#34d399','#a78bfa','#60a5fa','#fbbf24','#ec4899','#fb923c','#4ade80'][(u.name || 'U').charCodeAt(0) % 8], display: displayImg ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 12, color: '#fff', fontSize: 18, fontWeight: 700, textTransform: 'uppercase' }}>
                                         {(u.name || 'U').charAt(0)}
                                     </div>
                                     <div className="flex flex-col text-sm" style={{ minWidth: 0 }}>

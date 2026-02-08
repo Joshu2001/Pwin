@@ -302,7 +302,7 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 						{renderBadge(false)}
 
 						{/* Video Content */}
-						{ad.overlayVideoUrl ? (() => {
+						{ad.overlayVideoUrl && !hasError ? (() => {
 							const youtubeId = getYouTubeId(ad.overlayVideoUrl);
 							if (isYouTube(ad.overlayVideoUrl) && youtubeId) {
 								return (
@@ -5987,12 +5987,31 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 										overflow: 'hidden'
 									}}
 								>
+									{/* Actual video if source URL available */}
+									{(ad.videoAdSrc || ad.videoAdUrl || ad.overlayVideoUrl) ? (
+										<video
+											src={ad.videoAdSrc || ad.videoAdUrl || ad.overlayVideoUrl}
+											autoPlay
+											muted
+											playsInline
+											loop
+											style={{
+												position: 'absolute',
+												inset: 0,
+												width: '100%',
+												height: '100%',
+												objectFit: 'cover',
+												background: '#000'
+											}}
+											onError={(e) => { e.target.style.display = 'none'; }}
+										/>
+									) : null}
 									{/* Video Ad Overlay */}
 									<div
 										style={{
 											position: 'absolute',
 											inset: '40px 20px',
-											background: `linear-gradient(135deg, ${ad.videoAdCtaColor || '#3b82f6'} 0%, ${ad.videoAdCtaColor ? `${ad.videoAdCtaColor}dd` : '#1e40af'} 100%)`,
+											background: `linear-gradient(135deg, ${ad.videoAdCtaColor || '#3b82f6'}${(ad.videoAdSrc || ad.videoAdUrl || ad.overlayVideoUrl) ? 'cc' : ''} 0%, ${ad.videoAdCtaColor ? `${ad.videoAdCtaColor}dd` : '#1e40af'} 100%)`,
 											borderRadius: 12,
 											display: 'flex',
 											flexDirection: 'column',
@@ -6068,6 +6087,32 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 										</button>
 									</div>
 								</div>
+								{/* Close/Skip button */}
+								<button
+									onClick={(e) => {
+										e.stopPropagation();
+										handleAdDismiss(ad.id);
+									}}
+									style={{
+										position: 'absolute',
+										top: 16,
+										right: 16,
+										width: 36,
+										height: 36,
+										borderRadius: '50%',
+										background: 'rgba(0,0,0,0.6)',
+										color: '#fff',
+										border: 'none',
+										fontSize: 20,
+										cursor: 'pointer',
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										zIndex: 20
+									}}
+								>
+									✕
+								</button>
 							</div>
 						</div>
 					))}
