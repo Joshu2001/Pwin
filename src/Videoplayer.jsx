@@ -308,18 +308,26 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 							const youtubeId = getYouTubeId(ad.overlayVideoUrl);
 							if (isYouTube(ad.overlayVideoUrl) && youtubeId) {
 								return (
-									<iframe
-										width="100%"
-										height="100%"
-										src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1`}
-										frameBorder="0"
-										allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-										style={{ background: '#000', width: '100%', height: '100%', border: 'none', display: 'block' }}
-										onLoad={() => {
-											// Delay slightly to let YouTube render first frame before revealing
-											setTimeout(() => setVideoReady(true), 600);
-										}}
-									/>
+									<div style={{ position: 'relative', width: '100%', height: '100%' }}>
+										<iframe
+											width="100%"
+											height="100%"
+											src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1`}
+											frameBorder="0"
+											allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+											style={{ background: '#000', width: '100%', height: '100%', border: 'none', display: 'block', pointerEvents: 'none' }}
+											onLoad={() => {
+												// Longer delay so YouTube auto-plays & hides its own UI before we reveal
+												setTimeout(() => setVideoReady(true), 1200);
+											}}
+										/>
+										{/* Transparent overlay blocks all clicks — prevents pausing the ad */}
+										<div style={{ position: 'absolute', inset: 0, zIndex: 3 }} />
+										{/* Cover YouTube title / channel name at top */}
+										<div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 80, background: 'linear-gradient(to bottom, #000 50%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+										{/* Cover YouTube logo / branding at bottom */}
+										<div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 64, background: 'linear-gradient(to top, #000 50%, transparent)', zIndex: 2, pointerEvents: 'none' }} />
+									</div>
 								);
 							} else {
 								return (
@@ -358,7 +366,8 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 											height: '100%',
 											objectFit: 'contain',
 											background: '#000',
-											display: 'block'
+											display: 'block',
+											pointerEvents: 'none'
 										}}
 									/>
 								);
@@ -3663,6 +3672,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	const togglePlay = async () => {
 		const v = videoRef.current;
 		if (!v) return;
+		// Block play/pause while an overlay ad is showing
+		if (visibleAds && visibleAds.some(a => a.type === 'overlay')) return;
 		try {
 			if (v.paused || v.ended) {
 				await v.play();
@@ -4076,6 +4087,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 
 	const handleVideoTap = (e) => {
 		e.stopPropagation();
+		// Block taps while an overlay ad is showing
+		if (visibleAds && visibleAds.some(a => a.type === 'overlay')) return;
 		if (locked) {
 			// brief visual hint: brighten the lock so user sees where to tap to unlock
 			try {
@@ -5348,7 +5361,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 						height: forceLandscapeCss ? "100vh" : "100%",
 						zIndex: forceLandscapeCss ? 30 : 10,
 						display: "flex",
-						alignItems: forceLandscapeCss ? "center" : "flex-start",
+						alignItems: "center",
 						justifyContent: "center",
 						overflow: "hidden",
 						background: "#000",
@@ -5495,7 +5508,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					</div>
 
 					{/* Centered translucent play/pause overlay — also supports pointer tap */}
-					{controlsVisible && centerVisible && !isPlaying && (
+					{controlsVisible && centerVisible && !isPlaying && !(visibleAds && visibleAds.some(a => a.type === 'overlay')) && (
 						<button
 							className="transform active:scale-95 transition-transform"
 							aria-label="Play"
@@ -5532,7 +5545,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					)}
 
 					{/* When playing, show pause button in same central position for quick pause */}
-					{controlsVisible && centerVisible && isPlaying && (
+					{controlsVisible && centerVisible && isPlaying && !(visibleAds && visibleAds.some(a => a.type === 'overlay')) && (
 						<button
 							className="transform active:scale-95 transition-transform"
 							aria-label="Pause"
