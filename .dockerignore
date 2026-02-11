@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/build
+**/.git
+**/.github
+**/android
+**/ios
+**/*.log
+Regaarder-Project-main/Regaarder-4.0-main/src
+Regaarder-Project-main/Regaarder-4.0-main/public
+Regaarder-Project-main/Regaarder-4.0-main/index.html
+Regaarder-Project-main/Regaarder-4.0-main/vite.config.js
+Regaarder-Project-main/Regaarder-4.0-main/tailwind.config.js
+Regaarder-Project-main/Regaarder-4.0-main/postcss.config.js
