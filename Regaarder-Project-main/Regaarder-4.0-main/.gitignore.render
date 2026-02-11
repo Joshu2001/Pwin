@@ -1,0 +1,6 @@
+# Render-specific files to ignore
+node_modules/
+.env.local
+.env.*.local
+dist/
+uploads/

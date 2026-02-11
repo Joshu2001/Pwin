@@ -1,0 +1,2647 @@
+[
+  {
+    "id": "n-1769338185176",
+    "requestId": "req_1769337567922",
+    "text": "Update for \"Sorror\": Published ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T10:49:45.176Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769338182575",
+    "requestId": "req_1769337567922",
+    "text": "Update for \"Sorror\": Preview Ready ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T10:49:42.575Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769338180122",
+    "requestId": "req_1769337567922",
+    "text": "Update for \"Sorror\": In Production ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T10:49:40.122Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769337785671",
+    "requestId": "req_1769337567922",
+    "text": "Update for \"Sorror\": Under Review ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T10:43:05.671Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769337591490",
+    "requestId": "req_1766845475803",
+    "text": "Update for \"sthth\": Completed ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-25T10:39:51.490Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769336374740",
+    "requestId": "req_1768386652237",
+    "text": "Update for \"je ne suis\": Completed  - Uploaded video:360 fight.mp4 thumb:blob:http://localhost:5173/6275c31c-abee-4baf-83c0-6e1e1d0ce74a",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-25T10:19:34.740Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:360 fight.mp4 thumb:blob:http://localhost:5173/6275c31c-abee-4baf-83c0-6e1e1d0ce74a"
+    }
+  },
+  {
+    "id": "n-1769331241238",
+    "requestId": "req_1769331073714",
+    "text": "Update for \"Mars sur terre\": Completed  - patience please",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T08:54:01.238Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "patience please"
+    }
+  },
+  {
+    "id": "n-1769331241150",
+    "requestId": "req_1769331073714",
+    "text": "Update for \"Mars sur terre\": Completed  - Uploaded video:paaralax man.mp4 thumb:blob:http://localhost:5173/c65637ae-b306-4e18-a69c-11ecac57d832",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T08:54:01.150Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:paaralax man.mp4 thumb:blob:http://localhost:5173/c65637ae-b306-4e18-a69c-11ecac57d832"
+    }
+  },
+  {
+    "id": "n-1769331125329",
+    "requestId": "req_1769331073714",
+    "text": "Update for \"Mars sur terre\": Published  - patience please",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T08:52:05.329Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": "patience please"
+    }
+  },
+  {
+    "id": "n-1769331122124",
+    "requestId": "req_1769331073714",
+    "text": "Update for \"Mars sur terre\": Preview Ready  - patience please",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T08:52:02.124Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": "patience please"
+    }
+  },
+  {
+    "id": "n-1769331109398",
+    "requestId": "req_1769331073714",
+    "text": "Update for \"Mars sur terre\": In Production ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T08:51:49.398Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769331107089",
+    "requestId": "req_1769331073714",
+    "text": "Update for \"Mars sur terre\": Under Review ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1768222892161"
+    },
+    "createdAt": "2026-01-25T08:51:47.089Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769329988408",
+    "requestId": "req_1768360434961",
+    "text": "Update for \"knaipnitn\": Completed  - Uploaded video:360 fight 2.mp4 thumb:blob:http://localhost:5173/a1e213fa-b17b-4feb-8733-2dba97915d2b",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-25T08:33:08.408Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:360 fight 2.mp4 thumb:blob:http://localhost:5173/a1e213fa-b17b-4feb-8733-2dba97915d2b"
+    }
+  },
+  {
+    "id": "n-1769329795604",
+    "requestId": "req_1768360434961",
+    "text": "Update for \"knaipnitn\": Published ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-25T08:29:55.604Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769329793095",
+    "requestId": "req_1768360434961",
+    "text": "Update for \"knaipnitn\": Preview Ready ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-25T08:29:53.095Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769329790596",
+    "requestId": "req_1768360434961",
+    "text": "Update for \"knaipnitn\": In Production ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-25T08:29:50.596Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1769329787981",
+    "requestId": "req_1768360434961",
+    "text": "Update for \"knaipnitn\": Under Review ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-25T08:29:47.981Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "notif-1769089383163-s47lw4xo9",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "special christmas",
+    "message": "gointg throughdfj j;wfjwbfbjbobbbob  h",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-22T13:43:03.163Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "megaphone",
+      "ctaColor": "#3b82f6",
+      "ctaUrl": null
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "megaphone",
+    "ctaColor": "#3b82f6",
+    "ctaUrl": null
+  },
+  {
+    "id": "notif-1768927983091-hadik0h3o",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:53:03.091Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "star",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "star",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768927529293-9w1tgsc4v",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:45:29.293Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "star",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "star",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768926958397-0v1f6u6nq",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:35:58.397Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "star",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "star",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768926950604-2zfm40be6",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:35:50.604Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "star",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "star",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768926662634-tkuitb8ur",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:31:02.634Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#f59e0b",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#f59e0b",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768926662450-gwv7wi3wm",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:31:02.450Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#f59e0b",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#f59e0b",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768926527422-2eilgvgv6",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:28:47.422Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#f59e0b",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#f59e0b",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768926150074-c7saajryo",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:22:30.074Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#f59e0b",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#f59e0b",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768926089854-0yttlbk17",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:21:29.854Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768925988440-1qerk8xtt",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:19:48.441Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768925828116-iwi5al0g0",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:17:08.116Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768925713930-15l0oikum",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:15:13.930Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768925644959-tka2o6tzz",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:14:04.959Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "the bubble",
+      "ctaIcon": "megaphone",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "the bubble",
+    "ctaIcon": "megaphone",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768925440397-1vrt8wwgf",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:10:40.397Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "the bubble",
+      "ctaIcon": "megaphone",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+    },
+    "ctaText": "the bubble",
+    "ctaIcon": "megaphone",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "https://www.google.com/search?q=pattern+in+french&oq=pattern+in+french&gs_lcrp=EgZjaHJvbWUyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIICAMQABgWGB4yCAgEEAAYFhgeMggIBRAAGBYYHjIICAYQABgWGB4yCAgHEAAYFhgeMggICBAAGBYYHjIICAkQABgWGB7SAQg2NTE4ajBqN6gCALACAA&sourceid=chrome&ie=UTF-8"
+  },
+  {
+    "id": "notif-1768925396307-slj558ggv",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:09:56.307Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "the bubble",
+      "ctaIcon": "megaphone",
+      "ctaColor": "#8b5cf6",
+      "ctaUrl": "google.com"
+    },
+    "ctaText": "the bubble",
+    "ctaIcon": "megaphone",
+    "ctaColor": "#8b5cf6",
+    "ctaUrl": "google.com"
+  },
+  {
+    "id": "notif-1768925078156-seg0kxhhr",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "krg;nrginekrgqnrlgn",
+    "message": "j;fnbafn j forng'wf ;f mwe ;we f;jowewfje woejweojfnwe[fwoje weojwewe'fjweofwjefow",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T16:04:38.156Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "the bubble",
+      "ctaIcon": "megaphone",
+      "ctaColor": "#8b5cf6"
+    },
+    "ctaText": "the bubble",
+    "ctaIcon": "megaphone",
+    "ctaColor": "#8b5cf6"
+  },
+  {
+    "id": "notif-1768902839379-otqii888w",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "k k hps yhs; ;ky;s y k s",
+    "message": "y, js js k kj jnde fvj weof cjj  j ; fj fj fs  m djwpoejwebf  v w fd w;f ;sd fsd; s;v dv/",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T09:53:59.379Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Keep quet",
+      "ctaIcon": "fire",
+      "ctaColor": "#f59e0b"
+    },
+    "ctaText": "Keep quet",
+    "ctaIcon": "fire",
+    "ctaColor": "#f59e0b"
+  },
+  {
+    "id": "notif-1768902716773-44wjedcmi",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mmm",
+    "message": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T09:51:56.773Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "megaphone",
+      "ctaColor": "#8b5cf6"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "megaphone",
+    "ctaColor": "#8b5cf6"
+  },
+  {
+    "id": "notif-1768902716666-w5thrpj31",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mmm",
+    "message": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T09:51:56.666Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "megaphone",
+      "ctaColor": "#8b5cf6"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "megaphone",
+    "ctaColor": "#8b5cf6"
+  },
+  {
+    "id": "notif-1768902679460-37cqxukr5",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mmm",
+    "message": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T09:51:19.461Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "gift",
+      "ctaColor": "#f59e0b"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "gift",
+    "ctaColor": "#f59e0b"
+  },
+  {
+    "id": "notif-1768899290957-6agiq67oy",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mnf kwnrgnar'",
+    "message": "ptngeing rn pirni g knwepk' 'jfw'oj j'wefwj'efwe 'jjwfo 'wjeo' wof whfwefbwbefo wfj bwebfw'fbw efjwe'fjjergjrwlg'er gb",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T08:54:50.957Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Learn More",
+      "ctaIcon": "heart"
+    },
+    "ctaText": "Learn More",
+    "ctaIcon": "heart"
+  },
+  {
+    "id": "notif-1768898905494-0fofmwan2",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mnf kwnrgnar'",
+    "message": "ptngeing rn pirni g knwepk' 'jfw'oj j'wefwj'efwe 'jjwfo 'wjeo' wof whfwefbwbefo wfj bwebfw'fbw efjwe'fjjergjrwlg'er gb",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T08:48:25.494Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Tag now",
+      "ctaIcon": "star"
+    },
+    "ctaText": "Tag now",
+    "ctaIcon": "star"
+  },
+  {
+    "id": "notif-1768898447221-3jxnct7er",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mnf kwnrgnar'",
+    "message": "ptngeing rn pirni g knwepk' 'jfw'oj j'wefwj'efwe 'jjwfo 'wjeo' wof whfwefbwbefo wfj bwebfw'fbw efjwe'fjjergjrwlg'er gb",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T08:40:47.221Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Tag now",
+      "ctaIcon": "star"
+    },
+    "ctaText": "Tag now",
+    "ctaIcon": "star"
+  },
+  {
+    "id": "notif-1768896539685-2osi0xrgs",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mnf kwnrgnar'",
+    "message": "ptngeing rn pirni g knwepk' 'jfw'oj j'wefwj'efwe 'jjwfo 'wjeo' wof whfwefbwbefo wfj bwebfw'fbw efjwe'fjjergjrwlg'er gb",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T08:08:59.685Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer",
+      "ctaText": "Tag now",
+      "ctaIcon": "star"
+    },
+    "ctaText": "Tag now",
+    "ctaIcon": "star"
+  },
+  {
+    "id": "notif-1768896142667-tg7ffcwyl",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "mnf kwnrgnar'",
+    "message": "ptngeing rn pirni g knwepk' 'jfw'oj j'wefwj'efwe 'jjwfo 'wjeo' wof whfwefbwbefo wfj bwebfw'fbw efjwe'fjjergjrwlg'er gb",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T08:02:22.667Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer"
+    }
+  },
+  {
+    "id": "notif-1768895811071-l685g55l0",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "klng'perngpn",
+    "message": " g;nnj nejn wjo; jefojwo ;wfnwwje wefoe;fb  wk' nwewe efjn wef [woef ejr fjfj  jrn nnwol    wnewen wfj wejjef wfwj fj ojwefoj wbe jwe jwebf;obef ; wwejf wef ;wj fjw;fwef je wjfejfbfo",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T07:56:51.071Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer"
+    }
+  },
+  {
+    "id": "notif-1768895811071-9k5fps23e",
+    "to": {
+      "id": "user-1768222892161",
+      "name": "Alle"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "klng'perngpn",
+    "message": " g;nnj nejn wjo; jefojwo ;wfnwwje wefoe;fb  wk' nwewe efjn wef [woef ejr fjfj  jrn nnwol    wnewen wfj wejjef wfwj fj ojwefoj wbe jwe jwebf;obef ; wwejf wef ;wj fjw;fwef je wjfejfbfo",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T07:56:51.071Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer"
+    }
+  },
+  {
+    "id": "notif-1768893803389-l79s3qyex",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "kjj",
+    "message": "kngerg jgreogrugno rbprubreb jner[rnn[ r igrnernnern erkngngjn  ergnerngnreg ongrengnerg jer fjrgje owenrnfnngerg eorogerign vojrejoerojgjrgb",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T07:23:23.389Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer"
+    }
+  },
+  {
+    "id": "notif-1768893740679-6t7dic56q",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "kgkngwngwin",
+    "message": "kwknfnwenpwe;nii",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T07:22:20.679Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer"
+    }
+  },
+  {
+    "id": "notif-1768892596288-zkdylau89",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "np'erngierpgnrieg",
+    "message": "fk'gkergnergnenipg'pwigtwggpwtg",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T07:03:16.289Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer"
+    }
+  },
+  {
+    "id": "notif-1768892297838-92uv2dys5",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "promotion",
+    "title": "sgsnn",
+    "message": "jrffpgbrg'pubegrgbejr",
+    "icon": "gift",
+    "reason": "",
+    "createdAt": "2026-01-20T06:58:17.838Z",
+    "read": true,
+    "requiresAcknowledgment": true,
+    "meta": {
+      "promotionType": "offer"
+    }
+  },
+  {
+    "id": "n-1768752219757",
+    "requestId": "req_1768386652237",
+    "text": "Update for \"je ne suis\": Published ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-18T16:03:39.757Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768752217874",
+    "requestId": "req_1768386652237",
+    "text": "Update for \"je ne suis\": Preview Ready ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-18T16:03:37.874Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768752216039",
+    "requestId": "req_1768386652237",
+    "text": "Update for \"je ne suis\": In Production ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-18T16:03:36.039Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768752212427",
+    "requestId": "req_1768386652237",
+    "text": "Update for \"je ne suis\": Under Review ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "createdAt": "2026-01-18T16:03:32.427Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768715759012",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:55:59.013Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768715756366",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed  - Uploaded video:Smallville - Clark saves earth from apokolips.mp4 thumb:blob:http://localhost:5173/6b9820aa-5b65-4303-90a7-bf3878d4cd39",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:55:56.366Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:Smallville - Clark saves earth from apokolips.mp4 thumb:blob:http://localhost:5173/6b9820aa-5b65-4303-90a7-bf3878d4cd39"
+    }
+  },
+  {
+    "id": "n-1768715669178",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:54:29.178Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768715666372",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:54:26.372Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768715665727",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:54:25.727Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768715663083",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:54:23.083Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768715611781",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:53:31.781Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768714819490",
+    "requestId": "req_1768657702084",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:40:19.490Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768714810593",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:40:10.593Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768714469743",
+    "requestId": "req_1768650003595",
+    "text": "Update for \"treee\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:34:29.743Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768714460386",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:34:20.386Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768714440552",
+    "requestId": "req_1768657738166",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:34:00.552Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768714190747",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:29:50.747Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768714168035",
+    "requestId": "req_1768657738166",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T05:29:28.035Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768710961341",
+    "requestId": "req_1768657738166",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T04:36:01.341Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768710781342",
+    "requestId": "req_1768657738166",
+    "text": "Update for \"Je te Benirai Seigneur\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T04:33:01.342Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768710780635",
+    "requestId": "req_1768657738166",
+    "text": "Update for \"Je te Benirai Seigneur\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T04:33:00.635Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768710777259",
+    "requestId": "req_1768657738166",
+    "text": "Update for \"Je te Benirai Seigneur\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T04:32:57.259Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768710777002",
+    "requestId": "req_1768657738166",
+    "text": "Update for \"Je te Benirai Seigneur\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T04:32:57.002Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708689568",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:58:09.568Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708686155",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed  - Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/f872034d-cbaf-42c3-9141-95819518b8b4",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:58:06.155Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/f872034d-cbaf-42c3-9141-95819518b8b4"
+    }
+  },
+  {
+    "id": "n-1768708555568",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:55:55.568Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708552029",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:55:52.029Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708550845",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:55:50.845Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708547550",
+    "requestId": "req_1768657738398",
+    "text": "Update for \"Je te Benirai Seigneur\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:55:47.550Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708520505",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:55:20.505Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708515999",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:55:15.999Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768708512177",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:55:12.177Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768706857163",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:27:37.163Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768706853509",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:27:33.510Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768706852703",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:27:32.704Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768706850022",
+    "requestId": "req_1768657736892",
+    "text": "Update for \"Je te Benirai Seigneur\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:27:30.022Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768705643437",
+    "requestId": "req_1768650003595",
+    "text": "Update for \"treee\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:07:23.437Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768705466378",
+    "requestId": "req_1768650003595",
+    "text": "Update for \"treee\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:04:26.378Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768705462183",
+    "requestId": "req_1768650003595",
+    "text": "Update for \"treee\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:04:22.183Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768705459040",
+    "requestId": "req_1768650003595",
+    "text": "Update for \"treee\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:04:19.040Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768705455947",
+    "requestId": "req_1768650003595",
+    "text": "Update for \"treee\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T03:04:15.947Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768703676432",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:34:36.432Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702581620",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:16:21.620Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702542390",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed  - Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/18db784f-5749-4777-9dba-4399fe9e352a",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:15:42.390Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/18db784f-5749-4777-9dba-4399fe9e352a"
+    }
+  },
+  {
+    "id": "n-1768702389299",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:13:09.299Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702384587",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:13:04.587Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702381025",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:13:01.025Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702369072",
+    "requestId": "req_1768657708836",
+    "text": "Update for \"Je te Benirai Seigneur\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:12:49.072Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702271789",
+    "requestId": "req_1768657702084",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:11:11.789Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702267750",
+    "requestId": "req_1768657702084",
+    "text": "Update for \"Je te Benirai Seigneur\": Completed  - Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/81b5a681-c570-4e62-a36d-42fed3ae4331",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:11:07.750Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/81b5a681-c570-4e62-a36d-42fed3ae4331"
+    }
+  },
+  {
+    "id": "n-1768702085721",
+    "requestId": "req_1768657702084",
+    "text": "Update for \"Je te Benirai Seigneur\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:08:05.721Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702082012",
+    "requestId": "req_1768657702084",
+    "text": "Update for \"Je te Benirai Seigneur\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:08:02.012Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702074456",
+    "requestId": "req_1768657702084",
+    "text": "Update for \"Je te Benirai Seigneur\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:07:54.456Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768702069435",
+    "requestId": "req_1768657702084",
+    "text": "Update for \"Je te Benirai Seigneur\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T02:07:49.435Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768701094179",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T01:51:34.179Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768701078631",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": Completed ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T01:51:18.631Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768701063281",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": Completed  - Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/2ca5e00c-31a7-4c73-96ff-86aaed82ce56",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T01:51:03.281Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:Smallville - Season 4 recap.mp4 thumb:blob:http://localhost:5173/2ca5e00c-31a7-4c73-96ff-86aaed82ce56"
+    }
+  },
+  {
+    "id": "n-1768700826097",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": Published ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T01:47:06.097Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768700823375",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": Preview Ready ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T01:47:03.375Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768700821402",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": In Production ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T01:47:01.402Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768700818496",
+    "requestId": "req_1768379522335",
+    "text": "Update for \"Lalar\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-18T01:46:58.497Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768646957585",
+    "requestId": "req_1768379394281",
+    "text": "Update for \"karrrrino\": Under Review ",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-17T10:49:17.585Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "s-1768520847384",
+    "requestId": null,
+    "text": "I?™d like a video about ?¦bb",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "video": {
+      "url": "https://pwin.onrender.com/uploads/intro-1767691091782-875706.mp4",
+      "title": "Du Sag pour ous"
+    },
+    "type": "suggestion",
+    "parentId": null,
+    "createdAt": "2026-01-15T23:47:27.384Z"
+  },
+  {
+    "id": "n-1768318667191",
+    "requestId": "req_1766845475803",
+    "text": "Update for \"sthth\": Completed ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-13T15:37:47.191Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768318554726",
+    "requestId": "req_1766845475803",
+    "text": "Update for \"sthth\": Completed  - Uploaded video:Myst.mp4 thumb:blob:http://localhost:5173/42331194-0558-4543-8b4c-cf4b61119fc5",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-13T15:35:54.726Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 6,
+      "message": "Uploaded video:Myst.mp4 thumb:blob:http://localhost:5173/42331194-0558-4543-8b4c-cf4b61119fc5"
+    }
+  },
+  {
+    "id": "n-1768318410863",
+    "requestId": "req_1766845475803",
+    "text": "Update for \"sthth\": Published ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-13T15:33:30.863Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 5,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768318407514",
+    "requestId": "req_1766845475803",
+    "text": "Update for \"sthth\": Preview Ready ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-13T15:33:27.514Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 4,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768318405035",
+    "requestId": "req_1766845475803",
+    "text": "Update for \"sthth\": In Production ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-13T15:33:25.035Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 3,
+      "message": ""
+    }
+  },
+  {
+    "id": "n-1768318403210",
+    "requestId": "req_1766845475803",
+    "text": "Update for \"sthth\": Under Review ",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "createdAt": "2026-01-13T15:33:23.211Z",
+    "type": "status_update",
+    "metadata": {
+      "step": 2,
+      "message": ""
+    }
+  },
+  {
+    "id": "s-1767701100645",
+    "requestId": "req_1767690823115",
+    "text": "n n",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "type": "suggestion",
+    "parentId": null,
+    "createdAt": "2026-01-06T12:05:00.645Z"
+  },
+  {
+    "id": "s-1767700856654",
+    "requestId": "req_1767690823115",
+    "text": "n",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "type": "suggestion",
+    "parentId": null,
+    "createdAt": "2026-01-06T12:00:56.654Z"
+  },
+  {
+    "id": "s-1767700839693",
+    "requestId": "req_1767690823115",
+    "text": "nn",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "type": "suggestion",
+    "parentId": null,
+    "createdAt": "2026-01-06T12:00:39.693Z"
+  },
+  {
+    "id": "s-1767700801471",
+    "requestId": "req_1767690823115",
+    "text": "mm.",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "type": "suggestion",
+    "parentId": null,
+    "createdAt": "2026-01-06T12:00:01.471Z"
+  },
+  {
+    "id": "s-1767700678764",
+    "requestId": "req_1767690823115",
+    "text": "l",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "type": "suggestion",
+    "parentId": null,
+    "createdAt": "2026-01-06T11:57:58.764Z"
+  },
+  {
+    "id": "s-1767695478316",
+    "requestId": "req_1767690823115",
+    "text": "Reply: ,nnnnnnnnn",
+    "from": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "createdAt": "2026-01-06T10:31:18.316Z"
+  },
+  {
+    "id": "s-1767691642807",
+    "requestId": "req_1767690823115",
+    "text": "nk.  l",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1767585399609"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "createdAt": "2026-01-06T09:27:22.807Z"
+  },
+  {
+    "id": "s-1767680020587",
+    "requestId": "req_1767543768001",
+    "text": "n",
+    "from": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "to": {
+      "id": "user-1766857658728"
+    },
+    "video": {
+      "url": null,
+      "title": null
+    },
+    "createdAt": "2026-01-06T06:13:40.587Z"
+  },
+  {
+    "id": "notif-1768888537126-lfz2rl1qd",
+    "to": {
+      "id": "user-1766857658728",
+      "name": "Joshuar"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "shadowban",
+    "title": "Shadow Ban Applied",
+    "message": "Your account visibility has been restricted due to community guideline violations.\n\nReason: Low-quality or repetitive content",
+    "icon": "shadowban",
+    "reason": "Low-quality or repetitive content",
+    "createdAt": "2026-01-20T05:55:37.126Z",
+    "read": true,
+    "requiresAcknowledgment": true
+  },
+  {
+    "id": "notif-1769089728352-yozec6tt1",
+    "to": {
+      "id": "user-1767585399609",
+      "name": "Paul"
+    },
+    "from": {
+      "id": "staff",
+      "name": "Moderation Team"
+    },
+    "type": "staff_action",
+    "action": "shadowban",
+    "title": "Shadow Ban Applied",
+    "message": "Your account visibility has been restricted due to community guideline violations.\n\nReason: Content violates platform guidelines",
+    "icon": "shadowban",
+    "reason": "Content violates platform guidelines",
+    "createdAt": "2026-01-22T13:48:48.352Z",
+    "read": true,
+    "requiresAcknowledgment": true
+  }
+]

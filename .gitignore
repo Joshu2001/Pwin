@@ -7,3 +7,4 @@ Thumbs.db
 *.keystore
 upload-key-reset/
 build-log.txt
+*.worktrees/

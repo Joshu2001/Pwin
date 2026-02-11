@@ -1,0 +1,16 @@
+# Run backend only - skip root npm entirely
+[phases.setup]
+nixPkgs = ["nodejs_24"]
+
+[phases.install]
+cmds = ["cd backend && npm install --production"]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "node backend/server.js"
+
+# Skip any package.json auto-detection at root
+[variables]
+NIXPACKS_NO_CACHE = "1"

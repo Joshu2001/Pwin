@@ -1,0 +1,14 @@
+# Ignore frontend files for backend-only deployment
+node_modules/
+android/
+ios/
+dist/
+build/
+src/
+public/
+*.html
+vite.config.js
+tailwind.config.js
+postcss.config.js
+index.html
+capacitor.config.json

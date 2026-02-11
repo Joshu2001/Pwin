@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Jump highlight used when Edit buttons scroll to main fields */
+@keyframes jumpHighlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(139,92,246,0);
+    background-color: transparent;
+    border-color: rgba(0,0,0,0.08);
+  }
+  10% {
+    box-shadow: 0 0 0 10px rgba(139,92,246,0.12);
+    background-color: rgba(139,92,246,0.04);
+    border-color: rgba(139,92,246,0.28);
+  }
+  50% {
+    background-color: rgba(139,92,246,0.02);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(139,92,246,0);
+    background-color: transparent;
+    border-color: rgba(0,0,0,0.08);
+  }
+}
+.jump-highlight {
+  animation: jumpHighlight 900ms ease-in-out;
+}
+.jump-highlight[type="text"],
+.jump-highlight[role="textbox"],
+.jump-highlight textarea,
+.jump-highlight input,
+.jump-highlight select {
+  transition: background-color 300ms ease, border-color 300ms ease;
+}
+
+/* Onboarding micro-interactions: subtle icon lift + scale to increase engagement */
+.creator-onboard-scroll svg {
+  transition: transform 180ms ease-out, opacity 180ms ease-out;
+  will-change: transform;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .creator-onboard-scroll svg:hover {
+    transform: translateY(-4px) scale(1.06);
+  }
+  .creator-onboard-scroll svg:active {
+    transform: translateY(-1px) scale(0.98);
+  }
+}
+.highlight-underline{position:relative;display:inline-block}
+.highlight-underline::after{content:'';position:absolute;left:0;right:0;bottom:-4px;height:4px;background:linear-gradient(90deg,#7C3AED,#CB8A00);transform:scaleX(0);transform-origin:left center;transition:transform .45s cubic-bezier(.2,.9,.2,1)}
+.highlight-underline.active::after{transform:scaleX(1)}
+
+.temporary-emphasis{font-weight:700;transition:opacity .45s ease,transform .45s ease}
+.temporary-emphasis.fade{opacity:.6;transform:translateY(-2px)}
+
+/* pulsing 'snake' style to call attention to required fields */
+.needs-input{border-color:#7C3AED !important;box-shadow:0 0 0 0 rgba(124,58,237,0.18);animation:guide-pulse 1.6s infinite}
+@keyframes guide-pulse{0%{box-shadow:0 0 0 0 rgba(124,58,237,0.16)}50%{box-shadow:0 0 0 8px rgba(124,58,237,0.06)}100%{box-shadow:0 0 0 0 rgba(124,58,237,0.0)}}
+
+/* subtle completed state */
+.step-completed{opacity:.9}
+
+/* smaller tweak for onboarding headings where we added text-xl earlier */
+.creator-onboard-scroll h2{letter-spacing:-0.2px}
+
+/* pulsing border animation for selected boost amount */
+@keyframes pulse-border {
+  0% {
+    box-shadow: 0 0 0 0 rgba(202, 138, 4, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(202, 138, 4, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(202, 138, 4, 0);
+  }
+}
+
+/* Subtle fade-in and slide-up animation for hint tooltips */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Pulsing glow animation for hint button */
+@keyframes pulse-hint {
+  0% {
+    box-shadow: 0 0 0 0 rgba(202, 138, 4, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(202, 138, 4, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(202, 138, 4, 0.8);
+  }
+}
+
+/* Smooth dropdown animation */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Safe area helpers (avoid global padding to prevent double offsets in WebView) */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+}
+
+/* Content padding above footer - accounts for footer height + safe area */
+.pb-footer {
+  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+}
+
+/* For scrollable content areas with footer */
+.content-with-footer {
+  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  min-height: calc(100vh - 60px);
+}
+

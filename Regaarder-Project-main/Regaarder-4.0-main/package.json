@@ -1,0 +1,41 @@
+{
+  "name": "regaarder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Regaarder — React app (Vite) for the video explorer",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "vercel-build": "vite build",
+    "preview": "vite preview",
+    "start": "node backend/server.js",
+    "start:frontend": "node frontend-server.js",
+    "lint": "eslint --ext .js,.jsx ."
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.2",
+    "@capacitor/cli": "^8.0.2",
+    "@capacitor/core": "^8.0.2",
+    "classnames": "^2.3.2",
+    "express": "^4.19.2",
+    "lucide-react": "^0.268.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.11.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.0",
+    "autoprefixer": "^10.4.23",
+    "eslint": "^8.52.0",
+    "postcss": "^8.5.6",
+    "prettier": "^2.8.8",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^3.4.19",
+    "terser": "^5.46.0",
+    "vite": "^7.3.0"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

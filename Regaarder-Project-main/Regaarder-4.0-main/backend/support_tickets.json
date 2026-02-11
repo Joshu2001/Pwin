@@ -1,0 +1,52 @@
+[
+  {
+    "id": "ticket_1769582526893_wmhjz2xcu",
+    "userId": "anonymous",
+    "userName": "Unknown User",
+    "userEmail": "anon_1769578287362_jn8c3eivq@anonymous.local",
+    "title": "mdkd",
+    "description": "vjnjdvldnnjds",
+    "status": "open",
+    "priority": "normal",
+    "attachments": [],
+    "responses": [
+      {
+        "id": 1769582552706,
+        "staffId": 1000,
+        "staffName": "Admin",
+        "message": "mjjj",
+        "createdAt": "2026-01-28T06:42:32.706Z"
+      },
+      {
+        "id": 1769582760456,
+        "staffId": 1000,
+        "staffName": "Admin",
+        "message": "gooo",
+        "createdAt": "2026-01-28T06:46:00.456Z"
+      }
+    ],
+    "createdAt": "2026-01-28T06:42:06.895Z",
+    "updatedAt": "2026-01-28T07:02:19.841Z",
+    "customerResponses": [
+      {
+        "id": 1769583739841,
+        "message": "mmfmm",
+        "createdAt": "2026-01-28T07:02:19.841Z"
+      }
+    ]
+  },
+  {
+    "id": "ticket_1769582712828_db0dcadkt",
+    "userId": "anonymous",
+    "userName": "Unknown User",
+    "userEmail": "anon_1769582712790_nayet67kg@anonymous.local",
+    "title": "fj;vsnd",
+    "description": "jsvnsljsdvnn",
+    "status": "open",
+    "priority": "normal",
+    "attachments": [],
+    "responses": [],
+    "createdAt": "2026-01-28T06:45:12.829Z",
+    "updatedAt": "2026-01-28T06:45:12.829Z"
+  }
+]
