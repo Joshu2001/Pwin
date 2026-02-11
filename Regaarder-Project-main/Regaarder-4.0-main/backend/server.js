@@ -7,6 +7,14 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 
+// ── Persistent data directory ──
+// On Railway set DATA_DIR=/data and mount a volume there so JSON files + uploads
+// survive redeploys. Locally this falls back to the backend dir itself.
+const PERSIST_DIR = process.env.DATA_DIR || __dirname;
+if (PERSIST_DIR !== __dirname && !fs.existsSync(PERSIST_DIR)) {
+  fs.mkdirSync(PERSIST_DIR, { recursive: true });
+}
+
 const app = express();
 app.set('trust proxy', true); // Railway / reverse-proxy: trust X-Forwarded-Proto
 const PORT = process.env.PORT || 8080;
@@ -123,18 +131,18 @@ app.use((req, res, next) => {
     next();
 });
 
-const DATA_FILE = path.join(__dirname, 'users.json');
-const SPONSORS_FILE = path.join(__dirname, 'sponsors.json');
-const REQUESTS_FILE = path.join(__dirname, 'requests.json');
-const VIDEOS_FILE = path.join(__dirname, 'videos.json');
-const CATEGORIES_FILE = path.join(__dirname, 'categories.json');
-const ONBOARDING_FILE = path.join(__dirname, 'onboarding.json');
+const DATA_FILE = path.join(PERSIST_DIR, 'users.json');
+const SPONSORS_FILE = path.join(PERSIST_DIR, 'sponsors.json');
+const REQUESTS_FILE = path.join(PERSIST_DIR, 'requests.json');
+const VIDEOS_FILE = path.join(PERSIST_DIR, 'videos.json');
+const CATEGORIES_FILE = path.join(PERSIST_DIR, 'categories.json');
+const ONBOARDING_FILE = path.join(PERSIST_DIR, 'onboarding.json');
 
 const crypto = require('crypto');
 const multer = require('multer');
 
 // simple disk storage for demo: store uploads under ./uploads
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const UPLOAD_DIR = path.join(PERSIST_DIR, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -319,7 +327,7 @@ function writeRequests(requests) {
 }
 
 // Comments persistence
-const COMMENTS_FILE = path.join(__dirname, 'comments.json');
+const COMMENTS_FILE = path.join(PERSIST_DIR, 'comments.json');
 function readComments() {
   try {
     if (!fs.existsSync(COMMENTS_FILE)) return [];
@@ -350,7 +358,7 @@ function writeVideos(videos) {
   }
 }
 
-const PRODUCTS_FILE = path.join(__dirname, 'products.json');
+const PRODUCTS_FILE = path.join(PERSIST_DIR, 'products.json');
 function readProducts() {
   try {
     if (!fs.existsSync(PRODUCTS_FILE)) return [];
@@ -400,7 +408,7 @@ app.get('/products', (req, res) => {
 });
 
 // Bottom ad templates persistence
-const BOTTOM_TEMPLATES_FILE = path.join(__dirname, 'bottom_ad_templates.json');
+const BOTTOM_TEMPLATES_FILE = path.join(PERSIST_DIR, 'bottom_ad_templates.json');
 function readBottomTemplates() {
   try {
     if (!fs.existsSync(BOTTOM_TEMPLATES_FILE)) return [];
@@ -581,7 +589,7 @@ function authMiddleware(req, res, next) {
 }
 
 // Playback persistence helpers (simple file-backed store)
-const PLAYBACK_FILE = path.join(__dirname, 'playback.json');
+const PLAYBACK_FILE = path.join(PERSIST_DIR, 'playback.json');
 function readPlayback() {
   try {
     if (!fs.existsSync(PLAYBACK_FILE)) return {};
@@ -958,7 +966,7 @@ app.get('/advertiser/dashboard', authMiddleware, (req, res) => {
     const sponsors = readSponsors().filter(s => s.ownerId === req.user.id);
     // For demo purposes, also include recent campaigns from local file if present
     let campaigns = [];
-    const campaignsFile = path.join(__dirname, 'advertiser_campaigns.json');
+    const campaignsFile = path.join(PERSIST_DIR, 'advertiser_campaigns.json');
     if (fs.existsSync(campaignsFile)) {
       try { campaigns = JSON.parse(fs.readFileSync(campaignsFile, 'utf8') || '[]').filter(c => c.ownerId === req.user.id); } catch (e) { campaigns = []; }
     }
@@ -1099,7 +1107,7 @@ app.delete('/bookmarks/requests', (req, res) => {
         };
     
         // Persist to suggestions.json
-        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
         let arr = [];
         try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         arr.unshift(suggestion);
@@ -1116,7 +1124,7 @@ app.delete('/bookmarks/requests', (req, res) => {
     app.get('/requests/:id/suggestions', (req, res) => {
       try {
         const requestId = req.params.id;
-        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
         let arr = [];
         try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
@@ -1146,7 +1154,7 @@ app.delete('/bookmarks/requests', (req, res) => {
     // 2. Client will group them
     app.get('/suggestions/me', authMiddleware, (req, res) => {
       try {
-        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
         let arr = [];
         try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
@@ -1164,7 +1172,7 @@ app.delete('/bookmarks/requests', (req, res) => {
     // Alias: notifications for current user (same logic)
     app.get('/notifications', authMiddleware, (req, res) => {
       try {
-        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
         let arr = [];
         try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
@@ -1182,7 +1190,7 @@ app.delete('/bookmarks/requests', (req, res) => {
     app.delete('/notifications/:id', authMiddleware, (req, res) => {
       try {
         const id = req.params.id;
-        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
         let arr = [];
         try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
@@ -1207,7 +1215,7 @@ app.delete('/bookmarks/requests', (req, res) => {
     app.post('/notifications/:id/read', authMiddleware, (req, res) => {
       try {
         const id = req.params.id;
-        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
         let arr = [];
         try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         
@@ -1243,7 +1251,7 @@ app.post('/staff/send-promotion', async (req, res) => {
     // Simple staff check for demo
     if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
 
-    const SUG_FILE = path.join(__dirname, 'suggestions.json');
+    const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
     let arr = [];
     try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch (e) { arr = []; }
 
@@ -1935,7 +1943,7 @@ app.get('/requests', (req, res) => {
 });
 
 // --- Comment reactions storage ---
-const COMMENT_REACTIONS_FILE = path.join(__dirname, 'comment_reactions.json');
+const COMMENT_REACTIONS_FILE = path.join(PERSIST_DIR, 'comment_reactions.json');
 function readCommentReactions() {
   try { if (!fs.existsSync(COMMENT_REACTIONS_FILE)) return { likes: {}, dislikes: {} }; const raw = fs.readFileSync(COMMENT_REACTIONS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { likes: j.likes || {}, dislikes: j.dislikes || {} }; } catch (e) { return { likes: {}, dislikes: {} }; }
 }
@@ -2988,7 +2996,7 @@ app.post('/me/password', authMiddleware, async (req, res) => {
 });
 
 // --- Watch History storage ---
-const WATCH_FILE = path.join(__dirname, 'watchhistory.json');
+const WATCH_FILE = path.join(PERSIST_DIR, 'watchhistory.json');
 function readWatchHistory() {
   try {
     if (!fs.existsSync(WATCH_FILE)) return [];
@@ -3109,7 +3117,7 @@ app.delete('/watch/history', (req, res) => {
 });
 
 // --- Bookmarks storage (per-user) ---
-const BOOKMARKS_FILE = path.join(__dirname, 'bookmarks.json');
+const BOOKMARKS_FILE = path.join(PERSIST_DIR, 'bookmarks.json');
 function readBookmarks() {
   try { if (!fs.existsSync(BOOKMARKS_FILE)) return { segments: [], videos: [], requests: [] }; const raw = fs.readFileSync(BOOKMARKS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { segments: j.segments || [], videos: j.videos || [], requests: j.requests || [] }; } catch (e) { return { segments: [], videos: [], requests: [] }; }
 }
@@ -3198,7 +3206,7 @@ app.post('/bookmarks/requests', (req, res) => {
 });
 
 // --- Reactions storage (per-user per-request) ---
-const REQUEST_REACTIONS_FILE = path.join(__dirname, 'request_reactions.json');
+const REQUEST_REACTIONS_FILE = path.join(PERSIST_DIR, 'request_reactions.json');
 function readRequestReactions() {
   try { if (!fs.existsSync(REQUEST_REACTIONS_FILE)) return { likes: {}, dislikes: {} }; const raw = fs.readFileSync(REQUEST_REACTIONS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { likes: j.likes || {}, dislikes: j.dislikes || {} }; } catch (e) { return { likes: {}, dislikes: {} }; }
 }
@@ -3381,7 +3389,7 @@ app.post('/requests/:id/status', authMiddleware, (req, res) => {
           metadata: { step, message }
         };
         
-        const SUG_FILE = path.join(__dirname, 'suggestions.json');
+        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
         let arr = [];
         try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
         arr.unshift(suggestion);
@@ -3396,7 +3404,7 @@ app.post('/requests/:id/status', authMiddleware, (req, res) => {
 });
 
 // Video reactions storage (likes/dislikes per video per user)
-const VIDEO_REACTIONS_FILE = path.join(__dirname, 'video_reactions.json');
+const VIDEO_REACTIONS_FILE = path.join(PERSIST_DIR, 'video_reactions.json');
 function readVideoReactions() { try { if (!fs.existsSync(VIDEO_REACTIONS_FILE)) return { likes: {}, dislikes: {} }; const raw = fs.readFileSync(VIDEO_REACTIONS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { likes: j.likes || {}, dislikes: j.dislikes || {} }; } catch (e) { return { likes: {}, dislikes: {} }; } }
 function writeVideoReactions(data) { try { const safe = { likes: data.likes || {}, dislikes: data.dislikes || {} }; fs.writeFileSync(VIDEO_REACTIONS_FILE, JSON.stringify(safe, null, 2), 'utf8'); } catch (e) {} }
 
@@ -3608,7 +3616,7 @@ app.delete('/claims', authMiddleware, (req, res) => {
 });
 
 // ===== STAFF ADMIN ENDPOINTS =====
-const STAFF_FILE = path.join(__dirname, 'staff.json');
+const STAFF_FILE = path.join(PERSIST_DIR, 'staff.json');
 
 const readStaff = () => {
   try {
@@ -4726,7 +4734,7 @@ app.post('/staff/user-action/:userId', (req, res) => {
     writeStaff(staff);
 
     // Create a notification for the user who received the action
-    const SUG_FILE = path.join(__dirname, 'suggestions.json');
+    const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
     let notifications = [];
     try { 
       if (fs.existsSync(SUG_FILE)) {
@@ -4850,7 +4858,7 @@ app.post('/staff/undo-user-action/:userId', (req, res) => {
     writeStaff(staff);
 
     // Remove the notification for the user
-    const SUG_FILE = path.join(__dirname, 'suggestions.json');
+    const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
     let notifications = [];
     try { 
       if (fs.existsSync(SUG_FILE)) {
@@ -5652,7 +5660,7 @@ function getSubscriptionBenefits(tier) {
 
 // ========== SUPPORT TICKETS SYSTEM ==========
 
-const SUPPORT_TICKETS_FILE = path.join(__dirname, 'support_tickets.json');
+const SUPPORT_TICKETS_FILE = path.join(PERSIST_DIR, 'support_tickets.json');
 
 // Helper function to check if user is staff
 function isUserStaff(userId) {
@@ -5925,7 +5933,7 @@ app.post('/support/ticket/:id/response', (req, res) => {
 
     // Create notification for customer
     try {
-      const notifFile = path.join(__dirname, 'notifications.json');
+      const notifFile = path.join(PERSIST_DIR, 'notifications.json');
       let notifications = [];
       if (fs.existsSync(notifFile)) {
         const data = fs.readFileSync(notifFile, 'utf-8');
