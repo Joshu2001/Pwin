@@ -3788,7 +3788,12 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 				const p = el.play();
 				if (p && typeof p.then === 'function') {
 					await p;
-					if (!cancelled) setIsPlaying(true);
+					if (!cancelled) {
+						setIsPlaying(true);
+						// Unmute after play succeeds — Android WebView often allows unmuting
+						// once playback is already running (even without user gesture).
+						try { el.muted = false; el.volume = 1.0; } catch { }
+					}
 				}
 			} catch { /* autoplay blocked — ok, user will tap to play */ }
 		};
@@ -4344,6 +4349,9 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		if (!v) return;
 		try {
 			if (v.paused || v.ended) {
+				// User tapped — this is a user gesture, so we can safely unmute
+				v.muted = false;
+				v.volume = 1.0;
 				await v.play();
 				setIsPlaying(true);
 				// reveal center overlay briefly when playback starts

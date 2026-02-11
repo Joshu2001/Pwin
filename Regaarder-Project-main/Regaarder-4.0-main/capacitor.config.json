@@ -6,7 +6,8 @@
     "cleartext": true
   },
   "android": {
-    "webContentsDebuggingEnabled": true
+    "webContentsDebuggingEnabled": true,
+    "allowMixedContent": true
   },
   "plugins": {
     "SplashScreen": {

@@ -146,7 +146,9 @@ public class MainActivity extends BridgeActivity {
 			WebView wv = getBridge().getWebView();
 			if (wv != null) {
 				wv.addJavascriptInterface(new NativePiPBridge(), "NativePiP");
-				Log.d(TAG, "NativePiP JS interface injected");
+				// Allow media playback without requiring a user gesture — critical for video audio
+				wv.getSettings().setMediaPlaybackRequiresUserGesture(false);
+				Log.d(TAG, "NativePiP JS interface injected, media gesture requirement disabled");
 			}
 		} catch (Exception e) {
 			Log.w(TAG, "Failed to inject NativePiP JS interface", e);
