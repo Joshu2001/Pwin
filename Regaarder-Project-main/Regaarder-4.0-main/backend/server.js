@@ -8,13 +8,14 @@ const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
 
 const app = express();
+app.set('trust proxy', true); // Railway / reverse-proxy: trust X-Forwarded-Proto
 const PORT = process.env.PORT || 8080;
 const WEB_URL = process.env.WEB_URL || 'https://regaarder.com';
 const PUBLIC_BACKEND_URL =
   process.env.PUBLIC_BACKEND_URL ||
   process.env.BACKEND_URL ||
   process.env.VITE_BACKEND_URL ||
-  null;
+  'https://pwin-copy-production.up.railway.app';
 
 app.use(cors());
 app.use(bodyParser.json());
