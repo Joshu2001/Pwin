@@ -8,14 +8,14 @@
     "token": "65d79fe4c4d4c361802ea7ab88eee331",
     "isCreator": true,
     "creatorSince": "2026-01-27T23:46:58.866Z",
-    "image": "https://pwin.onrender.com/uploads/intro-1768835099597-749836.png",
+    "image": "https://pwin-copy-production.up.railway.app/uploads/intro-1768835099597-749836.png",
     "price": "788",
     "bio": "Christ is King",
     "tagline": "",
     "following": [
       "user-1767585399609"
     ],
-    "introVideo": "https://pwin.onrender.com/uploads/intro-1768835099796-529216.mp4",
+    "introVideo": "https://pwin-copy-production.up.railway.app/uploads/intro-1768835099796-529216.mp4",
     "streak": 6,
     "lastStreakDate": "2026-01-19",
     "lastClaimReset": "2026-01-15",
@@ -59,7 +59,7 @@
     "token": "413b511b09ae758ef51f04acd8a12703",
     "isCreator": true,
     "creatorSince": "2026-01-28T02:33:15.385Z",
-    "image": "https://pwin.onrender.com/uploads/intro-1769567593224-795236.jpg",
+    "image": "https://pwin-copy-production.up.railway.app/uploads/intro-1769567593224-795236.jpg",
     "following": [
       "user-1767585399609",
       "user-1766857658728"
@@ -98,7 +98,7 @@
       {
         "id": "premium",
         "name": "Premium & Elegant",
-        "emoji": "‚≠ê",
+        "emoji": "‚≠?,
         "description": "Sophisticated, refined tone for artistic creators",
         "isOpen": false,
         "templates": [
@@ -129,7 +129,7 @@
       {
         "id": "personal",
         "name": "Personal & Ownership",
-        "emoji": "‚ù§Ô∏è",
+        "emoji": "?§Ô?",
         "description": "Triggers co-creation feelings and influence",
         "isOpen": false,
         "templates": [
@@ -195,7 +195,7 @@
       {
         "id": "weekend",
         "name": "Weekend / Emotional",
-        "emoji": "‚òÄÔ∏è",
+        "emoji": "?ÄÔ∏?,
         "description": "Netflix-like, entertainment-focused prompts",
         "isOpen": false,
         "templates": [
@@ -293,7 +293,7 @@
       {
         "id": "playful",
         "name": "Playful & Light",
-        "emoji": "üòÑ",
+        "emoji": "??",
         "description": "Fun, softly persuasive approach",
         "isOpen": false,
         "templates": [
@@ -343,7 +343,7 @@
       {
         "id": "entertainment",
         "name": "Entertainment",
-        "emoji": "üé¨",
+        "emoji": "?é¨",
         "description": "Fun, engaging content for everyone",
         "isOpen": false,
         "templates": [
@@ -362,7 +362,7 @@
       {
         "id": "educational",
         "name": "Educational",
-        "emoji": "üìö",
+        "emoji": "??",
         "description": "Perfect for educators and explainers",
         "isOpen": false,
         "templates": [
@@ -421,7 +421,7 @@
       {
         "id": "diy",
         "name": "DIY / Science",
-        "emoji": "üî¨",
+        "emoji": "?î¨",
         "description": "Curiosity + excitement + creation for makers",
         "isOpen": false,
         "templates": [
@@ -481,7 +481,7 @@
       {
         "id": "debates",
         "name": "Debates / Philosophy",
-        "emoji": "üí¨",
+        "emoji": "?í¨",
         "description": "Thought leadership + perspective + dialogue",
         "isOpen": false,
         "templates": [
@@ -540,7 +540,7 @@
       {
         "id": "creative",
         "name": "Creative / Art",
-        "emoji": "üé®",
+        "emoji": "?é®",
         "description": "Inspiration + collaboration + beauty",
         "isOpen": false,
         "templates": [
@@ -599,7 +599,7 @@
       {
         "id": "academic",
         "name": "Educational / Academic",
-        "emoji": "üéì",
+        "emoji": "??",
         "description": "Clarity + curiosity + learning satisfaction",
         "isOpen": false,
         "templates": [
@@ -659,7 +659,7 @@
       {
         "id": "travel",
         "name": "Travel / Culture",
-        "emoji": "‚úàÔ∏è",
+        "emoji": "?àÔ?",
         "description": "Discovery + immersion + wonder",
         "count": 2,
         "isOpen": false,
@@ -719,7 +719,7 @@
       {
         "id": "motivation",
         "name": "Motivation / Lifestyle",
-        "emoji": "üí™",
+        "emoji": "?í™",
         "description": "Inspiration + empathy + relatability",
         "isOpen": false,
         "templates": [
@@ -778,7 +778,7 @@
       {
         "id": "podcasts",
         "name": "Podcasts & Conversations",
-        "emoji": "üéß",
+        "emoji": "?éß",
         "description": "Curiosity + intimacy + authenticity",
         "isOpen": false,
         "templates": [
@@ -837,7 +837,7 @@
       {
         "id": "journalistic",
         "name": "Journalistic Investigations",
-        "emoji": "üì∞",
+        "emoji": "?ì∞",
         "description": "Intrigue + justice + curiosity",
         "isOpen": false,
         "templates": [
@@ -896,7 +896,7 @@
       {
         "id": "entrepreneurship",
         "name": "Entrepreneurship & Success",
-        "emoji": "üöÄ",
+        "emoji": "??",
         "description": "Ambition + inspiration + insight",
         "isOpen": false,
         "templates": [
@@ -955,7 +955,7 @@
       {
         "id": "business_history",
         "name": "Business History",
-        "emoji": "üèõÔ∏è",
+        "emoji": "??Ô∏?,
         "description": "Curiosity + admiration + intelligence",
         "isOpen": false,
         "templates": [
@@ -1014,7 +1014,7 @@
       {
         "id": "fashion",
         "name": "Modeling & Fashion",
-        "emoji": "üëó",
+        "emoji": "??",
         "description": "Aspiration + artistry + self-expression",
         "isOpen": false,
         "templates": [
@@ -1073,7 +1073,7 @@
       {
         "id": "psychology",
         "name": "Psychology & Behavior",
-        "emoji": "üß†",
+        "emoji": "??",
         "description": "Curiosity + relatability + intellect",
         "isOpen": false,
         "templates": [
@@ -1132,7 +1132,7 @@
       {
         "id": "health",
         "name": "Health & Fitness",
-        "emoji": "üèãÔ∏è",
+        "emoji": "??Ô∏?,
         "description": "Motivation + trust + self-improvement",
         "isOpen": false,
         "templates": [
@@ -1189,7 +1189,7 @@
         ]
       }
     ],
-    "introVideo": "https://pwin.onrender.com/uploads/intro-1769337727265-229504.mp4",
+    "introVideo": "https://pwin-copy-production.up.railway.app/uploads/intro-1769337727265-229504.mp4",
     "lastClaimReset": "2026-01-14",
     "dailyClaimCount": 1,
     "dailyClaimEarnings": 133,
