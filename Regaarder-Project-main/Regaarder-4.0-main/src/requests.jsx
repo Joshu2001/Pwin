@@ -3686,6 +3686,39 @@ export default function RequestsFeed() {
                     } catch (e) {
                         console.warn('Failed to merge local requests:', e);
                     }
+
+                    // CLEANUP: Prune ideas_requests_v1 — remove entries that are now in the backend.
+                    // Also cap at 50 most-recent entries to prevent unbounded growth.
+                    try {
+                        const localRaw2 = localStorage.getItem('ideas_requests_v1');
+                        if (localRaw2) {
+                            const localArr = JSON.parse(localRaw2);
+                            if (Array.isArray(localArr)) {
+                                const backendIdSet = new Set(backendList.map(r => String(r.id)));
+                                // Keep only entries NOT yet in backend (still pending sync)
+                                let pruned = localArr.filter(r => r && r.id && !backendIdSet.has(String(r.id)));
+                                // Also remove entries older than 7 days that never synced (stale)
+                                const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                                pruned = pruned.filter(r => {
+                                    const ct = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+                                    return !isNaN(ct) && ct > sevenDaysAgo;
+                                });
+                                // Cap at 50 most-recent
+                                pruned.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                                pruned = pruned.slice(0, 50);
+                                if (pruned.length === 0) {
+                                    localStorage.removeItem('ideas_requests_v1');
+                                    console.log('[CLEANUP] Removed ideas_requests_v1 (all synced)');
+                                } else {
+                                    localStorage.setItem('ideas_requests_v1', JSON.stringify(pruned));
+                                    console.log(`[CLEANUP] Pruned ideas_requests_v1: ${localArr.length} → ${pruned.length}`);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[CLEANUP] Failed to prune ideas_requests_v1:', e);
+                    }
+
                     // Return merged list (backend + missing local optimistic requests)
                     console.log('processLocalRequests returning:', finalList.length, 'total requests');
                     return finalList;

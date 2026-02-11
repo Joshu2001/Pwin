@@ -6162,6 +6162,17 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                 v.autoplay = true;
                 v.play().then(() => {
                     setPlaying(true);
+                    // Auto-unmute after autoplay succeeds (mirrors YouTube's unmute approach)
+                    // Delay gives the browser time to settle after the muted autoplay
+                    setTimeout(() => {
+                        try { v.muted = false; } catch {}
+                        try { v.volume = 1; } catch {}
+                    }, 600);
+                    // Second attempt in case the first is too early
+                    setTimeout(() => {
+                        try { if (v.muted) v.muted = false; } catch {}
+                        try { if (v.volume < 1) v.volume = 1; } catch {}
+                    }, 1500);
                 }).catch(() => { /* autoplay may be blocked */ });
             }
         };

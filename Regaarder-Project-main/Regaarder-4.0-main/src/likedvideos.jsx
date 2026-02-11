@@ -3,7 +3,7 @@ import { Home, FileText, Pencil, MoreHorizontal, Lightbulb, ChevronLeft } from '
 import { useAppNavigate } from './navigation.js';
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations.js';
-import { WEB_URL } from './config.js';
+import { WEB_URL, getBackendBaseUrl } from './config.js';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 const selectedLanguage = typeof window !== 'undefined' ? (localStorage.getItem('regaarder_language') || 'English') : 'English';
@@ -12,9 +12,7 @@ const t = (key) => getTranslation(key, selectedLanguage);
 // Local storage key for liked videos
 const STORAGE_KEY = 'likedVideos';
 
-const BACKEND_URL = typeof window !== 'undefined'
-  ? (window.__BACKEND_URL__ || 'https://pwin.onrender.com')
-  : 'https://pwin.onrender.com';
+const getBackend = () => getBackendBaseUrl();
 
 // Record a like or unlike event from the video player
 export async function recordLike(event) {
@@ -44,7 +42,7 @@ export async function recordLike(event) {
     try {
       const token = localStorage.getItem('regaarder_token');
       if (token) {
-        await fetch(`${BACKEND_URL}/likes`, {
+        await fetch(`${getBackend()}/likes`, {
           method: event.liked ? 'POST' : 'DELETE',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ videoId: event.videoId })
@@ -103,12 +101,54 @@ export default function LikedVideos() {
     return () => { window.removeEventListener('likes:updated', onUpdate); clearInterval(t); };
   }, []);
 
+  // Hydrate liked videos from backend on mount to recover data after browser clear or device switch
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = localStorage.getItem('regaarder_token');
+        if (!token) return;
+        const res = await fetch(`${getBackend()}/likes`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const backendLikes = Array.isArray(data.likes) ? data.likes : (Array.isArray(data) ? data : []);
+        if (backendLikes.length === 0) return;
+
+        // Merge: add any backend likes not already in localStorage
+        const local = loadLikedVideos();
+        const localIds = new Set(local.map(l => l.videoId));
+        let changed = false;
+        for (const bl of backendLikes) {
+          const vid = bl.videoId || bl.video_id;
+          if (vid && !localIds.has(vid)) {
+            local.push({
+              videoId: vid,
+              url: bl.url || bl.videoUrl || null,
+              title: bl.title || null,
+              creatorName: bl.creatorName || bl.author || null,
+              imageUrl: bl.imageUrl || bl.thumbnail || null,
+              likedAt: bl.likedAt || bl.created_at || new Date().toISOString()
+            });
+            changed = true;
+          }
+        }
+        if (changed) {
+          local.sort((a, b) => String(b.likedAt).localeCompare(String(a.likedAt)));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(local.slice(0, 500)));
+          setItems(loadLikedVideos());
+          console.log('[LikedVideos] Hydrated from backend:', backendLikes.length, 'server likes');
+        }
+      } catch (e) { console.warn('[LikedVideos] Backend hydration failed:', e); }
+    })();
+  }, []);
+
   // Fetch published videos so we can show thumbnails for liked entries in real-time
   useEffect(() => {
     let mounted = true;
     const fetchIndex = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/videos`).catch(() => null);
+        const res = await fetch(`${getBackend()}/videos`).catch(() => null);
         const json = res && res.ok ? await res.json() : null;
         const vids = (json && json.videos) || [];
         const idx = {};

@@ -382,6 +382,61 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Regaarder backend running' });
 });
 
+// ── Startup data cleanup: deduplicate requests.json ──
+// Remove duplicate IDs keeping the newest (by updatedAt/createdAt) version.
+(function deduplicateRequests() {
+  try {
+    const requests = readRequests();
+    const seen = new Map();
+    for (const r of requests) {
+      if (!r || !r.id) continue;
+      if (seen.has(r.id)) {
+        const existing = seen.get(r.id);
+        const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+        const newTime = new Date(r.updatedAt || r.createdAt || 0).getTime();
+        if (newTime > existingTime) seen.set(r.id, r);
+      } else {
+        seen.set(r.id, r);
+      }
+    }
+    const deduped = Array.from(seen.values());
+    if (deduped.length < requests.length) {
+      console.log(`[STARTUP] Deduplicated requests.json: ${requests.length} → ${deduped.length} (removed ${requests.length - deduped.length} duplicates)`);
+      writeRequests(deduped);
+    } else {
+      console.log(`[STARTUP] requests.json clean: ${requests.length} entries, no duplicates`);
+    }
+  } catch (e) {
+    console.error('[STARTUP] deduplicateRequests error', e);
+  }
+})();
+
+// Also deduplicate videos.json at startup
+(function deduplicateVideos() {
+  try {
+    const videos = readVideos();
+    const seen = new Map();
+    for (const v of videos) {
+      if (!v || !v.id) continue;
+      if (seen.has(v.id)) {
+        const existing = seen.get(v.id);
+        const existingTime = new Date(existing.updatedAt || existing.createdAt || existing.publishedAt || 0).getTime();
+        const newTime = new Date(v.updatedAt || v.createdAt || v.publishedAt || 0).getTime();
+        if (newTime > existingTime) seen.set(v.id, v);
+      } else {
+        seen.set(v.id, v);
+      }
+    }
+    const deduped = Array.from(seen.values());
+    if (deduped.length < videos.length) {
+      console.log(`[STARTUP] Deduplicated videos.json: ${videos.length} → ${deduped.length} (removed ${videos.length - deduped.length} duplicates)`);
+      writeVideos(deduped);
+    }
+  } catch (e) {
+    console.error('[STARTUP] deduplicateVideos error', e);
+  }
+})();
+
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', version: '2.0.0' });
 });
@@ -1813,6 +1868,11 @@ app.get('/requests', (req, res) => {
   try {
     let requests = readRequests();
     console.log(`DEBUG /requests: Read ${requests.length} requests from file`);
+
+    // Filter out hidden and deleted requests server-side
+    requests = requests.filter(r => !r.hidden && !r.deleted);
+    console.log(`DEBUG /requests: After hidden/deleted filter: ${requests.length}`);
+
     const users = readUsers();
     
     // Enrich first (needed for some scores)
@@ -2563,6 +2623,8 @@ app.get('/videos', (req, res) => {
 
     console.log(`GET /videos feed=${feed} category=${category} user=${user ? user.id : 'anon'}`);
 
+    // Filter out hidden and deleted videos server-side
+    videos = videos.filter(v => !v.hidden && !v.deleted);
     // Filter by category if provided
     if (category && category !== 'All') {
         videos = videos.filter(v => v.category === category);
@@ -2658,6 +2720,12 @@ app.get('/videos/:id', (req, res) => {
     
     if (!video) {
       console.log(`Video not found: ${videoId}`);
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Don't serve hidden/deleted videos via direct ID lookup
+    if (video.hidden || video.deleted) {
+      console.log(`Video ${videoId} is hidden/deleted`);
       return res.status(404).json({ error: 'Video not found' });
     }
     
@@ -3438,6 +3506,39 @@ app.get('/likes/status', (req, res) => {
 });
 
 // Like/unlike endpoints (require auth)
+
+// GET /likes — Return all video IDs liked by the authenticated user
+app.get('/likes', authMiddleware, (req, res) => {
+  try {
+    const userId = req.user.id;
+    const reactions = readVideoReactions();
+    const videos = readVideos();
+    const likedVideoIds = [];
+
+    // Iterate over all video reaction entries and collect where this user has a like
+    for (const [videoId, likers] of Object.entries(reactions.likes || {})) {
+      if (likers && likers[userId]) {
+        likedVideoIds.push(videoId);
+      }
+    }
+
+    // Enrich with video metadata for the frontend to rebuild its liked videos list
+    const likes = likedVideoIds.map(vid => {
+      const v = videos.find(x => String(x.id) === String(vid));
+      return {
+        videoId: vid,
+        url: v ? (v.videoUrl || v.url || null) : null,
+        title: v ? (v.title || null) : null,
+        creatorName: v ? (v.author || v.creatorName || null) : null,
+        imageUrl: v ? (v.thumbnail || v.imageUrl || null) : null,
+        likedAt: new Date().toISOString()
+      };
+    });
+
+    return res.json({ success: true, likes });
+  } catch (err) { console.error('GET /likes error', err); return res.status(500).json({ error: 'Server error' }); }
+});
+
 app.post('/likes', authMiddleware, (req, res) => {
   try {
     const { videoId } = req.body || {};

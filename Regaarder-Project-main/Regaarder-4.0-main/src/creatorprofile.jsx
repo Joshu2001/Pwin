@@ -291,6 +291,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
     const [isCopied, setIsCopied] = useState(false);
     const fileInputRef = useRef(null);
     const [previewDocument, setPreviewDocument] = useState(null);
+    const [localPreviewImage, setLocalPreviewImage] = useState(null);
     const [showPrice, setShowPrice] = useState(true);
     const [pricePulse, setPricePulse] = useState(true);
     const [showPriceHint, setShowPriceHint] = useState(false);
@@ -493,12 +494,15 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
 
         const isImage = file.type && file.type.startsWith('image/') || hasValidExt;
 
-        // Optimistic local preview: images show as avatar, documents show filename/icon
+        // Optimistic local preview: show image immediately via base64 data URL
+        // IMPORTANT: Do NOT persist blob/data URLs to localStorage or backend — only use for local display
         try {
             if (isImage) {
-                const imageUrl = URL.createObjectURL(file);
-                // update parent profile via callback (ProfileHeader doesn't own setProfile)
-                onUpdate('image', imageUrl);
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setLocalPreviewImage(reader.result);
+                };
+                reader.readAsDataURL(file);
                 setPreviewDocument(null);
             } else {
                 setPreviewDocument({ name: file.name, type: file.type });
@@ -535,31 +539,14 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
             if (data && data.url) {
                 // If backend tells us it's an image, persist to `image`; otherwise persist as `document`
                 if (data.mimeType && data.mimeType.startsWith('image/')) {
-                    // persist via parent update
+                    // Now persist the REAL URL via parent update (saves to state + localStorage + backend)
                     onUpdate('image', data.url);
-                    // persist via creator/complete
-                    try {
-                        await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                            body: JSON.stringify({ image: data.url })
-                        });
-                    } catch (e) {
-                        console.warn('Failed to persist image update', e);
-                    }
+                    // Clear the local preview since the real URL is now set
+                    setLocalPreviewImage(null);
                 } else {
                     // non-image document uploaded: save as `document` field and show filename
                     onUpdate('document', data.url);
                     setPreviewDocument(prev => ({ ...(prev || {}), url: data.url }));
-                    try {
-                        await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/complete`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                            body: JSON.stringify({ document: data.url })
-                        });
-                    } catch (e) {
-                        console.warn('Failed to persist document update', e);
-                    }
                 }
                 if (onShowToast) onShowToast({ title: getTranslation("Upload Successful", selectedLanguage), subtitle: getTranslation("Your profile image has been updated", selectedLanguage) });
             } else {
@@ -698,8 +685,8 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                                             <FileText className="w-8 h-8 text-gray-700" />
                                             <div className="text-xs text-gray-700 mt-1 break-words max-w-full">{previewDocument.name}</div>
                                         </div>
-                                    ) : (profile.image ? (
-                                        <img src={profile.image} alt="Profile" className="w-full h-full object-cover" />
+                                    ) : ((localPreviewImage || profile.image) ? (
+                                        <img src={localPreviewImage || profile.image} alt="Profile" className="w-full h-full object-cover" />
                                     ) : (
                                         <img src="https://placehold.co/400x400/e2e8f0/1e293b?text=User" alt="Profile" className="w-full h-full object-cover" />
                                     ))}
@@ -3740,6 +3727,11 @@ const App = () => {
     const handleUpdateProfile = async (field, value) => {
         // Update local state immediately
         setProfile(prev => ({ ...prev, [field]: value }));
+        
+        // Never persist blob: or data: URLs to localStorage or backend — they are temporary
+        const isTempUrl = typeof value === 'string' && (value.startsWith('blob:') || value.startsWith('data:'));
+        if (isTempUrl) return;
+        
         // Persist locally so preferences survive refresh and offline
         try {
             const existing = JSON.parse(localStorage.getItem('regaarder_user') || '{}');

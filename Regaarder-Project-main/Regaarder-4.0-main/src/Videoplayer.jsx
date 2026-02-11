@@ -725,6 +725,24 @@ const VideoPlayer = () => {
 				setIsInPiPMode(isInPip);
 				setControlsVisible(!isInPip);
 			} catch { }
+
+			// When entering PiP, re-send play commands to prevent YouTube blank screen
+			if (isInPip) {
+				try {
+					const ytIframe = document.querySelector('.vx-video-area iframe');
+					if (ytIframe && ytIframe.contentWindow) {
+						setTimeout(() => {
+							try { ytIframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*'); } catch {}
+						}, 300);
+						setTimeout(() => {
+							try { ytIframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*'); } catch {}
+						}, 1000);
+						setTimeout(() => {
+							try { ytIframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*'); } catch {}
+						}, 2500);
+					}
+				} catch {}
+			}
 		};
 		window.addEventListener('pipModeChanged', onAndroidPiP);
 
@@ -4814,6 +4832,26 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 				setIsInPiPMode(isInPip);
 				setControlsVisible(!isInPip);
 			} catch { }
+
+			// When entering PiP, re-send play commands to prevent blank screen
+			// YouTube iframes can stall when the viewport shrinks; resending play fixes it
+			if (isInPip) {
+				try {
+					if (ytIframeRef && ytIframeRef.current && ytIframeRef.current.contentWindow) {
+						const iframe = ytIframeRef.current;
+						// Staggered play commands to handle YouTube's rendering delays in small viewport
+						setTimeout(() => {
+							try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*'); } catch {}
+						}, 300);
+						setTimeout(() => {
+							try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*'); } catch {}
+						}, 1000);
+						setTimeout(() => {
+							try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*'); } catch {}
+						}, 2500);
+					}
+				} catch {}
+			}
 		};
 		window.addEventListener('pipModeChanged', onAndroidPiP);
 
@@ -5653,9 +5691,10 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					.vx-pip-active .vx-video-area { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; flex: none !important; margin: 0 !important; padding: 0 !important; border-radius: 0 !important; z-index: 1 !important; overflow: hidden !important; }
 					/* Force ALL wrapper divs to fill 100% — transparent bg prevents black-layer stacking on YouTube */
 					.vx-pip-active .vx-video-area div:not(.vx-pip-yt-cover) { position: absolute !important; inset: 0 !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; transform: none !important; border-radius: 0 !important; max-width: 100% !important; max-height: 100% !important; background: transparent !important; }
-					.vx-pip-active .vx-video-area video { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: contain !important; border-radius: 0 !important; }
-					/* YouTube iframe: no transform in PiP — scale causes white screen in tiny viewport. Branding is invisible at PiP size. */
-					.vx-pip-active .vx-video-area iframe { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; transform: none !important; }
+					/* Native video: use cover to fill PiP window completely */
+					.vx-pip-active .vx-video-area video { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; border-radius: 0 !important; }
+					/* YouTube iframe: no transform in PiP — scale causes white screen in tiny viewport. Use slightly larger size to avoid blank edges. */
+					.vx-pip-active .vx-video-area iframe { position: absolute !important; inset: -2px !important; width: calc(100% + 4px) !important; height: calc(100% + 4px) !important; border-radius: 0 !important; transform: none !important; border: none !important; background: #000 !important; }
 					.vx-pip-active .vx-video-area button { display: none !important; }
 					.vx-pip-active .vx-video-area svg { display: none !important; }
 					.vx-pip-active .vx-video-area span { display: none !important; }
@@ -5668,9 +5707,9 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 						.pip-ready > *:not(.vx-video-area):not(.vx-overlay-ads) { display: none !important; }
 						.pip-ready .vx-video-area { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; flex: none !important; margin: 0 !important; padding: 0 !important; border-radius: 0 !important; z-index: 1 !important; overflow: hidden !important; }
 						.pip-ready .vx-video-area div:not(.vx-pip-yt-cover) { position: absolute !important; inset: 0 !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; transform: none !important; border-radius: 0 !important; max-width: 100% !important; max-height: 100% !important; background: transparent !important; }
-						.pip-ready .vx-video-area video { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: contain !important; border-radius: 0 !important; }
-						/* YouTube iframe: no transform in PiP — scale causes white screen in tiny viewport */
-						.pip-ready .vx-video-area iframe { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; transform: none !important; }
+						.pip-ready .vx-video-area video { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; border-radius: 0 !important; }
+						/* YouTube iframe: slightly oversized to prevent blank edges at PiP size */
+						.pip-ready .vx-video-area iframe { position: absolute !important; inset: -2px !important; width: calc(100% + 4px) !important; height: calc(100% + 4px) !important; border-radius: 0 !important; transform: none !important; border: none !important; background: #000 !important; }
 						.pip-ready .vx-video-area button { display: none !important; }
 						.pip-ready .vx-video-area svg { display: none !important; }
 						.pip-ready .vx-video-area span { display: none !important; }

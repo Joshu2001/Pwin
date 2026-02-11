@@ -7,6 +7,7 @@ import {
     Home, FileText, Edit, Grid, File, CheckCircle, Clock3, Check, Lock, Link as LinkIcon, ChevronDown, Pencil // Added Check icon for save
 } from 'lucide-react';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
+import { resolveMediaUrl } from './utils/media.js';
 
 // Use the app accent via CSS variable for dynamic theming
 const GOLD_COLOR_SHADE = 'var(--color-gold)';
@@ -350,10 +351,15 @@ const App = () => {
                     const data = await res.json();
                     if (data && data.user) {
                         const u = data.user;
+                        // Resolve image URL: use resolveMediaUrl for consistent URL handling
                         if (u.image) {
                             try {
-                                const url = new URL(u.image);
-                                u.image = url.toString();
+                                // Skip blob URLs (they won't work across sessions)
+                                if (String(u.image).startsWith('blob:') || String(u.image).startsWith('data:')) {
+                                    u.image = '';
+                                } else {
+                                    u.image = resolveMediaUrl(u.image);
+                                }
                             } catch (e) { }
                         }
                         setProfile({
@@ -555,9 +561,17 @@ const App = () => {
                     const data = await res.json();
                     if (data && data.url) {
                         setProfile(prev => ({ ...prev, avatarUrl: data.url }));
+                        // Persist the real URL to localStorage so it survives page reloads
+                        try {
+                            const existing = JSON.parse(localStorage.getItem('regaarder_user') || '{}');
+                            existing.image = data.url;
+                            localStorage.setItem('regaarder_user', JSON.stringify(existing));
+                        } catch (e) { console.warn('Failed to persist image to localStorage', e); }
                     }
                 } else {
                     console.error('Upload failed');
+                    // Revert optimistic preview on failure
+                    setProfile(prev => ({ ...prev, avatarUrl: prev.avatarUrl }));
                 }
             } catch (e) {
                 console.error('Upload error:', e);
