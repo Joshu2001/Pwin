@@ -11,8 +11,9 @@ COPY Regaarder-Project-main/Regaarder-4.0-main/backend ./backend
 
 WORKDIR /app/backend
 ENV NODE_ENV=production
-ENV PORT=8080
 
-EXPOSE 8080
+# Railway injects PORT dynamically; fallback to 8080 locally
+ENV PORT=${PORT:-8080}
+EXPOSE ${PORT}
 
 CMD ["node", "server.js"]
