@@ -1,1 +1,0 @@
-const r={},e="https://regaarder.com",n=()=>{if("undefined"!=typeof window&&window.__BACKEND_URL__)return window.__BACKEND_URL__;const e=void 0!==import.meta&&r?"https://regaarder-pwin.onrender.com":null;return e||"https://regaarder-pwin.onrender.com"};export{e as W,n as g};

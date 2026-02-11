@@ -17,11 +17,11 @@ const getBackendUrl = () => {
 
   // Default to deployed backend
   if (typeof window !== 'undefined') {
-    return 'https://regaarder-pwin.onrender.com';
+    return 'https://pwin-copy-production.up.railway.app';
   }
 
   // Fallback
-  return 'https://regaarder-pwin.onrender.com';
+  return 'https://pwin-copy-production.up.railway.app';
 };
 
 /**

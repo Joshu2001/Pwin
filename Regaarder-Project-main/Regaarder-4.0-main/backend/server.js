@@ -22,7 +22,7 @@ app.use(bodyParser.json());
 const isRewritableHost = (hostname) => {
   if (!hostname) return false;
   const h = hostname.toLowerCase();
-  return h === 'localhost' || h === '127.0.0.1' || h === 'pwin.onrender.com';
+  return h === 'localhost' || h === '127.0.0.1' || h === 'pwin.onrender.com' || h === 'regaarder-pwin.onrender.com' || h === 'pwin-copy-production.up.railway.app';
 };
 
 const normalizeUrlString = (value, baseUrl) => {
