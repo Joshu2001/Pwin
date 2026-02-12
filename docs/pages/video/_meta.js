@@ -1,0 +1,6 @@
+export default {
+  index: "Overview",
+  player: "Video Player",
+  sharing: "Sharing & Deep Links",
+  android: "Android Integration"
+}

@@ -1,0 +1,8 @@
+export default {
+  index: "Overview",
+  boosts: "Boosts System",
+  metrics: "Metrics & Analytics",
+  overlays: "Video Overlays",
+  requests: "Content Requests",
+  welcome: "First Time User"
+}

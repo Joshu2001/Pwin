@@ -1,0 +1,6 @@
+export default {
+  index: "Overview",
+  dashboard: "Staff Dashboard",
+  moderation: "Moderation",
+  analytics: "Analytics"
+}

@@ -1,0 +1,7 @@
+export default {
+  index: "Overview",
+  flow: "Payment Flow",
+  implementation: "Implementation Guide",
+  testing: "Testing Guide",
+  checklist: "Deployment Checklist"
+}

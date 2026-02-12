@@ -1,0 +1,7 @@
+export default {
+  index: "Overview",
+  "quick-start": "Quick Start",
+  "visual-guide": "Visual Guide",
+  implementation: "Implementation",
+  deployment: "Deployment"
+}
