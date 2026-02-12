@@ -17,7 +17,6 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:supportsPictureInPicture="true"
             android:exported="true">
 
             <intent-filter>
@@ -25,7 +24,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- App Links (exclude /share so OG pages stay on web) -->
+            <!-- App Links -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -40,21 +39,6 @@
                 <data android:scheme="https" android:host="www.regaarder.com" android:pathPrefix="/share/video" />
                 <data android:scheme="https" android:host="www.regaarder.com" android:pathPrefix="/requests" />
                 <data android:scheme="https" android:host="www.regaarder.com" android:pathPattern="/@.*" />
-
-                <!-- Add HTTP support -->
-                <data android:scheme="http" android:host="regaarder.com" android:pathPrefix="/videoplayer" />
-                <data android:scheme="http" android:host="regaarder.com" android:pathPrefix="/share/video" />
-                <data android:scheme="http" android:host="www.regaarder.com" android:pathPrefix="/videoplayer" />
-                <data android:scheme="http" android:host="www.regaarder.com" android:pathPrefix="/share/video" />
-            </intent-filter>
-
-            <!-- Custom Protocols (Guaranteed to open app, bypassing PWA) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="regaarder" />
-                <data android:scheme="com.regaarder.app" />
             </intent-filter>
 
         </activity>
