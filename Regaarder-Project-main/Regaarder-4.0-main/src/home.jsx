@@ -3622,6 +3622,13 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const handleOpenShare = (video) => {
         setShareVideo(video);
         setIsShareOpen(true);
+        // Increment share count on backend
+        if (video && video.id) {
+            try {
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}/share`, { method: 'POST' }).catch(() => {});
+            } catch (e) {}
+        }
     };
 
     const handleCloseShare = () => {
@@ -3931,8 +3938,12 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     ...v,
                                     views: updated.views ?? v.views,
                                     likes: updated.likes ?? v.likes,
+                                    dislikes: updated.dislikes ?? v.dislikes,
                                     comments: updated.comments ?? v.comments,
-                                    bookmarks: updated.bookmarks ?? v.bookmarks
+                                    bookmarks: updated.bookmarks ?? v.bookmarks,
+                                    shares: updated.shares ?? v.shares,
+                                    retentionRate: updated.retentionRate ?? v.retentionRate,
+                                    retentionPercentage: updated.retentionPercentage ?? v.retentionPercentage
                                 };
                             }
                             return v;
@@ -4276,7 +4287,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 // Fetch the latest video data from backend to ensure ads are up-to-date
                                 let freshVideo = video;
                                 try {
-                                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+                                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                                    // Increment view count on every click/open
+                                    fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}/view`, { method: 'POST' }).catch(() => {});
                                     const freshResponse = await fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}`);
                                     if (freshResponse.ok) {
                                         const freshData = await freshResponse.json();

@@ -6,6 +6,9 @@ const path = require('path');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
+const crypto = require('crypto');
+let nodemailer;
+try { nodemailer = require('nodemailer'); } catch (e) { console.warn('nodemailer not installed – forgot-password emails disabled'); }
 
 // ── Persistent data directory ──
 // On Railway set DATA_DIR=/data and mount a volume there so JSON files + uploads
@@ -2498,6 +2501,23 @@ app.get('/share/profile/:key', (req, res) => {
   }
 });
 
+// --- Share count increment ---
+app.post('/videos/:id/share', (req, res) => {
+  try {
+    const videoId = String(req.params.id || '').trim();
+    if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
+    const videos = readVideos();
+    const idx = videos.findIndex(v => String(v.id) === videoId);
+    if (idx === -1) return res.status(404).json({ error: 'Video not found' });
+    videos[idx].shares = String(Number(videos[idx].shares || 0) + 1);
+    writeVideos(videos);
+    return res.json({ success: true, shares: Number(videos[idx].shares) });
+  } catch (err) {
+    console.error('POST /videos/:id/share error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Upload overlay media (video/image/gif) - for staff dashboard
 app.post('/staff/upload-overlay-media', (req, res) => {
   upload.single('media')(req, res, function (err) {
@@ -3063,6 +3083,121 @@ app.post('/me/password', authMiddleware, async (req, res) => {
   }
 });
 
+// --- Forgot Password / Reset Password ---
+// In-memory store for reset codes (cleared on restart — acceptable for small-scale app)
+const resetCodes = new Map(); // email -> { code, expiresAt }
+
+// Configure SMTP transporter from env vars
+function getMailTransporter() {
+  if (!nodemailer) return null;
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  if (!host || !user || !pass) return null;
+  return nodemailer.createTransport({
+    host,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: (process.env.SMTP_SECURE === 'true'),
+    auth: { user, pass }
+  });
+}
+
+// Step 1: Request a password reset code
+app.post('/forgot-password', async (req, res) => {
+  try {
+    const { email: rawEmail } = req.body || {};
+    if (!rawEmail) return res.status(400).json({ error: 'Email is required' });
+    const emailLower = String(rawEmail).trim().toLowerCase();
+    const users = readUsers();
+    const user = users.find(u => String(u.email || '').toLowerCase() === emailLower);
+    // Always respond success to prevent email enumeration
+    if (!user) return res.json({ success: true, message: 'If an account exists, a code was sent' });
+
+    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    resetCodes.set(emailLower, { code, expiresAt });
+
+    const transporter = getMailTransporter();
+    if (transporter) {
+      const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
+      await transporter.sendMail({
+        from: `"Regaarder" <${fromAddr}>`,
+        to: emailLower,
+        subject: 'Your Regaarder Password Reset Code',
+        text: `Your password reset code is: ${code}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, ignore this email.`,
+        html: `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:20px">
+          <h2 style="color:#333">Password Reset</h2>
+          <p>Your verification code is:</p>
+          <div style="font-size:32px;font-weight:bold;letter-spacing:8px;text-align:center;padding:20px;background:#f5f5f5;border-radius:12px;margin:16px 0">${code}</div>
+          <p style="color:#666;font-size:14px">This code expires in 10 minutes.</p>
+          <p style="color:#999;font-size:12px">If you didn't request this, ignore this email.</p>
+        </div>`
+      });
+      console.log(`Reset code sent to ${emailLower}`);
+    } else {
+      // No email configured — log code to console (dev fallback)
+      console.log(`[DEV] Reset code for ${emailLower}: ${code}`);
+    }
+
+    return res.json({ success: true, message: 'If an account exists, a code was sent' });
+  } catch (err) {
+    console.error('POST /forgot-password error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Step 2: Verify the reset code
+app.post('/verify-reset-code', (req, res) => {
+  try {
+    const { email: rawEmail, code } = req.body || {};
+    if (!rawEmail || !code) return res.status(400).json({ error: 'Email and code are required' });
+    const emailLower = String(rawEmail).trim().toLowerCase();
+    const stored = resetCodes.get(emailLower);
+    if (!stored) return res.status(400).json({ error: 'No reset code found. Request a new one.' });
+    if (Date.now() > stored.expiresAt) {
+      resetCodes.delete(emailLower);
+      return res.status(400).json({ error: 'Code expired. Request a new one.' });
+    }
+    if (String(stored.code) !== String(code).trim()) {
+      return res.status(400).json({ error: 'Incorrect code' });
+    }
+    // Code is valid — generate a one-time reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    resetCodes.set(emailLower, { ...stored, resetToken, tokenExpiresAt: Date.now() + 5 * 60 * 1000 });
+    return res.json({ success: true, resetToken });
+  } catch (err) {
+    console.error('POST /verify-reset-code error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Step 3: Set new password with reset token
+app.post('/reset-password', async (req, res) => {
+  try {
+    const { email: rawEmail, resetToken, newPassword } = req.body || {};
+    if (!rawEmail || !resetToken || !newPassword) return res.status(400).json({ error: 'Missing fields' });
+    if (String(newPassword).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const emailLower = String(rawEmail).trim().toLowerCase();
+    const stored = resetCodes.get(emailLower);
+    if (!stored || stored.resetToken !== resetToken) return res.status(400).json({ error: 'Invalid or expired reset token' });
+    if (Date.now() > (stored.tokenExpiresAt || 0)) {
+      resetCodes.delete(emailLower);
+      return res.status(400).json({ error: 'Reset token expired. Start over.' });
+    }
+    const users = readUsers();
+    const idx = users.findIndex(u => String(u.email || '').toLowerCase() === emailLower);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+    const hash = await bcrypt.hash(newPassword, 10);
+    users[idx] = { ...users[idx], passwordHash: hash, passwordChangedAt: new Date().toISOString() };
+    writeUsers(users);
+    resetCodes.delete(emailLower);
+    return res.json({ success: true, message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('POST /reset-password error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // --- Watch History storage ---
 const WATCH_FILE = path.join(PERSIST_DIR, 'watchhistory.json');
 function readWatchHistory() {
@@ -3097,45 +3232,68 @@ app.post('/watch/history', (req, res) => {
     const ts = timestamp ? (typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString()) : new Date().toISOString();
     const list = readWatchHistory();
     const idx = list.findIndex(e => String(e.videoId) === String(videoId) && String(e.userId || 'anonymous') === String(userId));
-    const isNewWatch = idx < 0; // Track if this is a new watch entry
     const entry = { videoId, userId, lastWatchedTime: Number(lastWatchedTime) || 0, duration: Number(duration) || 0, timestamp: ts, isComplete: Boolean(isComplete) };
     if (idx >= 0) list[idx] = { ...list[idx], ...entry }; else list.unshift(entry);
     if (list.length > 2000) list.splice(2000);
     writeWatchHistory(list);
-    
-    // Increment view count on video only if this is a new watch (not an update to existing watch)
-    if (isNewWatch) {
-      try {
-        const videos = readVideos();
-        const vidIdx = videos.findIndex(v => String(v.id) === String(videoId));
-        if (vidIdx !== -1) {
-          videos[vidIdx].views = String(Number(videos[vidIdx].views || 0) + 1);
-          writeVideos(videos);
-          
-          // Also increment the creator's total views in the user object
-          const video = videos[vidIdx];
-          if (video.authorId || video.author || video.authorEmail) {
-            const users = readUsers();
-            const creatorIdx = users.findIndex(u => 
-              u.id === video.authorId || 
-              u.email === video.authorEmail ||
-              (u.name && u.name.toLowerCase() === (video.author || '').toLowerCase())
-            );
-            if (creatorIdx !== -1) {
-              users[creatorIdx].views = (users[creatorIdx].views || 0) + 1;
-              writeUsers(users);
-            }
+
+    // Compute aggregate retention rate for this video
+    try {
+      const videoDur = Number(duration) || 0;
+      if (videoDur > 0) {
+        const allWatches = list.filter(e => String(e.videoId) === String(videoId) && Number(e.duration) > 0);
+        if (allWatches.length > 0) {
+          const totalWatched = allWatches.reduce((sum, e) => sum + (Number(e.lastWatchedTime) || 0), 0);
+          const totalDuration = allWatches.reduce((sum, e) => sum + (Number(e.duration) || 0), 0);
+          const retPct = totalDuration > 0 ? Math.min(100, Math.round((totalWatched / totalDuration) * 100)) : 0;
+          const videos = readVideos();
+          const vi = videos.findIndex(v => String(v.id) === String(videoId));
+          if (vi !== -1) {
+            videos[vi].retentionRate = String(retPct);
+            videos[vi].retentionPercentage = `${retPct}%`;
+            writeVideos(videos);
           }
         }
-      } catch (e) {
-        console.warn('Failed to increment video views:', e);
       }
-    }
+    } catch (e) { console.warn('Retention rate calc error:', e); }
     
     if (user) updateStreak(user.id);
     return res.json({ success: true });
   } catch (err) {
     console.error('POST /watch/history error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Increment view count every time a video is opened/clicked
+app.post('/videos/:id/view', (req, res) => {
+  try {
+    const videoId = String(req.params.id || '').trim();
+    if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
+    const videos = readVideos();
+    const idx = videos.findIndex(v => String(v.id) === videoId);
+    if (idx === -1) return res.status(404).json({ error: 'Video not found' });
+    videos[idx].views = String(Number(videos[idx].views || 0) + 1);
+    writeVideos(videos);
+    // Also increment creator's total views
+    try {
+      const video = videos[idx];
+      if (video.authorId || video.author || video.authorEmail) {
+        const users = readUsers();
+        const ci = users.findIndex(u =>
+          u.id === video.authorId ||
+          u.email === video.authorEmail ||
+          (u.name && u.name.toLowerCase() === (video.author || '').toLowerCase())
+        );
+        if (ci !== -1) {
+          users[ci].views = (users[ci].views || 0) + 1;
+          writeUsers(users);
+        }
+      }
+    } catch (e) { console.warn('Creator view increment error:', e); }
+    return res.json({ success: true, views: Number(videos[idx].views) });
+  } catch (err) {
+    console.error('POST /videos/:id/view error', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });

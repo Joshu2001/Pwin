@@ -27,9 +27,17 @@ import { X, Eye, EyeOff, Lock } from 'lucide-react';
 
 const AuthModal = ({ onClose, onLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
-  const [view, setView] = useState('login'); // 'login', 'signup', 'forgotPassword'
+  const [view, setView] = useState('login'); // 'login', 'signup', 'forgotPassword', 'resetCode', 'newPassword'
   const selectedLanguage = (typeof window !== 'undefined') ? window.localStorage.getItem('regaarder_language') || 'English' : 'English';
 
+  // Forgot password state
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [newPasswordValue, setNewPasswordValue] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
 
   const [rememberMe, setRememberMe] = useState(() => {
     try { return localStorage.getItem('regaarder_remember') === 'true'; } catch { return false; }
@@ -230,7 +238,60 @@ const AuthModal = ({ onClose, onLogin }) => {
               <Lock className="w-8 h-8 text-[var(--color-gold)]" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">{getTranslation('Reset Password', selectedLanguage)}</h2>
-            <p className="text-sm text-gray-500 mb-8">{getTranslation('Enter the 6-digit code sent to your email', selectedLanguage)}</p>
+            <p className="text-sm text-gray-500 mb-6">{getTranslation('Enter your email to receive a verification code', selectedLanguage)}</p>
+
+            <div className="text-left space-y-4">
+              <div>
+                <label className="block text-sm text-gray-500 mb-1.5">{getTranslation('Email Address', selectedLanguage)}</label>
+                <FocusInput
+                  type="email"
+                  placeholder="alex@example.com"
+                  value={resetEmail}
+                  onChange={(e) => { setResetEmail(e.target.value); setResetError(''); }}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none transition-colors text-gray-700 placeholder-gray-400"
+                />
+              </div>
+
+              {resetError && <div className="text-xs text-red-500">{resetError}</div>}
+
+              <div className="pt-2 space-y-3">
+                <button
+                  onClick={async () => {
+                    if (!resetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail)) {
+                      setResetError(getTranslation('Enter a valid email address', selectedLanguage));
+                      return;
+                    }
+                    setResetLoading(true); setResetError('');
+                    try {
+                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                      const resp = await fetch(`${BACKEND}/forgot-password`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: resetEmail })
+                      });
+                      const data = await resp.json();
+                      if (!resp.ok) throw new Error(data.error || 'Failed');
+                      setView('resetCode');
+                    } catch (e) { setResetError(e.message || 'Network error'); }
+                    finally { setResetLoading(false); }
+                  }}
+                  disabled={resetLoading}
+                  className="w-full py-3.5 text-gray-800 font-medium rounded-xl shadow-sm transition-colors"
+                  style={{ backgroundColor: 'rgba(var(--color-gold-rgb,203,138,0),0.18)', border: '1px solid rgba(var(--color-gold-rgb,203,138,0),0.12)' }}
+                  type="button"
+                >
+                  {resetLoading ? getTranslation('Please wait...', selectedLanguage) : getTranslation('Send Code', selectedLanguage)}
+                </button>
+                <button onClick={() => { setView('login'); setResetError(''); }} className="w-full py-3.5 bg-white border border-gray-200 text-gray-500 font-medium rounded-xl hover:bg-gray-50 transition-colors" type="button">{getTranslation('Cancel', selectedLanguage)}</button>
+              </div>
+            </div>
+          </div>
+        ) : view === 'resetCode' ? (
+          <div className="text-center pt-2">
+            <div className="flex justify-center mb-4">
+              <Lock className="w-8 h-8 text-[var(--color-gold)]" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">{getTranslation('Enter Verification Code', selectedLanguage)}</h2>
+            <p className="text-sm text-gray-500 mb-6">{getTranslation('Enter the 6-digit code sent to your email', selectedLanguage)}</p>
 
             <div className="text-left space-y-4">
               <div>
@@ -238,21 +299,129 @@ const AuthModal = ({ onClose, onLogin }) => {
                 <FocusInput
                   type="text"
                   placeholder="000000"
+                  maxLength={6}
+                  value={resetCode}
+                  onChange={(e) => { setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setResetError(''); }}
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-center text-xl tracking-widest focus:outline-none transition-colors text-gray-700 placeholder-gray-400"
                 />
               </div>
 
               <div className="bg-[var(--color-neutral-light-bg,#FFF9E6)] p-4 rounded-xl border flex items-start space-x-3" style={{ borderColor: 'rgba(var(--color-gold-rgb,203,138,0),0.12)' }}>
-                  <Lock className="w-4 h-4 text-[var(--color-gold)] flex-shrink-0 mt-1" />
-                  <div className="text-sm text-gray-600">
-                    <p className="mb-1">{getTranslation('A 6-digit code was sent to', selectedLanguage)} <span className="font-medium text-gray-800">you@example.com</span></p>
-                    <button style={{ color: 'var(--color-gold)' }} className="hover:underline font-medium" type="button">{getTranslation("Didn't receive it? Resend code", selectedLanguage)}</button>
-                  </div>
+                <Lock className="w-4 h-4 text-[var(--color-gold)] flex-shrink-0 mt-1" />
+                <div className="text-sm text-gray-600">
+                  <p className="mb-1">{getTranslation('A 6-digit code was sent to', selectedLanguage)} <span className="font-medium text-gray-800">{resetEmail}</span></p>
+                  <button
+                    onClick={async () => {
+                      setResetLoading(true); setResetError('');
+                      try {
+                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                        await fetch(`${BACKEND}/forgot-password`, {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ email: resetEmail })
+                        });
+                        setResetError(''); setResetSuccess(getTranslation('Code resent!', selectedLanguage));
+                        setTimeout(() => setResetSuccess(''), 3000);
+                      } catch (e) { setResetError('Failed to resend'); }
+                      finally { setResetLoading(false); }
+                    }}
+                    style={{ color: 'var(--color-gold)' }}
+                    className="hover:underline font-medium"
+                    type="button"
+                    disabled={resetLoading}
+                  >
+                    {getTranslation("Didn't receive it? Resend code", selectedLanguage)}
+                  </button>
                 </div>
+              </div>
 
-              <div className="pt-4 space-y-3">
-                <button className="w-full py-3.5 text-gray-800 font-medium rounded-xl shadow-sm transition-colors" style={{ backgroundColor: 'rgba(var(--color-gold-rgb,203,138,0),0.18)', border: '1px solid rgba(var(--color-gold-rgb,203,138,0),0.12)' }} type="button">{getTranslation('Verify Code', selectedLanguage)}</button>
-                <button onClick={() => setView('login')} className="w-full py-3.5 bg-white border border-gray-200 text-gray-500 font-medium rounded-xl hover:bg-gray-50 transition-colors" type="button">{getTranslation('Cancel', selectedLanguage)}</button>
+              {resetError && <div className="text-xs text-red-500">{resetError}</div>}
+              {resetSuccess && <div className="text-xs text-green-600">{resetSuccess}</div>}
+
+              <div className="pt-2 space-y-3">
+                <button
+                  onClick={async () => {
+                    if (resetCode.length !== 6) { setResetError(getTranslation('Enter the 6-digit code', selectedLanguage)); return; }
+                    setResetLoading(true); setResetError('');
+                    try {
+                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                      const resp = await fetch(`${BACKEND}/verify-reset-code`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: resetEmail, code: resetCode })
+                      });
+                      const data = await resp.json();
+                      if (!resp.ok) throw new Error(data.error || 'Invalid code');
+                      setResetToken(data.resetToken);
+                      setView('newPassword');
+                    } catch (e) { setResetError(e.message || 'Verification failed'); }
+                    finally { setResetLoading(false); }
+                  }}
+                  disabled={resetLoading || resetCode.length !== 6}
+                  className={`w-full py-3.5 font-medium rounded-xl shadow-sm transition-colors ${(resetLoading || resetCode.length !== 6) ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'text-gray-800'}`}
+                  style={(resetLoading || resetCode.length !== 6) ? {} : { backgroundColor: 'rgba(var(--color-gold-rgb,203,138,0),0.18)', border: '1px solid rgba(var(--color-gold-rgb,203,138,0),0.12)' }}
+                  type="button"
+                >
+                  {resetLoading ? getTranslation('Please wait...', selectedLanguage) : getTranslation('Verify Code', selectedLanguage)}
+                </button>
+                <button onClick={() => { setView('forgotPassword'); setResetCode(''); setResetError(''); }} className="w-full py-3.5 bg-white border border-gray-200 text-gray-500 font-medium rounded-xl hover:bg-gray-50 transition-colors" type="button">{getTranslation('Back', selectedLanguage)}</button>
+              </div>
+            </div>
+          </div>
+        ) : view === 'newPassword' ? (
+          <div className="text-center pt-2">
+            <div className="flex justify-center mb-4">
+              <Lock className="w-8 h-8 text-[var(--color-gold)]" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">{getTranslation('Set New Password', selectedLanguage)}</h2>
+            <p className="text-sm text-gray-500 mb-6">{getTranslation('Choose a strong password for your account', selectedLanguage)}</p>
+
+            <div className="text-left space-y-4">
+              <div>
+                <label className="block text-sm text-gray-500 mb-1.5">{getTranslation('New Password', selectedLanguage)}</label>
+                <div className="relative">
+                  <FocusInput
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="•••••••"
+                    value={newPasswordValue}
+                    onChange={(e) => { setNewPasswordValue(e.target.value); setResetError(''); }}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none transition-colors text-gray-700 placeholder-gray-400"
+                  />
+                  <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" type="button">
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                {newPasswordValue.length > 0 && newPasswordValue.length < 8 && (
+                  <div className="text-xs text-amber-500 mt-1">{getTranslation('Password must be at least 8 characters', selectedLanguage)}</div>
+                )}
+              </div>
+
+              {resetError && <div className="text-xs text-red-500">{resetError}</div>}
+              {resetSuccess && <div className="text-xs text-green-600">{resetSuccess}</div>}
+
+              <div className="pt-2 space-y-3">
+                <button
+                  onClick={async () => {
+                    if (newPasswordValue.length < 8) { setResetError(getTranslation('Password must be at least 8 characters', selectedLanguage)); return; }
+                    setResetLoading(true); setResetError('');
+                    try {
+                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                      const resp = await fetch(`${BACKEND}/reset-password`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: resetEmail, resetToken, newPassword: newPasswordValue })
+                      });
+                      const data = await resp.json();
+                      if (!resp.ok) throw new Error(data.error || 'Reset failed');
+                      setResetSuccess(getTranslation('Password updated! You can now log in.', selectedLanguage));
+                      setTimeout(() => { setView('login'); setResetEmail(''); setResetCode(''); setResetToken(''); setNewPasswordValue(''); setResetError(''); setResetSuccess(''); }, 2000);
+                    } catch (e) { setResetError(e.message || 'Reset failed'); }
+                    finally { setResetLoading(false); }
+                  }}
+                  disabled={resetLoading || newPasswordValue.length < 8}
+                  className={`w-full py-3.5 font-medium rounded-xl shadow-sm transition-colors ${(resetLoading || newPasswordValue.length < 8) ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : ''}`}
+                  style={(resetLoading || newPasswordValue.length < 8) ? {} : { backgroundColor: 'var(--color-gold)', color: 'black', boxShadow: '0 6px 18px rgba(var(--color-gold-rgb, 203,138,0), 0.12)' }}
+                  type="button"
+                >
+                  {resetLoading ? getTranslation('Please wait...', selectedLanguage) : getTranslation('Reset Password', selectedLanguage)}
+                </button>
               </div>
             </div>
           </div>
