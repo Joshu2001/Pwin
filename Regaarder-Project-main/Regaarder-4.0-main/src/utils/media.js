@@ -13,7 +13,8 @@ export const resolveMediaUrl = (input) => {
   if (!input) return '';
   const raw = String(input).trim();
   if (!raw) return '';
-  if (raw.startsWith('blob:') || raw.startsWith('data:')) return raw;
+  // blob: and data: URLs are temporary (browser-session only) — never persist or display them
+  if (raw.startsWith('blob:') || raw.startsWith('data:')) return '';
 
   const backend = getBackendBase();
 

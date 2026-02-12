@@ -1511,8 +1511,10 @@ const ClaimStatusPanel = ({
                                                     const file = e.target.files && e.target.files[0];
                                                     if (file) {
                                                         setThumbnailFile(file);
-                                                        const url = URL.createObjectURL(file);
-                                                        setThumbnailPreview(url);
+                                                        // Use FileReader data URL for reliable preview (blob URLs break across sessions)
+                                                        const reader = new FileReader();
+                                                        reader.onloadend = () => setThumbnailPreview(reader.result);
+                                                        reader.readAsDataURL(file);
                                                     }
                                                 }} />
 
@@ -2107,7 +2109,7 @@ const ClaimStatusPanel = ({
                                                         });
 
                                                         // Upload thumbnail (or use link URL)
-                                                        let thumbnailUrl = thumbnailLinkUrl || thumbnailPreview;
+                                                        let thumbnailUrl = thumbnailLinkUrl || '';
                                                         if (!thumbnailLinkUrl && thumbnailFile && thumbnailFile instanceof File) {
                                                             const thumbFormData = new FormData();
                                                             thumbFormData.append('photo', thumbnailFile);
@@ -2123,7 +2125,9 @@ const ClaimStatusPanel = ({
                                                                 thumbnailUrl = thumbData.url;
                                                                 console.log('Thumbnail uploaded:', thumbnailUrl);
                                                             } else {
-                                                                console.warn('Thumbnail upload failed, using preview');
+                                                                console.warn('Thumbnail upload failed, status:', thumbResponse.status);
+                                                                // Don't use blob/data URL fallback — let backend use placeholder
+                                                                thumbnailUrl = '';
                                                             }
                                                         }
 

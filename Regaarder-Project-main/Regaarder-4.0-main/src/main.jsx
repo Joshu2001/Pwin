@@ -13,12 +13,14 @@ if (typeof window !== 'undefined' && !window.__BACKEND_URL__) {
   try { storedBackend = window.localStorage.getItem('regaarder_backend_url'); } catch (e) { storedBackend = null; }
   const envBackend = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || null;
 
+  const RAILWAY_URL = 'https://pwin-copy-production.up.railway.app';
   const normalizeBackend = (val) => {
     if (!val) return null;
     const v = String(val).trim();
     if (!v) return null;
-    if (v.includes('pwin.onrender.com') || v.includes('localhost:4000')) {
-      return 'https://regaarder-pwin.onrender.com';
+    // Redirect all old Render URLs and localhost to Railway
+    if (v.includes('pwin.onrender.com') || v.includes('regaarder-pwin.onrender.com') || v.includes('localhost:4000')) {
+      return RAILWAY_URL;
     }
     return v;
   };
@@ -28,7 +30,7 @@ if (typeof window !== 'undefined' && !window.__BACKEND_URL__) {
 
   if (normalizedStored) window.__BACKEND_URL__ = normalizedStored;
   else if (normalizedEnv) window.__BACKEND_URL__ = normalizedEnv;
-  else window.__BACKEND_URL__ = 'https://regaarder-pwin.onrender.com';
+  else window.__BACKEND_URL__ = RAILWAY_URL;
 
   try { window.localStorage.setItem('regaarder_backend_url', window.__BACKEND_URL__); } catch (e) { }
 }
@@ -40,7 +42,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
       const base = window.__BACKEND_URL__
         || import.meta.env.VITE_BACKEND_URL
         || import.meta.env.VITE_BACKEND
-        || 'https://regaarder-pwin.onrender.com';
+        || 'https://pwin-copy-production.up.railway.app';
       const rewrite = (url) => {
         if (typeof url !== 'string') return url;
         return url

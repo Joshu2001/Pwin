@@ -3988,6 +3988,13 @@ const App = () => {
         let submitterCreator = null;
         if (auth && auth.user) {
             submitterCreator = { id: auth.user.id, name: auth.user.name };
+            // Include profile image for request card display
+            try {
+                const u = JSON.parse(localStorage.getItem('regaarder_user') || '{}');
+                if (u.image && !String(u.image).startsWith('blob:') && !String(u.image).startsWith('data:')) {
+                    submitterCreator.image = u.image;
+                }
+            } catch (e) { }
         } else {
             submitterCreator = { id: 'anonymous', name: 'Anonymous User' };
         }
@@ -4150,6 +4157,10 @@ const App = () => {
           const user = JSON.parse(rawUser);
           if (user && user.id) {
             submitterCreator = { id: user.id, name: user.name || user.displayName || 'User' };
+            // Include profile image for request card display
+            if (user.image && !String(user.image).startsWith('blob:') && !String(user.image).startsWith('data:')) {
+              submitterCreator.image = user.image;
+            }
           }
         }
       } catch (e) { }

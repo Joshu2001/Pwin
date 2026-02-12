@@ -567,6 +567,14 @@ const App = () => {
                             existing.image = data.url;
                             localStorage.setItem('regaarder_user', JSON.stringify(existing));
                         } catch (e) { console.warn('Failed to persist image to localStorage', e); }
+                        // Also persist to backend user record so it survives across devices
+                        try {
+                            await fetch(`${BACKEND}/users/update`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify({ image: data.url })
+                            });
+                        } catch (e) { console.warn('Failed to persist image to backend', e); }
                     }
                 } else {
                     console.error('Upload failed');

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Menu, Bell, Settings, Search, Star, TrendingUp, Trophy, Home, FileText, Lightbulb, MoreHorizontal, MoreVertical, Heart, ThumbsDown, Eye, MessageSquare, Share2, Palette, Shield, Globe, Gift, DollarSign, Users, Monitor, BookOpen, History, Scissors, Zap, CreditCard, Crown, Tag, User, Folder, Shuffle, Camera, Pencil, PencilLine, ShoppingBag, Video, Sparkles, Pin, Bookmark, Info, EyeOff, Flag, Check, AlertCircle, AlertTriangle, Sun, Moon, ArrowLeft, VolumeX, Play, Pause, Save, ChevronDown, Upload, CheckCircle, Mail, ChevronUp, ChevronLeft, Clapperboard, Coins } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations';
-import { WEB_URL } from './config';
+import { WEB_URL, getBackendBaseUrl } from './config';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Utility function to format numbers as 1k, 1m, etc.
@@ -520,7 +520,8 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
 
             const fd = new FormData();
             fd.append('image', file);
-            const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}/creator/photo`, {
+            const BACKEND = (typeof getBackendBaseUrl === 'function' ? getBackendBaseUrl() : null) || (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+            const res = await fetch(`${BACKEND}/creator/photo`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: fd

@@ -3909,6 +3909,42 @@ const App = ({ overrideMiniPlayerData = null }) => {
         };
 
         fetchVideos();
+
+        // Refresh video stats every 60 seconds so view/like counts stay current
+        const statsInterval = setInterval(async () => {
+            try {
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                const params = new URLSearchParams();
+                if (selectedTab === 'Recommended') params.set('feed', 'recommended');
+                else if (selectedTab === 'Trending Now') params.set('feed', 'trending');
+                else if (selectedTab === 'New') params.set('feed', 'fresh');
+                else { params.set('category', selectedTab); params.set('feed', 'fresh'); }
+
+                const res = await fetch(`${BACKEND}/videos?${params.toString()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.videos)) {
+                        setVideos(prev => prev.map(v => {
+                            const updated = data.videos.find(bv => String(bv.id) === String(v.id));
+                            if (updated) {
+                                return {
+                                    ...v,
+                                    views: updated.views ?? v.views,
+                                    likes: updated.likes ?? v.likes,
+                                    comments: updated.comments ?? v.comments,
+                                    bookmarks: updated.bookmarks ?? v.bookmarks
+                                };
+                            }
+                            return v;
+                        }));
+                    }
+                }
+            } catch (e) {
+                // Silent fail — stats refresh is best-effort
+            }
+        }, 60000);
+
+        return () => clearInterval(statsInterval);
     }, [selectedTab]);
 
     // Filter the video data based on the search term
