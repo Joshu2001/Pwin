@@ -1,9 +1,9 @@
 export default {
   logo: <span style={{ fontWeight: 'bold' }}>📚 Regaarder Docs</span>,
   project: {
-    link: 'https://github.com/yourusername/regaarder',
+    link: 'https://github.com/Joshu2001/Pwin',
   },
-  docsRepositoryBase: 'https://github.com/yourusername/regaarder/tree/main/docs',
+  docsRepositoryBase: 'https://github.com/Joshu2001/Pwin/tree/main/docs',
   footer: {
     text: '© 2026 Regaarder. All rights reserved.',
   },
