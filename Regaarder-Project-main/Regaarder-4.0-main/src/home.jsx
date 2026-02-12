@@ -3102,8 +3102,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Check if first-time user on component mount
     useEffect(() => {
         try {
-            const hasSeenWelcome = localStorage.getItem('regaarder_seen_welcome');
-            if (!hasSeenWelcome) {
+            // v2 flag (prevents older installs where v1 flag was set too early from skipping the modal)
+            const hasSeenWelcomeV2 = localStorage.getItem('regaarder_seen_welcome_v2');
+            if (!hasSeenWelcomeV2) {
                 setShowRoleSelection(true);
             }
         } catch (e) {
@@ -3192,8 +3193,14 @@ const App = ({ overrideMiniPlayerData = null }) => {
     }, []);
 
     const handleRoleSelect = (role) => {
-        // Mark welcome as seen only when the user interacts (selects a role or dismisses)
-        try { localStorage.setItem('regaarder_seen_welcome', '1'); } catch (e) { }
+        // Mark welcome as seen only when the user selects a role.
+        // (If they dismiss by tapping the backdrop, keep it eligible to show again next launch.)
+        if (role === 'user' || role === 'creator') {
+            try {
+                localStorage.setItem('regaarder_seen_welcome', '1');
+                localStorage.setItem('regaarder_seen_welcome_v2', '1');
+            } catch (e) { }
+        }
         if (role === 'user') {
             setShowRoleSelection(false);
             setShowUserWelcome(true);
@@ -3289,7 +3296,15 @@ const App = ({ overrideMiniPlayerData = null }) => {
         // Function to check notifications
         const checkForNotifications = async () => {
             const token = localStorage.getItem('regaarder_token');
-            if (!token) return;
+            if (!token) {
+                // Clear stale badge/count when logged out
+                try {
+                    localStorage.setItem('notifications_count', '0');
+                    localStorage.setItem('notifications', '[]');
+                    window.dispatchEvent(new Event('storage'));
+                } catch (e) { }
+                return;
+            }
             try {
                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/notifications`, {
@@ -3297,11 +3312,14 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    const list = data.notifications || [];
-                    const count = list.length;
+                    const rawList = Array.isArray(data.notifications) ? data.notifications : [];
+                    // Filter out blank/invalid items so badge and list don't disagree
+                    const list = rawList.filter(n => n && (n.title || n.text || n.message));
+                    const unread = list.filter(n => !n.read);
+                    const count = unread.length;
 
                     // Check for unread staff action notifications
-                    const unreadStaffAction = list.find(n => n.type === 'staff_action' && n.requiresAcknowledgment && !n.read);
+                    const unreadStaffAction = unread.find(n => n.type === 'staff_action' && n.requiresAcknowledgment && !n.read);
                     
                     // Show modal if there's an unread staff action (even on first load)
                     if (unreadStaffAction && !staffActionNotification) {
@@ -3311,7 +3329,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     // If we have more notifications than before, assume the top one is new
                     // and show a toaster for it.
                     if (lastNotifCount !== -1 && count > lastNotifCount) {
-                        const newest = list[0];
+                        const newest = unread[0] || list[0];
                         if (newest) {
                             // Check if this is an unread staff action notification
                             if (newest.type === 'staff_action' && newest.requiresAcknowledgment && !newest.read) {
@@ -3323,7 +3341,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     show: true,
                                     type: 'info',
                                     title: 'New Notification',
-                                    message: newest.text || 'You have a new update'
+                                    message: newest.text || newest.message || newest.title || 'You have a new update'
                                 });
                                 // Auto-hide after 4 seconds
                                 setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
@@ -3336,6 +3354,13 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     localStorage.setItem('notifications_count', String(count));
                     localStorage.setItem('notifications', JSON.stringify(list));
                     window.dispatchEvent(new Event('storage'));
+                } else {
+                    // If backend rejected the request, clear stale count (e.g. expired token)
+                    try {
+                        localStorage.setItem('notifications_count', '0');
+                        localStorage.setItem('notifications', '[]');
+                        window.dispatchEvent(new Event('storage'));
+                    } catch (e) { }
                 }
             } catch (e) {
                 // silent fail on poll error 
@@ -5316,6 +5341,10 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
     useEffect(() => {
         const readCount = () => {
             try {
+                // If not logged in, avoid showing a stale badge
+                const token = window.localStorage.getItem('regaarder_token');
+                if (!token) { setNotifCount(0); return; }
+
                 const v1 = window.localStorage.getItem('notifications_count');
                 if (v1 != null) {
                     const n = parseInt(v1, 10);
@@ -5325,7 +5354,11 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
                 if (v2) {
                     try {
                         const arr = JSON.parse(v2);
-                        if (Array.isArray(arr)) { setNotifCount(arr.length); return; }
+                        if (Array.isArray(arr)) {
+                            const validUnread = arr.filter(n => n && !n.read && (n.title || n.text || n.message));
+                            setNotifCount(validUnread.length);
+                            return;
+                        }
                     } catch (e) { }
                 }
             } catch (e) { }
