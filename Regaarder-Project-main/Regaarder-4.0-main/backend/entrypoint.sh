@@ -53,7 +53,9 @@ if [ "${WIPE_KEEP_STAFF_1000:-}" = "1" ] && [ ! -f "$WIPE_MARKER" ]; then
   fi
 
   # Step 2: rewrite staff.json to keep only employeeId 1000; clear everything else
-  node -e '
+  # Safety: if employee 1000 is not found, SKIP the wipe to avoid locking you out.
+  WIPE_OK=0
+  if node -e '
     const fs = require("fs");
     const path = require("path");
     const DATA_DIR = process.env.DATA_DIR || "/data";
@@ -68,6 +70,10 @@ if [ "${WIPE_KEEP_STAFF_1000:-}" = "1" ] && [ ! -f "$WIPE_MARKER" ]; then
     }
     const employees = Array.isArray(staff.employees) ? staff.employees : [];
     const keeper = employees.find(e => Number(e && e.id) === 1000) || null;
+    if (!keeper) {
+      console.error("[wipe] Staff employee 1000 not found — aborting wipe to avoid lockout");
+      process.exit(2);
+    }
     const next = {
       employees: keeper ? [keeper] : [],
       pendingAccounts: [],
@@ -82,10 +88,17 @@ if [ "${WIPE_KEEP_STAFF_1000:-}" = "1" ] && [ ! -f "$WIPE_MARKER" ]; then
       console.error("[wipe] Failed to write staff.json:", e.message);
       process.exitCode = 1;
     }
-  '
+  '; then
+    echo "[wipe] staff 1000 preserved; proceeding to wipe other data …"
+    WIPE_OK=1
+  else
+    echo "[wipe] Skipped selective wipe because staff 1000 was not found."
+    WIPE_OK=0
+  fi
 
   # Step 3: wipe all other persisted JSON files (leave valid empty shapes)
-  node -e '
+  if [ "$WIPE_OK" = "1" ] && [ ! -f "$WIPE_MARKER" ]; then
+    node -e '
     const fs = require("fs");
     const path = require("path");
     const DATA_DIR = process.env.DATA_DIR || "/data";
@@ -131,11 +144,12 @@ if [ "${WIPE_KEEP_STAFF_1000:-}" = "1" ] && [ ! -f "$WIPE_MARKER" ]; then
         console.error(`[wipe] Failed ${fileName}:`, e.message);
       }
     }
-  '
+    '
 
-  # Mark wipe done
-  date > "$WIPE_MARKER"
-  echo "[entrypoint] Selective wipe complete."
+    # Mark wipe done
+    date > "$WIPE_MARKER"
+    echo "[entrypoint] Selective wipe complete."
+  fi
 fi
 
 # ── One-time storage cleanup: delete upload files first (volume may be full), then trim JSON ──
