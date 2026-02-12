@@ -3105,10 +3105,11 @@ const App = ({ overrideMiniPlayerData = null }) => {
             const hasSeenWelcome = localStorage.getItem('regaarder_seen_welcome');
             if (!hasSeenWelcome) {
                 setShowRoleSelection(true);
-                localStorage.setItem('regaarder_seen_welcome', '1');
             }
         } catch (e) {
             console.warn('Failed to check welcome modal status', e);
+            // If localStorage is unavailable for any reason, still show the modal.
+            setShowRoleSelection(true);
         }
     }, []);
 
@@ -3191,6 +3192,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
     }, []);
 
     const handleRoleSelect = (role) => {
+        // Mark welcome as seen only when the user interacts (selects a role or dismisses)
+        try { localStorage.setItem('regaarder_seen_welcome', '1'); } catch (e) { }
         if (role === 'user') {
             setShowRoleSelection(false);
             setShowUserWelcome(true);
