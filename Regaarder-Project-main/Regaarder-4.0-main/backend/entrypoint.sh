@@ -40,59 +40,69 @@ fi
 
 echo "[entrypoint] Starting server …"
 
-# ── One-time storage cleanup: remove upload files not referenced by any video ──
+# ── One-time storage cleanup: delete upload files first (volume may be full), then trim JSON ──
 CLEANUP_MARKER="$DATA_DIR/.cleaned-orphans"
 if [ ! -f "$CLEANUP_MARKER" ]; then
-  echo "[entrypoint] Running video + upload cleanup …"
+  echo "[entrypoint] Running storage cleanup (volume may be near-full) …"
   UPLOADS="$DATA_DIR/uploads"
   VFILE="$DATA_DIR/videos.json"
 
-  # Step 1: Trim videos.json to only keep specified video IDs
+  # Step 1: Determine which upload filenames to KEEP (from the 2 kept videos)
+  # Do this read-only first — no writes yet
+  KEEP_FILES=""
   if [ -f "$VFILE" ]; then
-    echo "[cleanup] Filtering videos.json to keep only Lefrere + Du Sag pour ous …"
-    node -e "
+    KEEP_FILES=$(node -e "
       const fs = require('fs');
-      const vfile = process.argv[1];
       const keep = new Set(['1768835100749-34tq5nn1u', '1767691092183-r9lm9nfgo']);
       try {
-        const videos = JSON.parse(fs.readFileSync(vfile, 'utf8'));
+        const videos = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
         const kept = videos.filter(v => keep.has(String(v.id)));
-        fs.writeFileSync(vfile, JSON.stringify(kept, null, 2));
-        console.log('[cleanup] Kept ' + kept.length + ' videos, removed ' + (videos.length - kept.length));
-      } catch(e) { console.error('[cleanup] Error filtering videos:', e.message); }
-    " "$VFILE"
-  fi
-
-  # Step 2: Remove upload files not referenced by remaining videos
-  if [ -f "$VFILE" ] && [ -d "$UPLOADS" ]; then
-    # Extract referenced filenames from videos.json using node (grep -P not available on Alpine)
-    REFERENCED=$(node -e "
-      const fs = require('fs');
-      try {
-        const data = fs.readFileSync(process.argv[1], 'utf8');
+        const data = JSON.stringify(kept);
         const matches = data.match(/\/uploads\/[^\"]+/g) || [];
         const names = [...new Set(matches.map(m => m.replace(/.*\/uploads\//, '')))];
         names.forEach(n => console.log(n));
-      } catch(e) {}
+      } catch(e) { console.error('[cleanup] Error reading videos:', e.message); }
     " "$VFILE")
+  fi
+
+  # Step 2: DELETE upload files not referenced by kept videos (frees disk space FIRST)
+  if [ -d "$UPLOADS" ]; then
     DELETED_COUNT=0
     FREED_KB=0
     for f in "$UPLOADS"/*; do
       [ -f "$f" ] || continue
       BASENAME=$(basename "$f")
-      if echo "$REFERENCED" | grep -qxF "$BASENAME"; then
+      if echo "$KEEP_FILES" | grep -qxF "$BASENAME"; then
         echo "[cleanup] KEEP: $BASENAME"
       else
         SIZE_KB=$(du -k "$f" | cut -f1)
         rm -f "$f"
         FREED_KB=$((FREED_KB + SIZE_KB))
         DELETED_COUNT=$((DELETED_COUNT + 1))
-        echo "[cleanup] DELETED orphan: $BASENAME (${SIZE_KB}KB)"
+        echo "[cleanup] DELETED: $BASENAME (${SIZE_KB}KB)"
       fi
     done
-    echo "[cleanup] Done. Deleted $DELETED_COUNT orphan files, freed ~${FREED_KB}KB"
+    echo "[cleanup] Deleted $DELETED_COUNT files, freed ~${FREED_KB}KB"
   fi
+
+  # Step 3: NOW that disk space is freed, trim videos.json to only kept IDs
+  if [ -f "$VFILE" ]; then
+    echo "[cleanup] Trimming videos.json …"
+    node -e "
+      const fs = require('fs');
+      const keep = new Set(['1768835100749-34tq5nn1u', '1767691092183-r9lm9nfgo']);
+      try {
+        const videos = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+        const kept = videos.filter(v => keep.has(String(v.id)));
+        fs.writeFileSync(process.argv[1], JSON.stringify(kept, null, 2));
+        console.log('[cleanup] Kept ' + kept.length + ' of ' + videos.length + ' videos');
+      } catch(e) { console.error('[cleanup] Error trimming videos:', e.message); }
+    " "$VFILE"
+  fi
+
+  # Mark cleanup done (now safe to write, disk has space)
   date > "$CLEANUP_MARKER"
+  echo "[entrypoint] Storage cleanup complete."
 else
   echo "[entrypoint] Cleanup already done."
 fi
