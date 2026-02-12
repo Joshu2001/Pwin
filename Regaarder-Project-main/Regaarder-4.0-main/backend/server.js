@@ -140,8 +140,6 @@ const REQUESTS_FILE = path.join(PERSIST_DIR, 'requests.json');
 const VIDEOS_FILE = path.join(PERSIST_DIR, 'videos.json');
 const CATEGORIES_FILE = path.join(PERSIST_DIR, 'categories.json');
 const ONBOARDING_FILE = path.join(PERSIST_DIR, 'onboarding.json');
-
-const crypto = require('crypto');
 const multer = require('multer');
 
 // simple disk storage for demo: store uploads under ./uploads
@@ -241,7 +239,16 @@ function readUsers() {
     if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
     // Remove control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F-0x9F) that break JSON.parse
     // Keep \t (0x09), \n (0x0A), \r (0x0D) which are valid in JSON whitespace
-    raw = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+    raw = Array.from(raw)
+      .filter((ch) => {
+        const code = ch.charCodeAt(0);
+        if (code === 0x09 || code === 0x0A || code === 0x0D) return true;
+        if ((code >= 0x00 && code <= 0x08) || code === 0x0B || code === 0x0C) return false;
+        if (code >= 0x0E && code <= 0x1F) return false;
+        if (code >= 0x7F && code <= 0x9F) return false;
+        return true;
+      })
+      .join('');
     const parsed = JSON.parse(raw || '[]');
     if (!Array.isArray(parsed)) {
       console.error('readUsers: DATA_FILE is not an array, got', typeof parsed);
