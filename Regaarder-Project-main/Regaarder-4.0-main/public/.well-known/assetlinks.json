@@ -3,9 +3,9 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.regaarder.app",
+      "package_name": "com.regaarder.vizeo2",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_RELEASE_SHA256_FINGERPRINT"
+        "66:0B:8A:D7:F4:AF:89:96:08:DE:26:ED:C0:35:A5:50:2C:7C:2E:F7:3B:4A:6F:AD:23:88:ED:04:3D:22:0C:C0"
       ]
     }
   }
