@@ -1485,17 +1485,25 @@ const FrequencyDropdown = ({ options, selected, setSelected, selectedLanguage = 
 };
 
 // --- Reusable Component for References (New Step) ---
-const ReferencesStep = ({ files, setFiles, links, setLinks, selectedLanguage = 'English' }) => {
+const ReferencesStep = ({ files, setFiles, links, setLinks, isPaidPlan = false, onRequireUpgrade, selectedLanguage = 'English' }) => {
   const fileInputRef = useRef(null);
   const [linkInput, setLinkInput] = useState("");
 
   const handleFileChange = (e) => {
+    if (!isPaidPlan) {
+      if (typeof onRequireUpgrade === 'function') onRequireUpgrade();
+      return;
+    }
     if (e.target.files && e.target.files.length > 0) {
       setFiles([...files, ...Array.from(e.target.files)]);
     }
   };
 
   const handleAddLink = () => {
+    if (!isPaidPlan) {
+      if (typeof onRequireUpgrade === 'function') onRequireUpgrade();
+      return;
+    }
     if (linkInput.trim()) {
       setLinks([...links, linkInput.trim()]);
       setLinkInput("");
@@ -1514,8 +1522,14 @@ const ReferencesStep = ({ files, setFiles, links, setLinks, selectedLanguage = '
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Upload Area */}
       <div
-        onClick={() => fileInputRef.current.click()}
-        className="border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-[var(--bg)] transition-colors cursor-pointer bg-[var(--surface)]"
+        onClick={() => {
+          if (!isPaidPlan) {
+            if (typeof onRequireUpgrade === 'function') onRequireUpgrade();
+            return;
+          }
+          fileInputRef.current.click();
+        }}
+        className={`border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center justify-center text-center transition-colors bg-[var(--surface)] ${isPaidPlan ? 'hover:bg-[var(--bg)] cursor-pointer' : 'opacity-80 cursor-not-allowed'}`}
       >
         <input
           type="file"
@@ -1523,6 +1537,7 @@ const ReferencesStep = ({ files, setFiles, links, setLinks, selectedLanguage = '
           className="hidden"
           ref={fileInputRef}
           onChange={handleFileChange}
+          disabled={!isPaidPlan}
         />
         <div className="p-3 bg-gray-100 rounded-full mb-3">
           <FileText className="w-6 h-6 text-gray-500" />
@@ -1533,6 +1548,11 @@ const ReferencesStep = ({ files, setFiles, links, setLinks, selectedLanguage = '
         <p className="text-xs text-gray-400 mt-1">
           {getTranslation('Images, videos, PDFs, documents', selectedLanguage)}
         </p>
+        {!isPaidPlan && (
+          <p className="text-xs mt-2 font-medium text-[var(--color-gold)]">
+            {getTranslation('Paid plans only — tap to upgrade', selectedLanguage)}
+          </p>
+        )}
       </div>
 
       {/* File List */}
@@ -1567,12 +1587,14 @@ const ReferencesStep = ({ files, setFiles, links, setLinks, selectedLanguage = '
           placeholder={getTranslation('Add reference links', selectedLanguage) + '...'}
           value={linkInput}
           onChange={(e) => setLinkInput(e.target.value)}
+          onFocus={() => { if (!isPaidPlan && typeof onRequireUpgrade === 'function') onRequireUpgrade(); }}
           onKeyDown={(e) => e.key === "Enter" && handleAddLink()}
-          className="flex-1 p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-soft)] focus:border-[var(--color-accent)] transition-all"
+          readOnly={!isPaidPlan}
+          className={`flex-1 p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm transition-all ${isPaidPlan ? 'focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-soft)] focus:border-[var(--color-accent)]' : 'cursor-not-allowed opacity-80'}`}
         />
         <button
           onClick={handleAddLink}
-          className="p-4 bg-gray-100 rounded-xl text-gray-500 hover:bg-gray-200 transition-colors"
+          className={`p-4 rounded-xl text-gray-500 transition-colors ${isPaidPlan ? 'bg-gray-100 hover:bg-gray-200' : 'bg-gray-100/80 cursor-not-allowed'}`}
         >
           <LinkIcon className="w-5 h-5" />
         </button>
@@ -2601,10 +2623,42 @@ const App = () => {
   const [chooseCreatorFocused, setChooseCreatorFocused] = useState(false);
   const [creatorSelectionType, setCreatorSelectionType] = useState(null); // 'specific' | 'any' | 'expert' | null
   const [showCreatorModal, setShowCreatorModal] = useState(false); // For the ideas page creator selection modal
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false); // Inline @mention dropdown
   const [showFreeRequestSubmittedModal, setShowFreeRequestSubmittedModal] = useState(false); // For free request submission confirmation
   const [currentFreeRequest, setCurrentFreeRequest] = useState(null); // Store request data for sharing
   const [currentRequestIdForBoost, setCurrentRequestIdForBoost] = useState(null); // Track request ID for boost modal
   const [showBoostsModal, setShowBoostsModal] = useState(false); // For boost requests modal
+  const [showUpgradeUploadModal, setShowUpgradeUploadModal] = useState(false);
+  const [hasPaidPlan, setHasPaidPlan] = useState(false);
+
+  useEffect(() => {
+    const readPaidPlan = () => {
+      try {
+        const rawUser = localStorage.getItem('regaarder_user');
+        if (!rawUser) {
+          setHasPaidPlan(false);
+          return;
+        }
+
+        const user = JSON.parse(rawUser);
+        const plan = user?.subscription || user?.userPlan || user?.plan || {};
+        const tier = String(plan?.tier || plan?.name || user?.tier || user?.plan || '').toLowerCase();
+        const normalizedTier = tier.replace(/\s+/g, '');
+        const isActive = plan?.active !== false && plan?.isActive !== false;
+        const paidTiers = ['pro', 'procreator', 'premium', 'creator'];
+        const isFreeLike = normalizedTier.includes('free') || normalizedTier.includes('starter');
+        const isPaid = isActive && !!normalizedTier && !isFreeLike && paidTiers.some((p) => normalizedTier.includes(p));
+
+        setHasPaidPlan(isPaid);
+      } catch (e) {
+        setHasPaidPlan(false);
+      }
+    };
+
+    readPaidPlan();
+    window.addEventListener('storage', readPaidPlan);
+    return () => window.removeEventListener('storage', readPaidPlan);
+  }, []);
 
   // When focus mode is toggled on, ensure the chooser is expanded and focus the input.
   useEffect(() => {
@@ -3173,7 +3227,7 @@ const App = () => {
   // Re-fetch creators when the ideas page modal opens (if not already loaded)
   useEffect(() => {
     let cancelled = false;
-    if (showCreatorModal && creatorsList.length === 0) {
+    if ((showCreatorModal || showMentionDropdown) && creatorsList.length === 0) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 12000);
       fetchCreatorsFromBackend(controller.signal).then(creators => {
@@ -3182,7 +3236,7 @@ const App = () => {
       });
       return () => { cancelled = true; controller.abort(); clearTimeout(timer); };
     }
-  }, [showCreatorModal]);
+  }, [showCreatorModal, showMentionDropdown]);
 
   // Keep expanded state in sync with focus mode so entering focus always expands
   // useEffect(() => {
@@ -3544,33 +3598,35 @@ const App = () => {
   // Delivery Options Data (Unchanged)
   const deliveryOptions = [
     {
-      type: "one-time",
-      title: getTranslation("One-Time", selectedLanguage),
-      subtitle: getTranslation("A single standalone video.", selectedLanguage),
-      Icon: Film,
-    },
-    {
       type: "recurrent",
       title: getTranslation("Recurrent", selectedLanguage),
-      subtitle: getTranslation("A routine delivered daily, weekly, or monthly.", selectedLanguage),
+      subtitle: getTranslation("Receive personalized videos from your favorite creators on your schedule", selectedLanguage),
+      tag: getTranslation('(Recommended)', selectedLanguage),
       Icon: Repeat,
     },
     {
       type: "series",
       title: getTranslation("Series", selectedLanguage),
-      subtitle: getTranslation("A focused set of connected videos.", selectedLanguage),
+      subtitle: getTranslation("Fund a full series exploring your topic.", selectedLanguage),
+      tag: getTranslation('Popular', selectedLanguage),
       Icon: ListVideo,
+    },
+    {
+      type: "one-time",
+      title: getTranslation("One-Time", selectedLanguage),
+      subtitle: getTranslation("Your creator makes a video tailored to your request.", selectedLanguage),
+      Icon: Film,
     },
     {
       type: "catalogue",
       title: getTranslation("Catalogue", selectedLanguage),
-      subtitle: getTranslation("A curated mix across different themes.", selectedLanguage),
+      subtitle: getTranslation("A curated collection of creator videos around a theme.", selectedLanguage),
       Icon: Folder,
     },
   ];
 
   // Title Animation State (Unchanged)
-  const titles = [getTranslation('Book Your Next Videos', selectedLanguage)];
+  const titles = [getTranslation('Start a request', selectedLanguage)];
   const [currentTitleIndex, setCurrentTitleIndex] = useState(0);
   const [titleVisible, setTitleVisible] = useState(true);
   const [sweepActive, setSweepActive] = useState(false);
@@ -3579,6 +3635,59 @@ const App = () => {
   const _autoScrollDone = useRef(false);
   const [titleBoxWidth, setTitleBoxWidth] = useState(null);
   const [titleGradient, setTitleGradient] = useState(null);
+
+  const selectedCreatorHandle = String(
+    selectedCreator?.handle ||
+    selectedCreator?.username ||
+    selectedCreator?.name ||
+    selectedCreator?.displayName ||
+    ""
+  ).trim().replace(/^@+/, "");
+  const selectedCreatorMention = selectedCreatorHandle ? ` @${selectedCreatorHandle}` : "";
+
+  const stripLeadingSelectedMention = (text) => {
+    const raw = String(text || "");
+    if (!selectedCreatorHandle) return raw;
+    const escapedHandle = selectedCreatorHandle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return raw.replace(new RegExp(`^\\s*@${escapedHandle}\\s*`, "i"), "");
+  };
+
+  const descriptionText = stripLeadingSelectedMention(description);
+  const descriptionTextLength = descriptionText.length;
+
+  const handleDescriptionChange = (nextValue) => {
+    const rawNextValue = String(nextValue || "");
+    // Detect standard @ plus fullwidth ＠ and small-form ﹫ for mobile keyboards
+    const typedMentionTrigger = /[@\uFF20\uFE6B]/.test(rawNextValue);
+    const cleanText = stripLeadingSelectedMention(rawNextValue.replace(/[@\uFF20\uFE6B]+/g, ""));
+    setDescription(cleanText.slice(0, MAX_CHARS));
+
+    if (typedMentionTrigger) {
+      console.log('[ideas] @ detected in description onChange, opening creator modal');
+      openCreatorPickerFromDescription();
+    }
+  };
+
+  const openCreatorPickerFromDescription = () => {
+    console.log('[ideas] openCreatorPickerFromDescription called');
+    setCreatorSearch("");
+    setShowCreatorModal(true);
+  };
+
+  const clearSelectedCreatorMention = () => {
+    setSelectedCreator(null);
+    setSelectedCreatorImage(null);
+    setCreatorSearch("");
+  };
+
+  const handleDescriptionKeyDown = (e) => {
+    if (e.key === "@" || e.key === "\uFF20" || e.key === "\uFE6B") {
+      e.preventDefault();
+      console.log('[ideas] @ detected in onKeyDown, opening creator modal');
+      openCreatorPickerFromDescription();
+      return;
+    }
+  };
 
   // Animation Constants (milliseconds) (Unchanged)
   const SWEEP_DURATION = 8000;
@@ -3658,7 +3767,7 @@ const App = () => {
   if (selectedDeliveryType === "one-time") {
     if (oneTimeStep === 1) {
       isNextEnabled =
-        description.length >= MIN_CHARS && title.trim().length > 0;
+        descriptionTextLength >= MIN_CHARS && title.trim().length > 0;
     } else if (oneTimeStep === 2) {
       isNextEnabled = true; // Tone step
     } else if (oneTimeStep === 3) {
@@ -3673,7 +3782,7 @@ const App = () => {
   } else if (isRecurrent) {
     if (recurrentStep === 1) {
       isNextEnabled =
-        description.length >= MIN_CHARS && title.trim().length > 0;
+        descriptionTextLength >= MIN_CHARS && title.trim().length > 0;
     } else if (recurrentStep === 2) {
       if (selectedFrequency === "custom") {
         isNextEnabled = customRecurrentDates.length > 0;
@@ -3694,7 +3803,7 @@ const App = () => {
   } else if (isSeries) {
     if (seriesStep === 1) {
       isNextEnabled =
-        description.length >= MIN_CHARS && title.trim().length > 0;
+        descriptionTextLength >= MIN_CHARS && title.trim().length > 0;
     } else if (seriesStep === 2) {
       if (selectedReleaseSchedule === "custom") {
         isNextEnabled = numberOfEpisodes >= 1 && customSeriesDates.length > 0;
@@ -3717,7 +3826,7 @@ const App = () => {
     // NEW CATALOGUE LOGIC
     if (catalogueStep === 1) {
       isNextEnabled =
-        description.length >= MIN_CHARS && title.trim().length > 0; // Enables going to Step 2
+        descriptionTextLength >= MIN_CHARS && title.trim().length > 0; // Enables going to Step 2
     } else if (catalogueStep === 2) {
       isNextEnabled = targetVideos >= 1; // Enables final submission
     } else if (catalogueStep === 3) {
@@ -3934,6 +4043,58 @@ const App = () => {
     }, 1000);
   };
 
+  // Send notification to creator when request is assigned to them
+  const sendCreatorNotification = async (creatorId, requestData) => {
+    try {
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+      const token = localStorage.getItem('regaarder_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      // Get current user info
+      let userId = null;
+      try {
+        const user = JSON.parse(localStorage.getItem('regaarder_user') || '{}');
+        userId = user.id;
+      } catch (e) { }
+
+      // Create notification payload
+      const notificationPayload = {
+        recipientId: creatorId,
+        type: 'request_assigned',
+        title: `New Request Assigned: ${requestData.title}`,
+        message: `You have a new request assigned to you: "${requestData.title}"${requestData.description ? ' - ' + requestData.description.substring(0, 50) : ''}...`,
+        requestId: requestData.id,
+        senderId: userId,
+        isRead: false,
+        createdAt: new Date().toISOString()
+      };
+
+      // Save notification to backend
+      const notifRes = await fetch(`${BACKEND}/notifications`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(notificationPayload)
+      });
+
+      if (notifRes.ok) {
+        console.log('✅ Notification sent to creator:', creatorId);
+        
+        // Try to send browser notification if supported
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('New Request Assigned', {
+            body: notificationPayload.message,
+            icon: '/icon.png',
+            tag: `request_${requestData.id}`
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to send notification:', e);
+      // Don't fail the request submission if notification fails
+    }
+  };
+
   // Payment Integration (Stripe / Backend)
   // When user clicks Pay, we call backend to create a checkout session or intent
   const handlePayment = async () => {
@@ -4058,6 +4219,11 @@ const App = () => {
             console.log('🟢🟢🟢 Backend returned:', json);
             createdRequest = json.request || newRequest;
             isBackendSynced = true;
+
+            // Send notification to selected creator if one was chosen
+            if (selectedCreator && selectedCreator.id) {
+              await sendCreatorNotification(selectedCreator.id, createdRequest);
+            }
 
             // FORCE UPDATE LOCAL STORAGE with the confirmed backend data
             try {
@@ -4224,6 +4390,13 @@ const App = () => {
       if (saveRes.ok) {
         const json = await saveRes.json();
         console.log('🟢🟢🟢 Backend returned:', json);
+        
+        const savedRequest = json.request || newRequest;
+        
+        // Send notification to selected creator if one was chosen
+        if (selectedCreator && selectedCreator.id) {
+          await sendCreatorNotification(selectedCreator.id, savedRequest);
+        }
         
         // Update localStorage with confirmed data
         const rawUpd = window.localStorage.getItem(REQUESTS_KEY);
@@ -4642,7 +4815,7 @@ const App = () => {
             }}
           ></div>
         </div>
-        <div className="text-xs text-gray-500 mt-1">{getTranslation('Don\'t lose your progress — 30% complete', selectedLanguage).replace('30%', `${progressPercentage.toFixed(0)}%`)}</div>
+        <div className="text-xs text-gray-500 mt-1">{getTranslation('You\'re 30% done. Finish your request.', selectedLanguage).replace('30%', `${progressPercentage.toFixed(0)}%`)}</div>
       </header>
 
       <main className="ideas-root flex-grow px-5 pb-0 max-w-lg mx-auto w-full">
@@ -4818,22 +4991,38 @@ const App = () => {
             </div>
           )}
           <div className="relative z-0">
+            {selectedCreatorMention && (
+              <button
+                type="button"
+                onClick={openCreatorPickerFromDescription}
+                className="absolute top-4 left-5 text-sm font-semibold hover:underline"
+                style={{ color: "var(--brand-gold, #ca8a04)", zIndex: 1 }}
+              >
+                {selectedCreatorMention}
+              </button>
+            )}
             <textarea
               id="description-input"
               ref={descriptionRef}
               rows="6"
               placeholder={getTranslation('Describe what you\'d love to see in this video.', selectedLanguage)}
               value={description}
-              onChange={(e) => setDescription(e.target.value.slice(0, MAX_CHARS))}
-              className="w-full p-5 text-gray-700 border border-gray-200 rounded-xl focus:ring-0 focus:border-gray-300 transition duration-150 resize-none outline-none text-base"
+              onChange={(e) => handleDescriptionChange(e.target.value)}
+              onKeyDown={handleDescriptionKeyDown}
+              onFocus={() => {
+                if (!selectedCreator) {
+                  openCreatorPickerFromDescription();
+                }
+              }}
+              className={`w-full p-5 text-gray-700 border border-gray-200 rounded-xl focus:ring-0 focus:border-gray-300 transition duration-150 resize-none outline-none text-base ${selectedCreatorMention ? 'pt-11' : ''}`}
               style={{ boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.05)" }}
             ></textarea>
             <span className="absolute bottom-4 right-4 text-xs text-gray-400 font-medium">
-              {description.length}/{MAX_CHARS} {getTranslation('char', selectedLanguage)}
+              {descriptionTextLength}/{MAX_CHARS} {getTranslation('char', selectedLanguage)}
             </span>
           </div>
 
-          {description.length >= MIN_CHARS && (
+          {descriptionTextLength >= MIN_CHARS && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
               <label htmlFor="title-input" className="text-gray-800 font-semibold text-base block tracking-tight">
                 {getTranslation('Give a title to your video', selectedLanguage)} <span className="text-red-500">*</span>
@@ -4852,19 +5041,21 @@ const App = () => {
         </div>
 
         {/* --- Upload References (progressive reveal after title) --- */}
-        {description.length >= MIN_CHARS && title && title.length >= MIN_TITLE_CHARS && (
+        {descriptionTextLength >= MIN_CHARS && title && title.length >= MIN_TITLE_CHARS && (
           <div className="mb-6">
             <ReferencesStep
               files={uploadedFiles}
               setFiles={setUploadedFiles}
               links={referenceLinks}
               setLinks={setReferenceLinks}
+              isPaidPlan={hasPaidPlan}
+              onRequireUpgrade={() => setShowUpgradeUploadModal(true)}
               selectedLanguage={selectedLanguage}
             />
           </div>
         )}
 
-        {description.length >= MIN_CHARS && title && title.length >= MIN_TITLE_CHARS && showFormatSection && (
+        {descriptionTextLength >= MIN_CHARS && title && title.length >= MIN_TITLE_CHARS && showFormatSection && (
           <div className="relative z-40">
             <>
             {/* --- Main Question (moved above Examples box) */}
@@ -4961,7 +5152,14 @@ const App = () => {
                         >
                           <option.Icon className={`w-5 h-5 mr-3 ${selectedDeliveryType === option.type ? 'text-[var(--color-gold)]' : 'text-gray-400'}`} />
                           <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-800">{getTranslation(option.title, selectedLanguage)}</div>
+                            <div className="text-sm font-medium text-gray-800 flex items-center gap-2">
+                              <span>{getTranslation(option.title, selectedLanguage)}</span>
+                              {option.tag && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
+                                  {option.tag}
+                                </span>
+                              )}
+                            </div>
                             <div className="text-xs text-gray-500">{getTranslation(option.subtitle, selectedLanguage)}</div>
                           </div>
                           {selectedDeliveryType === option.type && (
@@ -4978,7 +5176,7 @@ const App = () => {
             </>
           </div>
         )}
-        {description.length >= MIN_CHARS && title && title.length >= MIN_TITLE_CHARS && (
+        {descriptionTextLength >= MIN_CHARS && title && title.length >= MIN_TITLE_CHARS && (
           /* --- Dynamic Form Content based on Selection --- */
 
           selectedDeliveryType === "one-time" && !isTransitioning ? (
@@ -5292,32 +5490,53 @@ const App = () => {
             <>
               {/* Generic Text Input (Hidden if selection is made, shown as initial prompt) */}
               <div className="relative mb-8 mt-0">
+                {selectedCreatorMention && (
+                  <button
+                    type="button"
+                    onClick={openCreatorPickerFromDescription}
+                    className="absolute top-4 left-5 text-sm font-semibold hover:underline"
+                    style={{ color: "var(--color-accent, #374151)", zIndex: 1 }}
+                  >
+                    {selectedCreatorMention}
+                  </button>
+                )}
                 <textarea
                   rows="4"
                   placeholder={getTranslation('What do you want creators to make (Min {min} characters, e.g., "A single video on...")', selectedLanguage).replace('{min}', MIN_CHARS)}
                   value={description}
-                  onChange={(e) =>
-                    setDescription(e.target.value.slice(0, MAX_CHARS))
-                  }
+                  onChange={(e) => handleDescriptionChange(e.target.value)}
+                  onKeyDown={handleDescriptionKeyDown}
                   onBlur={() => setTouchedDescription(true)}
-                  className="w-full p-5 text-gray-700 border border-gray-200 rounded-xl focus:ring-0 focus:border-gray-300 transition duration-150 resize-none outline-none text-base"
+                  className={`w-full p-5 text-gray-700 border border-gray-200 rounded-xl focus:ring-0 focus:border-gray-300 transition duration-150 resize-none outline-none text-base ${selectedCreatorMention ? 'pt-11' : ''}`}
                   style={{
                     boxShadow:
                       "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.05)",
                   }}
                 ></textarea>
                 <span className="absolute bottom-4 right-4 text-xs text-gray-400 font-medium">
-                  {description.length}/{MAX_CHARS} char
+                  {descriptionTextLength}/{MAX_CHARS} char
                 </span>
-                {touchedDescription && description.length < MIN_CHARS && (
+                {touchedDescription && descriptionTextLength < MIN_CHARS && (
                   <p className="mt-2 text-xs text-red-500">
                     Please enter at least {MIN_CHARS} characters to continue.
                   </p>
                 )}
               </div>
 
+              {/* Explicit "@ Choose Creator" button — fallback for keyboards where @ detection fails */}
+              {!selectedCreator && (
+                <button
+                  type="button"
+                  onClick={openCreatorPickerFromDescription}
+                  className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 font-medium px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors -mt-4 mb-4"
+                >
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-xs font-bold text-gray-600">@</span>
+                  {getTranslation('Mention a creator', selectedLanguage)}
+                </button>
+              )}
+
               {/* Progressive Disclosure: Only show options if description meets min length */}
-              {description.length >= MIN_CHARS && (
+              {descriptionTextLength >= MIN_CHARS && (
                 <div>
                   {/* Examples moved above to appear before delivery options */}
                 </div>
@@ -5671,9 +5890,17 @@ const App = () => {
 
               {/* Main Amount Display - Hero price, much more prominent */}
               <div className="mb-14 text-center">
-                 <div className="text-7xl font-black text-gray-900 tracking-tighter mb-3 leading-none">
-                    ${Number((paymentAmount * (paymentRole === 'expert' ? 1.3 : 1)) + privacyCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                 </div>
+                  <div className="w-full max-w-full mb-3 px-1">
+                    <div
+                     className="flex items-baseline justify-center gap-1 font-black text-gray-900 leading-none"
+                     style={{ fontSize: 'clamp(2.25rem, 11vw, 4.5rem)' }}
+                    >
+                     <span className="shrink-0">$</span>
+                     <span className="min-w-0 max-w-full truncate tabular-nums">
+                      {Number((paymentAmount * (paymentRole === 'expert' ? 1.3 : 1)) + privacyCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                     </span>
+                    </div>
+                  </div>
                  {paymentRole === 'expert' && (
                     <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-purple-50 to-blue-50 text-purple-700 text-xs font-bold uppercase tracking-wide">
                        <Crown size={12} /> Expert multiplier active (1.3x)
@@ -5716,8 +5943,8 @@ const App = () => {
                       ? Math.max(15, Number(selectedCreator.price)) 
                       : 15;
                     return (
-                      <div className="relative">
-                        <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 text-lg font-bold">$</span>
+                      <div className="flex items-center gap-2 border-b-2 border-gray-200 hover:border-gray-300 focus-within:border-blue-500 transition-all">
+                        <span className="pl-2 text-gray-400 text-lg font-bold shrink-0">$</span>
                         <input
                           type="number"
                           min={creatorMinimum}
@@ -5727,10 +5954,10 @@ const App = () => {
                             setPaymentAmount(v);
                             trackEvent("custom_amount_input", { amount: v });
                           }}
-                          className="w-full pl-11 pr-5 py-4 bg-transparent border-b-2 border-gray-200 hover:border-gray-300 focus:border-blue-500 font-semibold text-gray-900 focus:outline-none transition-all text-lg placeholder-gray-300"
+                          className="flex-1 min-w-0 py-4 bg-transparent font-semibold text-gray-900 focus:outline-none transition-all text-lg placeholder-gray-300 text-right tabular-nums"
                           placeholder="Custom amount"
                         />
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 text-xs text-gray-400">Min ${creatorMinimum}</div>
+                        <div className="pr-2 text-xs text-gray-400 shrink-0">Min ${creatorMinimum}</div>
                       </div>
                     );
                   })()}
@@ -5765,19 +5992,51 @@ const App = () => {
               {/* Specific Creator Selector with Search */}
               <div className="w-full mb-12">
                  <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-4">Target Specific Creator (Optional)</div>
-                 {!selectedCreator ? (
-                    <>
-                       <div className="relative mb-3">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">@</span>
-                          <input
-                             ref={chooseCreatorInputRef}
-                             type="text"
-                             placeholder="Search creators..."
-                             value={creatorSearch}
-                             onChange={(e) => setCreatorSearch(e.target.value.replace(/^@+/, ""))}
-                             className="w-full pl-10 pr-10 py-3 bg-white/50 backdrop-blur-sm rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all placeholder-gray-400"
-                             autoFocus={chooseCreatorFocused}
-                          />
+                 
+                 {/* If creator is selected, show card with change button */}
+                 {selectedCreator && (
+                    <div className="flex items-center justify-between w-full border border-blue-200 bg-gradient-to-r from-blue-50/80 to-purple-50/80 rounded-2xl p-4 backdrop-blur-sm mb-4">
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-purple-400 flex-shrink-0 shadow-md flex items-center justify-center flex-none">
+                             {(selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? (
+                                <img src={selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
+                             ) : null}
+                             <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold" style={{ display: (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? 'none' : 'flex' }}>
+                                {(selectedCreator.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase()}
+                             </div>
+                          </div>
+                          <div className="min-w-0">
+                             <div className="text-sm font-bold text-gray-900">{selectedCreator.displayName || selectedCreator.name}</div>
+                             <div className="text-xs text-blue-600 font-semibold">Selected Creator</div>
+                          </div>
+                       </div>
+                       <div className="flex items-center gap-2 flex-shrink-0">
+                          <button 
+                             onClick={() => setCreatorSearch("")}
+                             className="px-3 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                          >
+                             Change
+                          </button>
+                          <button onClick={() => setSelectedCreator(null)} className="p-2 hover:bg-white/50 rounded-full transition-colors text-gray-400 hover:text-red-500">
+                             <X size={18} />
+                          </button>
+                       </div>
+                    </div>
+                 )}
+                 
+                 {/* Search input always visible */}
+                 <>
+                    <div className="relative mb-3">
+                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">@</span>
+                       <input
+                          ref={chooseCreatorInputRef}
+                          type="text"
+                          placeholder="Search creators..."
+                          value={creatorSearch}
+                          onChange={(e) => setCreatorSearch(e.target.value.replace(/^@+/, ""))}
+                          className="w-full pl-10 pr-10 py-3 bg-white/50 backdrop-blur-sm rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all placeholder-gray-400"
+                          autoFocus={chooseCreatorFocused}
+                       />
                           {creatorSearch && (
                              <button
                                 onClick={() => setCreatorSearch("")}
@@ -5827,27 +6086,6 @@ const App = () => {
                           </div>
                        )}
                     </>
-                 ) : (
-                    <div className="flex items-center justify-between w-full border border-blue-200 bg-gradient-to-r from-blue-50/80 to-purple-50/80 rounded-2xl p-4 backdrop-blur-sm">
-                       <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-purple-400 flex-shrink-0 shadow-md flex items-center justify-center flex-none">
-                             {(selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? (
-                                <img src={selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
-                             ) : null}
-                             <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold" style={{ display: (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? 'none' : 'flex' }}>
-                                {(selectedCreator.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase()}
-                             </div>
-                          </div>
-                          <div className="min-w-0">
-                             <div className="text-sm font-bold text-gray-900">{selectedCreator.displayName || selectedCreator.name}</div>
-                             <div className="text-xs text-blue-600 font-semibold">Selected Creator</div>
-                          </div>
-                       </div>
-                       <button onClick={() => setSelectedCreator(null)} className="p-2 hover:bg-white/50 rounded-full transition-colors text-gray-400 hover:text-red-500 flex-shrink-0 active:scale-90">
-                          <X size={18} />
-                       </button>
-                    </div>
-                 )}
               </div>
 
               {/* Footer Actions */}
@@ -5892,9 +6130,41 @@ const App = () => {
       )}
 
       {/* Creator Selection Modal for Ideas Page */}
+      {showUpgradeUploadModal && (
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6" style={{ zIndex: 10000 }}>
+            <div className="flex items-center gap-2 mb-2">
+              <Crown className="w-5 h-5 text-[var(--color-gold)]" />
+              <h3 className="text-base font-semibold text-gray-900">{getTranslation('Upgrade required', selectedLanguage)}</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              {getTranslation('Reference uploads are available on paid plans. Upgrade to unlock file and link references.', selectedLanguage)}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowUpgradeUploadModal(false)}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 text-gray-700 bg-white"
+              >
+                {getTranslation('Not now', selectedLanguage)}
+              </button>
+              <button
+                onClick={() => {
+                  setShowUpgradeUploadModal(false);
+                  navigate('/sponsorship');
+                }}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--color-gold)] text-white font-medium"
+              >
+                {getTranslation('Upgrade', selectedLanguage)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Creator Selection Modal for Ideas Page */}
       {showCreatorModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] flex flex-col" style={{ zIndex: 10000 }}>
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900">{getTranslation('Choose Creator', selectedLanguage)}</h2>

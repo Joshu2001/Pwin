@@ -67,32 +67,23 @@ const clamp2 = {
 const showVideoLaunchMask = () => {
     try {
         if (typeof document === 'undefined') return;
-        // Force-remove any existing mask first (prevents stale masks from blocking taps)
-        try { const existing = document.getElementById('vp-launch-mask'); if (existing) existing.remove(); } catch {}
+        // Remove any existing mask first (stale from previous open) then create fresh
+        try { const old = document.getElementById('vp-launch-mask'); if (old) old.remove(); } catch { }
         const mask = document.createElement('div');
         mask.id = 'vp-launch-mask';
-        mask.style.position = 'fixed';
-        mask.style.inset = '0';
-        mask.style.background = '#000';
-        mask.style.zIndex = '99999';
-        mask.style.transition = 'opacity 300ms ease';
-        mask.style.opacity = '1';
-        mask.style.pointerEvents = 'none'; // CRITICAL: Don't block taps while mask is visible
+        mask.style.cssText = 'position:fixed;inset:0;background:#000;z-index:99999;opacity:1;pointer-events:none;';
         document.body.appendChild(mask);
-        // Auto-remove mask after player has time to render
+        // Safety net: remove after 8s if Videoplayer never triggers removal
         setTimeout(() => {
             try {
-                const m = document.getElementById('vp-launch-mask');
-                if (m) {
-                    m.style.opacity = '0';
-                    setTimeout(() => { try { m.remove(); } catch {} }, 350);
+                const liveMask = document.getElementById('vp-launch-mask');
+                if (liveMask) {
+                    liveMask.style.transition = 'opacity 300ms ease';
+                    liveMask.style.opacity = '0';
+                    setTimeout(() => { try { liveMask.remove(); } catch { } }, 350);
                 }
-            } catch {}
-        }, 400);
-        // SAFETY NET: Hard-remove after 2 seconds no matter what
-        setTimeout(() => {
-            try { const m = document.getElementById('vp-launch-mask'); if (m) m.remove(); } catch {}
-        }, 2000);
+            } catch { }
+        }, 8000);
     } catch (e) { }
 };
 
@@ -243,7 +234,6 @@ const Icon = ({ name, size = 20, className = '', ...props }) => {
         globe: Globe,
         book: BookOpen,
         film: Video,
-        tag: Tag,
     };
     const Component = IconMap[name];
     if (!Component) return null;
@@ -291,7 +281,7 @@ const MoreActionsDialog = ({ position = null, onClose, onReportClick, onPinClick
 
     return (
         <div
-            className="fixed inset-0 z-[9999] flex items-end justify-center px-4 pb-16"
+            className="fixed inset-0 z-[9999] flex items-end justify-center px-4 pb-4"
             style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
             onClick={onClose}
         >
@@ -669,7 +659,7 @@ const CreatorOnboardingDialog = ({ onClose, selectedLanguage = 'English' }) => {
     const [showIntroError, setShowIntroError] = useState(false);
     const [uploadingIntro, setUploadingIntro] = useState(false);
     const auth = useAuth();
-    const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
 
     const features = [
         {
@@ -1195,27 +1185,16 @@ const CreatorOnboardingDialog = ({ onClose, selectedLanguage = 'English' }) => {
                                                 <video controls className="w-full rounded-lg bg-black" src={introObjectUrl} style={{ maxHeight: 160 }} />
                                             ) : (
                                                 (() => {
-                                                    // attempt to render YouTube preview if possible (compact height)
+                                                    // attempt to render YouTube embed if possible (compact height)
                                                     if (introUrl && /(?:youtube\.com|youtu\.be)/.test(introUrl)) {
                                                         try {
                                                             const matches = introUrl.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
                                                             const id = matches ? matches[1] : null;
                                                             if (id) {
+                                                                const embed = `https://www.youtube.com/embed/${id}`;
                                                                 return (
-                                                                    <div className="w-full rounded-lg overflow-hidden bg-black" style={{ height: 160, position: 'relative' }}>
-                                                                        {/* YouTube thumbnail image — no branding */}
-                                                                        <img
-                                                                            src={`https://img.youtube.com/vi/${id}/hqdefault.jpg`}
-                                                                            alt="Video preview"
-                                                                            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                                                                            onError={(e) => { e.target.src = `https://img.youtube.com/vi/${id}/mqdefault.jpg`; }}
-                                                                        />
-                                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.12)' }} />
-                                                                        {/* Play icon */}
-                                                                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 44, height: 44, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="6,3 20,12 6,21" /></svg>
-                                                                        </div>
-                                                                        <div style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4 }}>YouTube</div>
+                                                                    <div className="w-full rounded-lg overflow-hidden" style={{ height: 160, position: 'relative' }}>
+                                                                        <iframe title="YouTube preview" src={embed} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
                                                                     </div>
                                                                 );
                                                             }
@@ -1794,10 +1773,9 @@ const SideDrawer = ({ isDrawerOpen, onClose, onOpenTheme, onOpenLanguage, curren
                                         backgroundColor: 'var(--color-gold-cream)',
                                         boxShadow: '0 2px 6px var(--color-gold-light), inset 0 1px 0 rgba(255, 255, 255, 0.5)'
                                     }}
-                                    onClick={() => {
-                                        if (!auth?.user) return auth.openAuthModal();
-                                        onOpenCreator && onOpenCreator();
-                                    }}
+                                    onMouseDown={() => { if (!auth?.user) return auth.openAuthModal(); onOpenCreator && onOpenCreator(); }}
+                                    onTouchStart={() => { if (!auth?.user) return auth.openAuthModal(); onOpenCreator && onOpenCreator(); }}
+                                    onClick={(e) => { e.preventDefault(); }}
                                 >
                                     <div className="w-9 h-9 rounded-full flex items-center justify-center mr-3" style={{ backgroundColor: 'var(--color-gold)' }}>
                                         <Icon name="video" size={18} className="text-black" />
@@ -1899,7 +1877,7 @@ const ReportVideoDialog = ({ video, videoTitle, onClose, selectedLanguage = 'Eng
     };
 
     const handleSubmit = async () => {
-        const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
         const token = localStorage.getItem('regaarder_token');
         let reporter = null;
         try { reporter = JSON.parse(localStorage.getItem('regaarder_user') || '{}'); } catch (e) { }
@@ -2041,90 +2019,35 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
     const [followActive, setFollowActive] = useState(false);
     const [requestActive, setRequestActive] = useState(false);
     const [loadedProfileData, setLoadedProfileData] = useState(null);
-    const [resolvedCreatorId, setResolvedCreatorId] = useState(null);
-    const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
-
-    // Normalize uploaded: prefix to full backend URL and fix http→https
-    const normalizeProfileImageUrl = (url) => {
-        if (!url) return null;
-        let s = String(url);
-        if (s.startsWith('uploaded:')) {
-            const filename = s.split(':')[1] || s.slice('uploaded:'.length);
-            return `${BACKEND}/uploads/${filename}`;
-        }
-        // Fix http → https for backend URLs
-        if (s.startsWith('http://') && s.includes('onrender.com')) {
-            s = s.replace('http://', 'https://');
-        }
-        return s;
-    };
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
 
     // Fetch user profile data to get avatar if not already provided
     useEffect(() => {
         if (profileData && profileData.avatar) {
-            setLoadedProfileData({ ...profileData, avatar: normalizeProfileImageUrl(profileData.avatar) });
+            setLoadedProfileData(profileData);
             return;
         }
 
         const fetchUserProfile = async () => {
             try {
                 const targetId = creatorId || username || name;
-                if (!targetId) return;
-
-                // Use /users/:id (which works reliably) instead of /users list
-                const response = await fetch(`${BACKEND}/users/${encodeURIComponent(targetId)}`);
-                if (!response.ok) {
-                    setLoadedProfileData(profileData);
-                    return;
-                }
+                const response = await fetch(`${BACKEND}/users`);
                 const result = await response.json();
-                const user = result.user || result;
+                const users = Array.isArray(result.users) ? result.users : (Array.isArray(result) ? result : []);
+                
+                const user = users.find(u => 
+                    u.id === targetId || 
+                    u.email === targetId || 
+                    u.name === targetId || 
+                    (u.name && u.name.toLowerCase() === String(targetId).toLowerCase())
+                );
 
-                if (user && !user.isPlaceholder) {
-                    // Store the resolved canonical ID for follow/unfollow
-                    setResolvedCreatorId(user.id || user.email);
-                    const rawImg = user.image || user.avatar || user.photoURL || user.profilePicture || null;
+                if (user) {
                     setLoadedProfileData({
                         ...profileData,
-                        avatar: normalizeProfileImageUrl(rawImg),
-                        bio: user.bio || user.description || (profileData && profileData.bio) || null,
-                        stats: {
-                            videos: user.videosCount || (user.videos && Array.isArray(user.videos) ? user.videos.length : 0) || (profileData && profileData.stats && profileData.stats.videos) || 0,
-                            requests: user.requestsCompleted || user.fulfilled || (profileData && profileData.stats && profileData.stats.requests) || 0,
-                            followers: user.followers || user.followers_count || 0,
-                            following: user.followingCount || (Array.isArray(user.following) ? user.following.length : 0) || 0
-                        },
-                        joinedDate: user.joinedDate || user.createdAt || user.created_at || (profileData && profileData.joinedDate) || new Date().getFullYear()
+                        avatar: user.image || user.avatar || null
                     });
                 } else {
-                    // If not found by first ID, try other identifiers
-                    const alternateIds = [username, name, creatorId].filter(x => x && x !== targetId);
-                    for (const altId of alternateIds) {
-                        try {
-                            const altRes = await fetch(`${BACKEND}/users/${encodeURIComponent(altId)}`);
-                            if (altRes.ok) {
-                                const altResult = await altRes.json();
-                                const altUser = altResult.user || altResult;
-                                if (altUser && !altUser.isPlaceholder) {
-                                    setResolvedCreatorId(altUser.id || altUser.email);
-                                    const rawImg2 = altUser.image || altUser.avatar || altUser.photoURL || null;
-                                    setLoadedProfileData({
-                                        ...profileData,
-                                        avatar: normalizeProfileImageUrl(rawImg2),
-                                        bio: altUser.bio || (profileData && profileData.bio) || null,
-                                        stats: {
-                                            videos: altUser.videosCount || 0,
-                                            requests: altUser.requestsCompleted || 0,
-                                            followers: altUser.followers || altUser.followers_count || 0,
-                                            following: altUser.followingCount || (Array.isArray(altUser.following) ? altUser.following.length : 0) || 0
-                                        },
-                                        joinedDate: altUser.joinedDate || altUser.createdAt || altUser.created_at || new Date().getFullYear()
-                                    });
-                                    return; // Found it
-                                }
-                            }
-                        } catch (e) { /* try next */ }
-                    }
                     setLoadedProfileData(profileData);
                 }
             } catch (err) {
@@ -2162,65 +2085,39 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
             const token = localStorage.getItem('regaarder_token');
 
             try {
-                // Resolve creator real ID using /users/:id (which works reliably)
+                // Resolve creator real ID from users by id OR email OR name
+                const usersResp = await fetch(`${BACKEND}/users`).then(r => r.json()).catch(() => null);
+                const usersList = usersResp && Array.isArray(usersResp.users) ? usersResp.users : [];
                 let resolvedCreator = null;
-                const lookupIds = [targetId, username, name, creatorId].filter(Boolean);
-                for (const lookupId of [...new Set(lookupIds)]) {
-                    try {
-                        const resp = await fetch(`${BACKEND}/users/${encodeURIComponent(lookupId)}`);
-                        if (resp.ok) {
-                            const data = await resp.json();
-                            const u = data.user || data;
-                            if (u && !u.isPlaceholder) {
-                                resolvedCreator = u;
-                                break;
-                            }
-                        }
-                    } catch (e) { /* try next */ }
+                if (usersList.length) {
+                    resolvedCreator = usersList.find(u =>
+                        u.id === targetId ||
+                        u.email === targetId ||
+                        u.name === targetId ||
+                        (u.email && targetId && targetId.includes('@') && u.email.toLowerCase() === String(targetId).toLowerCase()) ||
+                        (u.name && u.name.toLowerCase() === String(targetId).toLowerCase())
+                    ) || null;
                 }
 
                 // 1) Check if we're following this creator using canonical creator.id
                 if (resolvedCreator && resolvedCreator.id) {
-                    // Also store resolved ID for follow/unfollow buttons
-                    setResolvedCreatorId(resolvedCreator.id);
-                    // Update follower count from resolved data
-                    const realFollowers = resolvedCreator.followers || resolvedCreator.followers_count || 0;
-                    if (realFollowers > 0) setFollowerCount(realFollowers);
-
-                    try {
-                        const followingResponse = await fetch(`${BACKEND}/following/${encodeURIComponent(resolvedCreator.id)}`, {
-                            headers: {
-                                'Authorization': token ? `Bearer ${token}` : ''
-                            }
-                        });
-                        if (followingResponse.ok) {
-                            const { isFollowing: followStatus } = await followingResponse.json();
-                            setIsFollowing(!!followStatus);
-                        } else {
-                            // Fallback: check localStorage for local follow state
-                            const followKey = `regaarder_following_${resolvedCreator.id}`;
-                            if (localStorage.getItem(followKey) === '1') {
-                                setIsFollowing(true);
-                            }
+                    const followingResponse = await fetch(`${BACKEND}/following/${encodeURIComponent(resolvedCreator.id)}`, {
+                        headers: {
+                            'Authorization': token ? `Bearer ${token}` : ''
                         }
-                    } catch (e) {
-                        console.warn('Error checking follow status:', e);
-                        // Fallback: check localStorage for local follow state
-                        try {
-                            const followKey = `regaarder_following_${resolvedCreator.id}`;
-                            if (localStorage.getItem(followKey) === '1') {
-                                setIsFollowing(true);
-                            }
-                        } catch (le) { /* noop */ }
+                    });
+                    if (followingResponse.ok) {
+                        const { isFollowing } = await followingResponse.json();
+                        setIsFollowing(!!isFollowing);
                     }
-                } else {
-                    // No resolved creator — check localStorage with raw targetId
-                    try {
-                        const followKey = `regaarder_following_${targetId}`;
-                        if (localStorage.getItem(followKey) === '1') {
-                            setIsFollowing(true);
-                        }
-                    } catch (le) { /* noop */ }
+                }
+
+                // 2) Get real follower count for this creator using creator.id
+                if (resolvedCreator && resolvedCreator.id) {
+                    const followersCount = usersList.filter(u =>
+                        Array.isArray(u.following) && u.following.includes(resolvedCreator.id)
+                    ).length;
+                    setFollowerCount(followersCount);
                 }
             } catch (err) {
                 console.error('Error checking follow status:', err);
@@ -2230,24 +2127,12 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
         checkFollowStatus();
     }, [creatorId, username, name, BACKEND]);
 
-    // Update data with current follower count — sanitize all fields to prevent
-    // "Objects are not valid as a React child" crash when backend returns unexpected types
-    const rawData = {
+    // Update data with current follower count
+    const data = {
         ...initialData,
         stats: {
             ...initialData.stats,
             followers: followerCount
-        }
-    };
-    const data = {
-        ...rawData,
-        bio: (rawData.bio && typeof rawData.bio === 'string') ? rawData.bio : (rawData.bio && typeof rawData.bio !== 'object' ? String(rawData.bio) : null),
-        joinedDate: (typeof rawData.joinedDate === 'string' || typeof rawData.joinedDate === 'number') ? rawData.joinedDate : '',
-        stats: {
-            videos: Number(rawData.stats?.videos) || 0,
-            requests: Number(rawData.stats?.requests) || 0,
-            followers: Number(rawData.stats?.followers) || 0,
-            following: Number(rawData.stats?.following) || 0,
         }
     };
 
@@ -2330,9 +2215,9 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                     setFollowActive(true);
 
                                     try {
-                                        // Call backend to unfollow — use resolvedCreatorId for reliable matching
+                                        // Call backend to unfollow
                                         const token = localStorage.getItem('regaarder_token');
-                                        const targetId = resolvedCreatorId || creatorId || username || name;
+                                        const targetId = creatorId || username || name;
 
                                         const response = await fetch(`${BACKEND}/unfollow`, {
                                             method: 'POST',
@@ -2348,27 +2233,15 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                                 setIsFollowing(false);
                                                 setFollowerCount(prev => Math.max(0, prev - 1));
                                                 setFollowActive(false);
-                                                try { localStorage.removeItem(`regaarder_following_${targetId}`); } catch (e) { /* noop */ }
                                             }, 150);
                                         } else {
                                             const errorData = await response.json().catch(() => ({}));
                                             console.error('Unfollow failed:', response.status, errorData);
-                                            // Optimistic local unfollow
-                                            setIsFollowing(false);
-                                            setFollowerCount(prev => Math.max(0, prev - 1));
                                             setFollowActive(false);
-                                            try { localStorage.removeItem(`regaarder_following_${targetId}`); } catch (e) { /* noop */ }
                                         }
                                     } catch (err) {
                                         console.error('Unfollow error:', err);
-                                        // Optimistic local unfollow
-                                        setIsFollowing(false);
-                                        setFollowerCount(prev => Math.max(0, prev - 1));
                                         setFollowActive(false);
-                                        try {
-                                            const targetId = resolvedCreatorId || creatorId || username || name;
-                                            localStorage.removeItem(`regaarder_following_${targetId}`);
-                                        } catch (e) { /* noop */ }
                                     }
                                 }}
                                 className={`w-full py-3 rounded-xl font-semibold border-2 transition-all duration-150 hover:bg-gray-50`}
@@ -2388,11 +2261,11 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                     setFollowActive(true);
 
                                     try {
-                                        // Call backend to follow — use resolvedCreatorId for reliable matching
+                                        // Call backend to follow
                                         const token = localStorage.getItem('regaarder_token');
-                                        const targetId = resolvedCreatorId || creatorId || username || name;
+                                        const targetId = creatorId || username || name;
 
-                                        console.log('Following:', { targetId, resolvedCreatorId, creatorId, username, name });
+                                        console.log('Following:', { targetId, creatorId, username, name });
 
                                         const response = await fetch(`${BACKEND}/follow`, {
                                             method: 'POST',
@@ -2408,24 +2281,12 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                                 setIsFollowing(true);
                                                 setFollowerCount(prev => prev + 1);
                                                 setFollowActive(false);
-                                                // Persist follow state locally so it survives navigation
-                                                try {
-                                                    const followKey = `regaarder_following_${targetId}`;
-                                                    localStorage.setItem(followKey, '1');
-                                                } catch (e) { /* noop */ }
                                             }, 150);
                                         } else {
-                                            // Backend failed — still persist locally for UX
+                                            // Log the actual error message from backend
                                             const errorData = await response.json().catch(() => ({}));
                                             console.error('Follow failed:', response.status, errorData);
-                                            // Optimistic local follow so button feels responsive
-                                            setIsFollowing(true);
-                                            setFollowerCount(prev => prev + 1);
                                             setFollowActive(false);
-                                            try {
-                                                const followKey = `regaarder_following_${targetId}`;
-                                                localStorage.setItem(followKey, '1');
-                                            } catch (e) { /* noop */ }
                                         }
                                     } catch (err) {
                                         console.error('Follow error:', err);
@@ -2449,24 +2310,35 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setRequestActive(true);
+                                        const creatorData = {
+                                            id: creatorId || username || name,
+                                            name: name,
+                                            handle: username,
+                                            username: username,
+                                            displayName: name,
+                                            email: loadedProfileData?.email || null,
+                                            photoURL: loadedProfileData?.avatar,
+                                            avatar: loadedProfileData?.avatar,
+                                            image: loadedProfileData?.avatar,
+                                            followers: loadedProfileData?.followers,
+                                            price: loadedProfileData?.price || 0
+                                        };
+                                        try {
+                                            localStorage.setItem('ideas_selectedCreator_v1', JSON.stringify(creatorData));
+                                        } catch (err) {
+                                            console.error('Error saving creator to localStorage:', err);
+                                        }
+                                        try { sessionStorage.setItem('ideas_selectedCreator_v1', JSON.stringify(creatorData)); } catch (err) { }
+                                        try { window.dispatchEvent(new Event('ideas:creator_selected')); } catch (err) { }
+                                        try {
+                                            navigate('/ideas', { state: { selectedCreator: creatorData } });
+                                            if (window.setFooterTab) window.setFooterTab('ideas');
+                                        } catch (err) {
+                                            window.location.href = '/ideas';
+                                        }
                                         setTimeout(() => {
-                                            // Store creator data in localStorage for ideas page
-                                            const creatorData = {
-                                                id: resolvedCreatorId || creatorId || username || name,
-                                                name: name,
-                                                handle: username,
-                                                displayName: name,
-                                                photoURL: loadedProfileData?.avatar || null,
-                                                image: loadedProfileData?.avatar || null
-                                            };
-                                            try {
-                                                localStorage.setItem('ideas_selectedCreator_v1', JSON.stringify(creatorData));
-                                            } catch (err) {
-                                                console.error('Error saving creator to localStorage:', err);
-                                            }
-                                            onClose();
-                                            navigate('/ideas');
-                                        }, 150);
+                                            try { onClose(); } catch (err) { }
+                                        }, 40);
                                     }}
                                     className={`w-full py-3 rounded-xl border-2 font-semibold transition-all duration-150 hover:bg-gray-50`}
                                     style={{
@@ -2493,9 +2365,7 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    const profileId = resolvedCreatorId || creatorId || username || name;
-                                    const profileHandle = username || name;
-                                    navigate(`/creatorprofile?id=${encodeURIComponent(profileId)}&handle=${encodeURIComponent(profileHandle)}&shared=true`);
+                                    navigate(`/creatorprofilepreview?creator=${encodeURIComponent(name)}`);
                                 }}
                                 className="text-sm font-medium hover:underline transition-colors"
                                 style={{ color: 'var(--color-gold)' }}
@@ -3036,17 +2906,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
         } catch (e) { /* noop */ }
     }, [location.search]);
 
-    // Auto-open signup modal when redirected from /join referral link
-    useEffect(() => {
-        try {
-            if (location.state?.openSignup && !auth?.user) {
-                auth.openAuthModal();
-                // Clear the state so it doesn't re-trigger on re-render
-                navigate(location.pathname, { replace: true, state: {} });
-            }
-        } catch (e) { /* noop */ }
-    }, [location.state]);
-
     // NEW: Profile dialog state
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [profileUser, setProfileUser] = useState(null);
@@ -3069,27 +2928,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const [miniPlayerPos, setMiniPlayerPos] = useState({ right: 16, bottom: 100 });
     const miniDragRef = useRef({ isDragging: false, hasMoved: false, startX: 0, startY: 0, startRight: 16, startBottom: 100 });
     const miniPlayerClosedTimestampRef = useRef(0); // Track when miniplayer was explicitly closed
-    const miniPlayerClosedRef = useRef(false); // Synchronous flag: true while miniplayer should stay closed (prevents timeupdate race)
     const skipNextSwitchToHomeRef = useRef(false); // Skip next switchToHome event if user just closed miniplayer
-
-    // Hydrate closed-state refs from sessionStorage so a freshly-mounted Home instance
-    // (e.g. after clearOverride restores the Routes tree) knows the player was recently closed
-    useEffect(() => {
-        try {
-            const closedTs = sessionStorage.getItem('miniPlayerClosed');
-            if (closedTs) {
-                const ts = parseInt(closedTs, 10);
-                if (!isNaN(ts) && Date.now() - ts < 10000) {
-                    // Closed within last 10 seconds — keep guard active
-                    miniPlayerClosedRef.current = true;
-                    miniPlayerClosedTimestampRef.current = ts;
-                } else {
-                    // Stale — clean up
-                    sessionStorage.removeItem('miniPlayerClosed');
-                }
-            }
-        } catch (e) { }
-    }, []);
 
     // Staff action notification modal state
     const [staffActionNotification, setStaffActionNotification] = useState(null);
@@ -3102,15 +2941,13 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Check if first-time user on component mount
     useEffect(() => {
         try {
-            // v2 flag (prevents older installs where v1 flag was set too early from skipping the modal)
-            const hasSeenWelcomeV2 = localStorage.getItem('regaarder_seen_welcome_v2');
-            if (!hasSeenWelcomeV2) {
+            const hasSeenWelcome = localStorage.getItem('regaarder_seen_welcome');
+            if (!hasSeenWelcome) {
                 setShowRoleSelection(true);
+                localStorage.setItem('regaarder_seen_welcome', '1');
             }
         } catch (e) {
             console.warn('Failed to check welcome modal status', e);
-            // If localStorage is unavailable for any reason, still show the modal.
-            setShowRoleSelection(true);
         }
     }, []);
 
@@ -3120,7 +2957,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             if (sessionStorage.getItem('beta_wait_modal_seen') === '1') return;
         } catch (e) { }
 
-        const BACKEND = (typeof window !== 'undefined' && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+        const BACKEND = (typeof window !== 'undefined' && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
         const totalSeconds = 80;
         const totalMs = totalSeconds * 1000;
         const showDelayMs = 1800;
@@ -3193,20 +3030,16 @@ const App = ({ overrideMiniPlayerData = null }) => {
     }, []);
 
     const handleRoleSelect = (role) => {
-        // Mark welcome as seen only when the user selects a role.
-        // (If they dismiss by tapping the backdrop, keep it eligible to show again next launch.)
-        if (role === 'user' || role === 'creator') {
-            try {
-                localStorage.setItem('regaarder_seen_welcome', '1');
-                localStorage.setItem('regaarder_seen_welcome_v2', '1');
-            } catch (e) { }
-        }
         if (role === 'user') {
             setShowRoleSelection(false);
-            setShowUserWelcome(true);
+            setShowUserWelcome(false);
+            setShowCreatorWelcome(false);
+            navigate('/ideas');
         } else if (role === 'creator') {
             setShowRoleSelection(false);
-            setShowCreatorWelcome(true);
+            setShowUserWelcome(false);
+            setShowCreatorWelcome(false);
+            navigate('/requests?claimPulse=1');
         } else {
             setShowRoleSelection(false);
         }
@@ -3229,9 +3062,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
             try { localStorage.removeItem('miniPlayerData'); } catch (e) { }
         }
         
-        // Restore the Routes tree if App.jsx had replaced it via switchToHomeOnly override
-        try { eventBus.emit('clearOverride'); } catch (e) { }
-        
         navigate(cleanPath);
     }, [navigate]);
 
@@ -3252,39 +3082,11 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const [showFullscreenPlayer, setShowFullscreenPlayer] = useState(false);
     const [fullscreenPlayerData, setFullscreenPlayerData] = useState(null);
     const [isTransitioningToMiniPlayer, setIsTransitioningToMiniPlayer] = useState(false);
-    // Ref mirror of showFullscreenPlayer to avoid stale closures in callbacks/timeouts
-    const showFullscreenPlayerRef = useRef(false);
-    useEffect(() => { showFullscreenPlayerRef.current = showFullscreenPlayer; }, [showFullscreenPlayer]);
+    const fullscreenVisibleRef = useRef(false);
+    const miniHandoffReadyRef = useRef(false);
 
-    // SAFETY NET: When MiniPlayer is showing and fullscreen overlay should be gone,
-    // force-cleanup after a short delay. This catches any stale closure edge cases.
     useEffect(() => {
-        if (showMiniPlayer && showFullscreenPlayer) {
-            const safetyTimer = setTimeout(() => {
-                if (showFullscreenPlayerRef.current) {
-                    console.warn('[MiniPlayer safety] Force-closing lingering fullscreen overlay');
-                    setShowFullscreenPlayer(false);
-                    setFullscreenPlayerData(null);
-                    setIsTransitioningToMiniPlayer(false);
-                }
-            }, 800);
-            return () => clearTimeout(safetyTimer);
-        }
-    }, [showMiniPlayer, showFullscreenPlayer]);
-
-    // SAFETY NET: When fullscreen player closes, aggressively clean body styles
-    // that the Videoplayer may have injected (belt-and-suspenders with Videoplayer's own cleanup)
-    useEffect(() => {
-        if (!showFullscreenPlayer) {
-            try {
-                const immersiveStyle = document.getElementById('regaarder-immersive-style');
-                if (immersiveStyle) immersiveStyle.remove();
-            } catch (e) {}
-            try {
-                document.documentElement.style.overflow = '';
-                document.body.style.overflow = '';
-            } catch (e) {}
-        }
+        fullscreenVisibleRef.current = showFullscreenPlayer;
     }, [showFullscreenPlayer]);
 
     // NEW: Toast state
@@ -3293,33 +3095,32 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Poll for new notifications to show toaster
     useEffect(() => {
         let lastNotifCount = -1;
+        let authBlocked = false;
         // Function to check notifications
         const checkForNotifications = async () => {
-            const token = localStorage.getItem('regaarder_token');
-            if (!token) {
-                // Clear stale badge/count when logged out
-                try {
-                    localStorage.setItem('notifications_count', '0');
-                    localStorage.setItem('notifications', '[]');
-                    window.dispatchEvent(new Event('storage'));
-                } catch (e) { }
-                return;
-            }
+            if (authBlocked) return;
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+                if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
+            } catch (e) { }
+            const token = localStorage.getItem('regaarder_token');
+            if (!token) return;
+            try {
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 const res = await fetch(`${BACKEND}/notifications`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                if (res.status === 401) {
+                    authBlocked = true;
+                    try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
+                    return;
+                }
                 if (res.ok) {
                     const data = await res.json();
-                    const rawList = Array.isArray(data.notifications) ? data.notifications : [];
-                    // Filter out blank/invalid items so badge and list don't disagree
-                    const list = rawList.filter(n => n && (n.title || n.text || n.message));
-                    const unread = list.filter(n => !n.read);
-                    const count = unread.length;
+                    const list = data.notifications || [];
+                    const count = list.length;
 
                     // Check for unread staff action notifications
-                    const unreadStaffAction = unread.find(n => n.type === 'staff_action' && n.requiresAcknowledgment && !n.read);
+                    const unreadStaffAction = list.find(n => n.type === 'staff_action' && n.requiresAcknowledgment && !n.read);
                     
                     // Show modal if there's an unread staff action (even on first load)
                     if (unreadStaffAction && !staffActionNotification) {
@@ -3329,7 +3130,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     // If we have more notifications than before, assume the top one is new
                     // and show a toaster for it.
                     if (lastNotifCount !== -1 && count > lastNotifCount) {
-                        const newest = unread[0] || list[0];
+                        const newest = list[0];
                         if (newest) {
                             // Check if this is an unread staff action notification
                             if (newest.type === 'staff_action' && newest.requiresAcknowledgment && !newest.read) {
@@ -3341,7 +3142,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     show: true,
                                     type: 'info',
                                     title: 'New Notification',
-                                    message: newest.text || newest.message || newest.title || 'You have a new update'
+                                    message: newest.text || 'You have a new update'
                                 });
                                 // Auto-hide after 4 seconds
                                 setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
@@ -3354,13 +3155,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     localStorage.setItem('notifications_count', String(count));
                     localStorage.setItem('notifications', JSON.stringify(list));
                     window.dispatchEvent(new Event('storage'));
-                } else {
-                    // If backend rejected the request, clear stale count (e.g. expired token)
-                    try {
-                        localStorage.setItem('notifications_count', '0');
-                        localStorage.setItem('notifications', '[]');
-                        window.dispatchEvent(new Event('storage'));
-                    } catch (e) { }
                 }
             } catch (e) {
                 // silent fail on poll error 
@@ -3394,10 +3188,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Listen for mini player events from videoplayer
     useEffect(() => {
         const handleMiniPlayerRequest = (data) => {
-            // Show miniplayer if we're on home OR Home is rendered via override view
-            const isHomePage = location.pathname === '/' || location.pathname === '/home' || !!overrideMiniPlayerData;
+            // Only show miniplayer if we're on the home page
+            const isHomePage = location.pathname === '/' || location.pathname === '/home';
             if (isHomePage && data && data.video) {
-                miniPlayerClosedRef.current = false; // Reset closed flag — intentional open
                 setMiniPlayerData(data);
                 setMiniPlaying(!(data.paused));
                 setShowMiniPlayer(true);
@@ -3411,14 +3204,10 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 skipNextSwitchToHomeRef.current = false; // Reset flag
                 return;
             }
-            // Also skip if closed ref is set or recently closed (within 5 seconds)
-            if (miniPlayerClosedRef.current) return;
-            const timeSinceClosed = Date.now() - miniPlayerClosedTimestampRef.current;
-            if (timeSinceClosed < 5000) return;
             
-            // Always accept miniplayer data — even if not currently on /home,
-            // we may be navigating back to home via history.back() from /videoplayer
-            if (data && data.video) {
+            // Only show miniplayer if we're on the home page
+            const isHomePage = location.pathname === '/' || location.pathname === '/home';
+            if (isHomePage && data && data.video) {
                 setMiniPlayerData(data);
                 setMiniPlaying(!(data.paused));
                 setShowMiniPlayer(true);
@@ -3429,32 +3218,21 @@ const App = ({ overrideMiniPlayerData = null }) => {
             unsubscribe();
             try { unsubscribe2(); } catch (e) { }
         };
-    }, [location.pathname, overrideMiniPlayerData]);
+    }, [location.pathname]);
 
     // Check for mini player data in multiple channels: override prop, location.state, URL params, localStorage
     useEffect(() => {
-        // Only restore miniplayer on home page or when Home is rendered via override view
-        const isHomePage = location.pathname === '/' || location.pathname === '/home' || !!overrideMiniPlayerData;
+        // Only restore miniplayer on home page
+        const isHomePage = location.pathname === '/' || location.pathname === '/home';
         if (!isHomePage) {
             return; // Don't restore miniplayer data on non-home pages
         }
 
-        // Don't restore if miniplayer was just explicitly closed
-        if (miniPlayerClosedRef.current) {
-            return; // Closed flag is set, don't auto-restore
-        }
+        // Don't restore if miniplayer was just explicitly closed (within 2 seconds)
         const timeSinceClosed = Date.now() - miniPlayerClosedTimestampRef.current;
-        if (timeSinceClosed < 5000) {
-            return; // Recently closed (within 5 seconds), don't auto-restore
+        if (timeSinceClosed < 2000) {
+            return; // Recently closed, don't auto-restore
         }
-        // Guard against component remount resetting the ref: check sessionStorage too
-        try {
-            const closedTs = sessionStorage.getItem('miniPlayerClosed');
-            if (closedTs && (Date.now() - Number(closedTs)) < 10000) {
-                miniPlayerClosedRef.current = true; // Re-hydrate the ref from persisted state
-                return; // Recently closed (within 10 seconds), don't auto-restore
-            }
-        } catch (e) { }
 
         try {
             if (overrideMiniPlayerData && overrideMiniPlayerData.video) {
@@ -3524,10 +3302,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
         try {
             // Resolve candidate src from payload
             const src = (miniPlayerData && miniPlayerData.video && (miniPlayerData.video.src || miniPlayerData.video.videoUrl || miniPlayerData.video.url)) || '';
-            const resolvedSrc = resolveMediaUrl(src) || src;
-            if (resolvedSrc && v.src !== resolvedSrc) {
-                try { v.src = resolvedSrc; } catch (e) { /* best-effort */ }
-                try { v.load(); } catch { }
+            if (src && v.src !== src) {
+                try { v.src = src; } catch (e) { /* best-effort */ }
             }
 
             const applyState = () => {
@@ -3540,11 +3316,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     // Always play when switching to miniplayer - continue playback
                     try {
                         v.muted = true;
-                        v.playsInline = true;
-                        v.autoplay = true;
                         const p = v.play();
                         if (p && p.then) {
-                            p.catch(() => { /* autoplay may be blocked */ });
+                            p.then(() => { try { v.muted = false; } catch (e) { } }).catch(() => { });
                         }
                     } catch (e) { }
                 } catch (err) { console.warn('miniPlayer applyState failed', err); }
@@ -3558,19 +3332,12 @@ const App = ({ overrideMiniPlayerData = null }) => {
             }
 
             // Persist currentTime periodically so the full player can resume accurately
-            // CRITICAL: Check miniPlayerClosedRef to prevent writing AFTER user closed the player
             timeUpdateHandler = () => {
                 try {
-                    if (miniPlayerClosedRef.current) return; // Player was closed, stop persisting
                     const current = Math.floor(v.currentTime || 0);
                     setMiniPlayerData(prev => {
-                        if (!prev) return prev; // Don't resurrect null data
-                        const next = { ...prev, time: current };
-                        try {
-                            if (!miniPlayerClosedRef.current) {
-                                localStorage.setItem('miniPlayerData', JSON.stringify(next));
-                            }
-                        } catch (e) { }
+                        const next = { ...(prev || {}), time: current };
+                        try { localStorage.setItem('miniPlayerData', JSON.stringify(next)); } catch (e) { }
                         return next;
                     });
                 } catch (e) { }
@@ -3650,13 +3417,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const handleOpenShare = (video) => {
         setShareVideo(video);
         setIsShareOpen(true);
-        // Increment share count on backend
-        if (video && video.id) {
-            try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
-                fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}/share`, { method: 'POST' }).catch(() => {});
-            } catch (e) {}
-        }
     };
 
     const handleCloseShare = () => {
@@ -3699,7 +3459,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             if (!v) return;
             const bookmarking = !v.bookmarked;
             if (!bookmarking) return; // only persist adds; removal not supported server-side
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/bookmarks/videos`, {
                 method: 'POST',
@@ -3713,7 +3473,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const handleUnpinVideo = async (videoId) => {
         setVideos(prev => prev.map((v) => (v.id === videoId ? { ...v, pinned: false, pinnedDays: null } : v)));
         try {
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/videos/${encodeURIComponent(videoId)}`, {
                 method: 'PATCH',
@@ -3727,6 +3487,72 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const videoData = [];
 
     const [videos, setVideos] = useState(videoData);
+
+    useEffect(() => {
+        const toSafeCount = (value) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+        };
+
+        const normalize = (value) => String(value || '').trim().toLowerCase();
+        const normalizeUrl = (value) => {
+            const raw = String(value || '').trim();
+            if (!raw) return '';
+            try {
+                const resolved = resolveMediaUrl(raw);
+                return normalize(resolved || raw);
+            } catch (e) {
+                return normalize(raw);
+            }
+        };
+
+        const onReactionsUpdated = (event) => {
+            const detail = event && event.detail ? event.detail : {};
+            const likesCount = toSafeCount(detail.likes);
+            const dislikesCount = toSafeCount(detail.dislikes);
+            const hasLikes = likesCount !== null;
+            const hasDislikes = dislikesCount !== null;
+            if (!hasLikes && !hasDislikes) return;
+
+            const detailId = normalize(detail.videoId);
+            const detailSrc = normalizeUrl(detail.videoSrc);
+            const detailTitle = normalize(detail.title);
+
+            setVideos((prevVideos) => prevVideos.map((video) => {
+                const videoId = normalize(video.id);
+                const videoSrc = normalizeUrl(video.videoUrl || video.url || video.src);
+                const videoTitle = normalize(video.title);
+
+                const idMatch = detailId && videoId && detailId === videoId;
+                const srcMatch = detailSrc && videoSrc && (
+                    detailSrc === videoSrc ||
+                    detailSrc.includes(videoSrc) ||
+                    videoSrc.includes(detailSrc)
+                );
+                const titleMatch = !detailId && !detailSrc && detailTitle && videoTitle && detailTitle === videoTitle;
+
+                if (!idMatch && !srcMatch && !titleMatch) return video;
+
+                const nextStats = {
+                    ...(video.stats || {}),
+                    ...(hasLikes ? { likes: likesCount } : {}),
+                    ...(hasDislikes ? { dislikes: dislikesCount } : {})
+                };
+
+                return {
+                    ...video,
+                    ...(hasLikes ? { likes: likesCount, likeCount: likesCount } : {}),
+                    ...(hasDislikes ? { dislikes: dislikesCount, dislikeCount: dislikesCount } : {}),
+                    stats: nextStats
+                };
+            }));
+        };
+
+        window.addEventListener('video:reactionsUpdated', onReactionsUpdated);
+        return () => {
+            window.removeEventListener('video:reactionsUpdated', onReactionsUpdated);
+        };
+    }, []);
     // fixed: valid array (no syntax errors)
     const extraVideoData = [
         {
@@ -3772,7 +3598,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
         setVideos([]); // Reset videos on tab change
         const fetchVideos = async () => {
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                 console.log('Fetching videos from:', `${BACKEND}/videos`);
 
                 // Fetch bookmarks to sync state
@@ -3875,10 +3701,56 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     }
                                 };
 
-                                const videoUrlRaw = (video.videoUrl || video.url || video.src) && !String(video.videoUrl || video.url || video.src).startsWith('blob:')
-                                    ? (video.videoUrl || video.url || video.src)
+                                const rawSource = video.videoUrl || video.url || video.src || video.videoLink || video.youtubeUrl || video.mediaUrl;
+                                const videoUrlRaw = rawSource && !String(rawSource).startsWith('blob:')
+                                    ? rawSource
                                     : null;
                                 const videoUrl = normalizeMediaUrl(videoUrlRaw);
+
+                                const isYouTubeUrl = /(?:youtube\.com|youtu\.be)/i.test(String(videoUrl || ''));
+                                const readCachedYoutubeTime = (url) => {
+                                    try {
+                                        const text = String(url || '').trim();
+                                        if (!text) return '';
+                                        let ytId = '';
+                                        if (/^[a-zA-Z0-9_-]{11}$/.test(text)) ytId = text;
+                                        else if (text.includes('youtu.be/')) ytId = text.split('youtu.be/')[1].split(/[?&#/]/)[0] || '';
+                                        else if (text.includes('youtube.com')) {
+                                            try {
+                                                const parsed = new URL(text);
+                                                ytId = parsed.searchParams.get('v') || '';
+                                                if (!ytId) {
+                                                    const parts = parsed.pathname.split('/').filter(Boolean);
+                                                    const marker = parts.findIndex((part) => part === 'shorts' || part === 'embed' || part === 'live' || part === 'v');
+                                                    if (marker >= 0 && parts[marker + 1]) ytId = parts[marker + 1];
+                                                }
+                                            } catch { }
+                                        }
+                                        if (!ytId) return '';
+                                        const cached = localStorage.getItem(`yt_dur_${ytId}`);
+                                        const secs = Number(cached || 0);
+                                        if (!Number.isFinite(secs) || secs <= 0) return '';
+                                        const whole = Math.floor(secs);
+                                        return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+                                    } catch {
+                                        return '';
+                                    }
+                                };
+                                const normalizedTime = (() => {
+                                    if (video.time && String(video.time).trim()) return String(video.time).trim();
+                                    if (typeof video.duration === 'string' && video.duration.includes(':')) return video.duration;
+                                    if (typeof video.duration === 'number' && Number.isFinite(video.duration) && video.duration > 0) {
+                                        const dur = Math.floor(video.duration);
+                                        const mins = Math.floor(dur / 60);
+                                        const secs = String(dur % 60).padStart(2, '0');
+                                        return `${mins}:${secs}`;
+                                    }
+                                    if (isYouTubeUrl) {
+                                        const cached = readCachedYoutubeTime(videoUrl);
+                                        if (cached) return cached;
+                                    }
+                                    return isYouTubeUrl ? '--:--' : '0:00';
+                                })();
 
                                 return {
                                     ...video,
@@ -3886,10 +3758,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     date: relativeTime,
                                     // Replace blob URLs with fallback placeholders
                                     imageUrl: (() => {
-                                        const rawThumb = video.thumbnailUrl || video.thumbUrl || video.thumb || video.poster || video.cover || video.thumbnail || video.image;
                                         const url = (video.imageUrl && !video.imageUrl.startsWith('blob:'))
                                             ? video.imageUrl
-                                            : (rawThumb || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable');
+                                            : (video.thumbnail || video.image || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable');
                                         return normalizeMediaUrl(url) || url;
                                     })(),
                                     // Process author avatar if available
@@ -3904,10 +3775,13 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     })(),
                                     videoUrl: videoUrl,
                                     // Ensure time field exists
-                                    time: video.time || '0:00',
+                                    time: normalizedTime,
                                     // Parse time into duration in seconds for display
                                     duration: (() => {
-                                        const timeStr = video.time || '0:00';
+                                        if (typeof video.duration === 'number' && Number.isFinite(video.duration) && video.duration > 0) {
+                                            return Math.floor(video.duration);
+                                        }
+                                        const timeStr = normalizedTime || '0:00';
                                         const parts = timeStr.split(':');
                                         if (parts.length === 2) {
                                             const minutes = parseInt(parts[0]) || 0;
@@ -3944,46 +3818,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
         };
 
         fetchVideos();
-
-        // Refresh video stats every 60 seconds so view/like counts stay current
-        const statsInterval = setInterval(async () => {
-            try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
-                const params = new URLSearchParams();
-                if (selectedTab === 'Recommended') params.set('feed', 'recommended');
-                else if (selectedTab === 'Trending Now') params.set('feed', 'trending');
-                else if (selectedTab === 'New') params.set('feed', 'fresh');
-                else { params.set('category', selectedTab); params.set('feed', 'fresh'); }
-
-                const res = await fetch(`${BACKEND}/videos?${params.toString()}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.success && Array.isArray(data.videos)) {
-                        setVideos(prev => prev.map(v => {
-                            const updated = data.videos.find(bv => String(bv.id) === String(v.id));
-                            if (updated) {
-                                return {
-                                    ...v,
-                                    views: updated.views ?? v.views,
-                                    likes: updated.likes ?? v.likes,
-                                    dislikes: updated.dislikes ?? v.dislikes,
-                                    comments: updated.comments ?? v.comments,
-                                    bookmarks: updated.bookmarks ?? v.bookmarks,
-                                    shares: updated.shares ?? v.shares,
-                                    retentionRate: updated.retentionRate ?? v.retentionRate,
-                                    retentionPercentage: updated.retentionPercentage ?? v.retentionPercentage
-                                };
-                            }
-                            return v;
-                        }));
-                    }
-                }
-            } catch (e) {
-                // Silent fail — stats refresh is best-effort
-            }
-        }, 60000);
-
-        return () => clearInterval(statsInterval);
     }, [selectedTab]);
 
     // Filter the video data based on the search term
@@ -4077,7 +3911,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
         });
 
         try {
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/videos/${encodeURIComponent(videoId)}`, {
                 method: 'PATCH',
@@ -4144,7 +3978,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                         try {
                             const token = localStorage.getItem('regaarder_token');
                             if (token && staffActionNotification.id) {
-                                const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+                                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                                 await fetch(`${BACKEND}/notifications/${staffActionNotification.id}/read`, {
                                     method: 'POST',
                                     headers: { 'Authorization': `Bearer ${token}` }
@@ -4278,7 +4112,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             )}
             {/* Main scrollable content area */}
             <div className="overflow-y-auto" style={scrollableHeightStyle}>
-                <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} onFocusChange={setIsSearchActive} selectedLanguage={selectedLanguage} videos={videos} navigate={navigate} />
+                <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} navigate={navigate} onFocusChange={setIsSearchActive} selectedLanguage={selectedLanguage} />
                 <TabPills activeTab={selectedTab} setActiveTab={setSelectedTab} selectedLanguage={selectedLanguage} />
 
                 {/* Conditional Rendering: If search term is active and no results, show 404 screen */}
@@ -4315,9 +4149,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 // Fetch the latest video data from backend to ensure ads are up-to-date
                                 let freshVideo = video;
                                 try {
-                                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
-                                    // Increment view count on every click/open
-                                    fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}/view`, { method: 'POST' }).catch(() => {});
+                                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                                     const freshResponse = await fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}`);
                                     if (freshResponse.ok) {
                                         const freshData = await freshResponse.json();
@@ -4334,45 +4166,49 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 // Overlays are now part of the video object from the backend
                                 const overlays = freshVideo.overlays || [];
 
+                                // Helper: ensure video URLs are absolute (backend may return relative paths
+                                // which break inside Capacitor where the base URL is capacitor://localhost)
+                                const ensureAbsoluteUrl = (rawUrl) => {
+                                    if (!rawUrl || typeof rawUrl !== 'string' || rawUrl.startsWith('blob:')) return '';
+                                    // Already absolute
+                                    if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+                                    try {
+                                        const BACKEND_URL = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
+                                        return new URL(rawUrl, BACKEND_URL).toString();
+                                    } catch (e) { return rawUrl; }
+                                };
+
+                                // Use the card's already-normalized videoUrl as primary (it was normalized
+                                // by fetchVideos normalizeMediaUrl). Fall back to fresh data fields only
+                                // after making sure they are absolute URLs.
+                                const resolvedVideoUrl = ensureAbsoluteUrl(freshVideo.videoUrl)
+                                    || ensureAbsoluteUrl(freshVideo.url)
+                                    || ensureAbsoluteUrl(freshVideo.src)
+                                    || ensureAbsoluteUrl(freshVideo.videoLink)
+                                    || ensureAbsoluteUrl(freshVideo.youtubeUrl)
+                                    || ensureAbsoluteUrl(video.videoUrl)
+                                    || ensureAbsoluteUrl(video.url)
+                                    || ensureAbsoluteUrl(video.src)
+                                    || ensureAbsoluteUrl(video.videoLink)
+                                    || ensureAbsoluteUrl(video.youtubeUrl)
+                                    || '';
+
                                 // Show fullscreen videoplayer as overlay (seamless transition)
                                 const initialVideoData = {
-                                    id: freshVideo.id || '',
-                                    title: freshVideo.title || '',
-                                    author: freshVideo.author || '',
-                                    requester: freshVideo.requester || '',
-                                    videoUrl: freshVideo.videoUrl || freshVideo.url || freshVideo.src || '',
-                                    url: freshVideo.url || freshVideo.videoUrl || freshVideo.src || '',
-                                    imageUrl: freshVideo.imageUrl || '',
-                                    views: freshVideo.views || 0,
-                                    likes: freshVideo.likes || 0,
-                                    comments: freshVideo.comments || 0,
-                                    duration: freshVideo.duration || 0,
-                                    time: freshVideo.time || '',
+                                    id: freshVideo.id || video.id || '',
+                                    title: freshVideo.title || video.title || '',
+                                    author: freshVideo.author || video.author || '',
+                                    requester: freshVideo.requester || video.requester || '',
+                                    videoUrl: resolvedVideoUrl,
+                                    url: resolvedVideoUrl,
+                                    imageUrl: video.imageUrl || ensureAbsoluteUrl(freshVideo.imageUrl) || '',
+                                    views: freshVideo.views || video.views || 0,
+                                    likes: freshVideo.likes || video.likes || 0,
+                                    comments: freshVideo.comments || video.comments || 0,
+                                    duration: freshVideo.duration || video.duration || 0,
                                     overlays: overlays,
                                     ads: freshVideo.ads || {},
                                 };
-
-                                // Web: navigate to /videoplayer route instead of overlay
-                                try {
-                                    const isNative = window?.Capacitor?.isNativePlatform?.() === true;
-                                    if (!isNative) {
-                                        try {
-                                            localStorage.setItem('videoplayer_quick_load', JSON.stringify({
-                                                url: initialVideoData.videoUrl || initialVideoData.url,
-                                                title: initialVideoData.title || '',
-                                                creator: initialVideoData.author || '',
-                                                time: initialVideoData.time || ''
-                                            }));
-                                        } catch { }
-                                        const params = new URLSearchParams();
-                                        if (initialVideoData.videoUrl || initialVideoData.url) params.set('src', initialVideoData.videoUrl || initialVideoData.url);
-                                        if (initialVideoData.title) params.set('title', initialVideoData.title);
-                                        if (initialVideoData.author) params.set('channel', initialVideoData.author);
-                                        // Use React Router navigate for in-app navigation (no reload)
-                                        navigate(`/videoplayer?${params.toString()}`, { state: { video: initialVideoData } });
-                                        return;
-                                    }
-                                } catch { }
                                 
                                 setFullscreenPlayerData({
                                     video: initialVideoData,
@@ -4382,21 +4218,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 setShowFullscreenPlayer(true);
                                 setIsTransitioningToMiniPlayer(false);
 
-                                // Enable immersive mode on Android when opening the player
-                                try {
-                                    if (Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
-                                        if (ImmersiveMode) ImmersiveMode.setImmersive({ enabled: true });
-                                        const platform = Capacitor.getPlatform ? Capacitor.getPlatform() : null;
-                                        if (platform === 'android' && SystemBars) {
-                                            SystemBars.hide?.({ bar: 'StatusBar' });
-                                            SystemBars.hide?.({ bar: 'NavigationBar' });
-                                        }
-                                        if (platform === 'ios' && SystemBars) {
-                                            SystemBars.hide?.({ bar: 'StatusBar', animation: 'FADE' });
-                                            SystemBars.hide?.({ bar: 'NavigationBar' });
-                                        }
-                                    }
-                                } catch (e) { console.warn('Immersive mode error:', e); }
+                                // NOTE: Do NOT remove vp-launch-mask here.
+                                // The Videoplayer component removes it once startupUiReady is true,
+                                // which guarantees the player's first frame is painted.
                             }} // <-- pass video click handler with video data
                         />
                     ))
@@ -4558,42 +4382,23 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 <MiniPlayer
                     data={miniPlayerData}
                     onClose={() => {
-                        // CRITICAL: Set synchronous closed flag FIRST to stop timeupdate from re-writing localStorage
-                        miniPlayerClosedRef.current = true;
                         // Set flag to prevent switchToHome event from immediately showing miniplayer again
                         skipNextSwitchToHomeRef.current = true;
                         // Mark when miniplayer was explicitly closed to prevent auto-restore
                         miniPlayerClosedTimestampRef.current = Date.now();
-                        // Persist closed state in sessionStorage so it survives component remounts
-                        try { sessionStorage.setItem('miniPlayerClosed', String(Date.now())); } catch (e) { }
-                        // Synchronously nuke localStorage BEFORE React batches state updates
-                        try { localStorage.removeItem('miniPlayerData'); } catch (e) { }
                         setShowMiniPlayer(false);
                         setMiniPlayerData(null);
-                        // Double-remove after React flush in case timeupdate snuck one in
-                        setTimeout(() => { try { localStorage.removeItem('miniPlayerData'); } catch (e) { } }, 50);
-                        setTimeout(() => { try { localStorage.removeItem('miniPlayerData'); } catch (e) { } }, 200);
-                        // Clean up any lingering vp-launch-mask that could block taps
-                        try { const m = document.getElementById('vp-launch-mask'); if (m) m.remove(); } catch (e) { }
-                        // Safety net: emit clearOverride to restore the Routes tree if App.jsx
-                        // had previously replaced it via switchToHomeOnly
-                        try { eventBus.emit('clearOverride'); } catch (e) { }
+                        try { localStorage.removeItem('miniPlayerData'); } catch (e) { }
                     }}
-                    onExpand={(currentTime) => {
+                    onExpand={() => {
                         // Expand mini-player back to fullscreen videoplayer
                         setShowMiniPlayer(false);
                         
                         // Reconstruct fullscreen player data from mini player data
                         if (miniPlayerData && miniPlayerData.video) {
-                            // Use live currentTime from MiniPlayer if available, else fallback to stored time
-                            const seekTime = (typeof currentTime === 'number' && currentTime > 0) ? currentTime : (miniPlayerData.time || 0);
                             setFullscreenPlayerData({
                                 video: miniPlayerData.video,
-                                initialVideo: {
-                                    ...miniPlayerData.video,
-                                    seekTo: seekTime,
-                                    duration: miniPlayerData.duration || 0,
-                                },
+                                initialVideo: miniPlayerData.video,
                                 discoverItems: videos, // or use whatever video list is available
                             });
                             setShowFullscreenPlayer(true);
@@ -4602,10 +4407,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     onUpdateData={setMiniPlayerData}
                     navigate={navigate}
                     onMiniPlayerReady={() => {
-                        // MiniPlayer is ready - now safe to close fullscreen player
-                        // This creates a seamless handoff like YouTube
-                        // Use ref to avoid stale closure issues
-                        if (showFullscreenPlayerRef.current) {
+                        miniHandoffReadyRef.current = true;
+                        if (showFullscreenPlayer) {
                             setShowFullscreenPlayer(false);
                             setFullscreenPlayerData(null);
                             setIsTransitioningToMiniPlayer(false);
@@ -4618,6 +4421,9 @@ const App = ({ overrideMiniPlayerData = null }) => {
             {showFullscreenPlayer && fullscreenPlayerData && (
                 <div
                     className="fixed inset-0 z-[120] bg-black"
+                    style={{
+                        opacity: 1,
+                    }}
                 >
                     <style>{`
                         @keyframes fadeInOverlay {
@@ -4637,9 +4443,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     `}</style>
                     <Videoplayer
                         onChevronDown={(storedData) => {
-                            // Transition to miniplayer
-                            miniPlayerClosedRef.current = false; // Reset closed flag — intentional open via minimize
                             setIsTransitioningToMiniPlayer(true);
+                            miniHandoffReadyRef.current = false;
                             
                             // CRITICAL: Move global video element to document.body BEFORE unmounting Videoplayer
                             // This prevents it from being removed from DOM when Videoplayer unmounts
@@ -4666,7 +4471,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 // - paused: false (to keep playing)
                                 const miniData = {
                                     ...storedData,
-                                    paused: false // Ensure video keeps playing in miniplayer
+                                    paused: typeof storedData.paused === 'boolean' ? storedData.paused : false
                                 };
                                 
                                 try {
@@ -4710,7 +4515,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 const miniData = {
                                     video: fullscreenPlayerData.video,
                                     time: currentTime,
-                                    paused: false // Keep playing
+                                    paused: !!(globalVideoRef?.current?.paused)
                                 };
                                 
                                 try {
@@ -4758,27 +4563,13 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 }
                             } catch (e) { }
                             
-                            // DON'T close fullscreen player here - wait for MiniPlayer to signal ready
-                            // This creates seamless handoff like YouTube (no empty flash)
-                            // Fullscreen closes via onMiniPlayerReady callback
-                            // Fallback timeout in case callback doesn't fire
-                            // Uses ref to avoid stale closure issues
-                            // Immediately close fullscreen overlay - don't wait for MiniPlayer ready
-                            setShowFullscreenPlayer(false);
-                            setFullscreenPlayerData(null);
-                            setIsTransitioningToMiniPlayer(false);
-                            // Always clean body styles on exit regardless
-                            try {
-                                const immersiveStyle = document.getElementById('regaarder-immersive-style');
-                                if (immersiveStyle) immersiveStyle.remove();
-                            } catch (e) {}
-                            try {
-                                document.documentElement.style.overflow = '';
-                                document.body.style.overflow = '';
-                                document.body.style.position = '';
-                                document.body.style.width = '';
-                                document.body.style.height = '';
-                            } catch (e) {}
+                            setTimeout(() => {
+                                if (fullscreenVisibleRef.current && !miniHandoffReadyRef.current) {
+                                    setShowFullscreenPlayer(false);
+                                    setFullscreenPlayerData(null);
+                                    setIsTransitioningToMiniPlayer(false);
+                                }
+                            }, 1800);
                         }}
                         data={fullscreenPlayerData}
                         initialVideo={fullscreenPlayerData?.initialVideo}
@@ -4915,46 +4706,113 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
         return () => clearTimeout(t);
     }, [requestedVisible]);
 
-    // YouTube duration: if video.time is "0:00" and we have a cached duration from a prior playback, use it
-    const isYTCardUrl = (url) => url && (url.includes('youtube.com') || url.includes('youtu.be'));
-    const getYTCardId = (url) => {
-        if (!url) return '';
-        if (url.includes('youtu.be/')) return url.split('youtu.be/')[1].split(/[?&#]/)[0];
-        if (url.includes('youtube.com')) { try { return new URL(url).searchParams.get('v') || ''; } catch { return ''; } }
-        return '';
-    };
-    const [displayTime, setDisplayTime] = useState(() => {
-        const timeVal = video.time || '0:00';
-        if (timeVal !== '0:00') return timeVal;
-        // Check localStorage cache for YouTube durations
-        const vUrl = video.videoUrl || video.url || video.src || '';
-        if (isYTCardUrl(vUrl)) {
-            const ytId = getYTCardId(vUrl);
-            if (ytId) {
+    // Auto-detect video duration when it's unknown
+    const [detectedTime, setDetectedTime] = useState(null);
+    useEffect(() => {
+        const currentTime = video.time || '0:00';
+        const isUnknownDuration = currentTime === '0:00' || currentTime === '--:--';
+        if (!isUnknownDuration) return; // Duration already set
+
+        const videoUrl = video.videoUrl || video.url || video.src || '';
+        if (!videoUrl || videoUrl.startsWith('blob:')) return;
+
+        const getYouTubeVideoId = (url) => {
+            const text = String(url || '').trim();
+            if (!text) return '';
+            if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
+            if (text.includes('youtu.be/')) return text.split('youtu.be/')[1].split(/[?&#/]/)[0] || '';
+            if (text.includes('youtube.com')) {
                 try {
-                    const cached = localStorage.getItem(`yt_dur_${ytId}`);
-                    if (cached) {
-                        const secs = parseInt(cached) || 0;
-                        if (secs > 0) {
-                            const m = Math.floor(secs / 60);
-                            const s = secs % 60;
-                            return `${m}:${String(s).padStart(2, '0')}`;
-                        }
-                    }
+                    const parsed = new URL(text);
+                    const fromV = parsed.searchParams.get('v');
+                    if (fromV) return fromV;
+                    const parts = parsed.pathname.split('/').filter(Boolean);
+                    const marker = parts.findIndex((part) => part === 'shorts' || part === 'embed' || part === 'live' || part === 'v');
+                    if (marker >= 0 && parts[marker + 1]) return parts[marker + 1];
                 } catch { }
             }
+            return '';
+        };
+
+        // For YouTube URLs - read cached duration if available
+        const isYT = /(?:youtube\.com|youtu\.be)/.test(videoUrl);
+        if (isYT) {
+            try {
+                const ytId = getYouTubeVideoId(videoUrl);
+                const raw = ytId ? localStorage.getItem(`yt_dur_${ytId}`) : null;
+                const secs = Number(raw || 0);
+                if (Number.isFinite(secs) && secs > 0) {
+                    const whole = Math.floor(secs);
+                    setDetectedTime(`${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`);
+                } else {
+                    setDetectedTime(null);
+                }
+            } catch {
+                setDetectedTime(null);
+            }
+            return;
         }
-        return timeVal;
-    });
+
+        // For direct video URLs: use a hidden video element
+        let cancelled = false;
+        const el = document.createElement('video');
+        el.preload = 'metadata';
+        el.muted = true;
+        // NOTE: Do NOT set crossOrigin – we only need duration, and CORS
+        // preflight fails on many CDNs / Android WebView configurations.
+
+        const timeout = setTimeout(() => {
+            cancelled = true;
+            setDetectedTime('');          // mark detection finished (failed)
+            try { el.src = ''; } catch {}
+        }, 10000);
+
+        el.addEventListener('loadedmetadata', () => {
+            clearTimeout(timeout);
+            if (cancelled) return;
+            try {
+                const dur = Math.floor(el.duration || 0);
+                if (dur > 0) {
+                    const mins = Math.floor(dur / 60);
+                    const secs = String(dur % 60).padStart(2, '0');
+                    const timeStr = `${mins}:${secs}`;
+                    setDetectedTime(timeStr);
+
+                    // Save to backend (fire-and-forget)
+                    try {
+                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+                        fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}/duration`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ time: timeStr })
+                        }).catch(() => {});
+                    } catch {}
+                }
+            } catch {}
+            try { el.src = ''; } catch {}
+        }, { once: true });
+
+        el.addEventListener('error', () => {
+            clearTimeout(timeout);
+            if (!cancelled) setDetectedTime('');  // mark detection finished (error)
+            try { el.src = ''; } catch {}
+        }, { once: true });
+
+        el.src = videoUrl;
+
+        return () => { cancelled = true; clearTimeout(timeout); try { el.src = ''; } catch {} };
+    }, [video.id, video.time, video.videoUrl]);
+
+    const displayTime = (detectedTime && String(detectedTime).trim()) ? detectedTime : (video.time || '0:00');
 
     const statsData = {
-        likes: (video.stats && video.stats.likes) || video.likes || video.likeCount || '0',
-        dislikes: (video.stats && video.stats.dislikes) || video.dislikes || video.dislikeCount || '0',
-        views: (video.stats && video.stats.views) || video.views || video.viewCount || '0',
-        comments: (video.stats && video.stats.comments) || video.comments || video.commentCount || '0',
-        shares: (video.stats && video.stats.shares) || video.shares || video.shareCount || '0',
-        retentionRate: (video.stats && video.stats.retentionRate) || video.retentionRate || '0',
-        retentionPercentage: (video.stats && video.stats.retentionPercentage) || video.retentionPercentage || '0%'
+        likes: (video.stats && video.stats.likes) ?? video.likes ?? video.likeCount ?? '0',
+        dislikes: (video.stats && video.stats.dislikes) ?? video.dislikes ?? video.dislikeCount ?? '0',
+        views: (video.stats && video.stats.views) ?? video.views ?? video.viewCount ?? '0',
+        comments: (video.stats && video.stats.comments) ?? video.comments ?? video.commentCount ?? '0',
+        shares: (video.stats && video.stats.shares) ?? video.shares ?? video.shareCount ?? '0',
+        retentionRate: (video.stats && video.stats.retentionRate) ?? video.retentionRate ?? '0',
+        retentionPercentage: (video.stats && video.stats.retentionPercentage) ?? video.retentionPercentage ?? '0%'
     };
 
     // useEffect to handle the automatic stat tour for the first card
@@ -5078,6 +4936,49 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
             else if (cardState === 'engagement') setCardState('views');
         }
     };
+
+    const getVideoSortTimestamp = (item) => {
+        const fromTimestamp = Number(item && item.timestamp);
+        if (!Number.isNaN(fromTimestamp) && fromTimestamp > 0) return fromTimestamp;
+        const fromCreatedAt = Date.parse(item && item.createdAt ? item.createdAt : '');
+        if (!Number.isNaN(fromCreatedAt) && fromCreatedAt > 0) return fromCreatedAt;
+        const fromDate = Date.parse(item && item.date ? item.date : '');
+        if (!Number.isNaN(fromDate) && fromDate > 0) return fromDate;
+        return 0;
+    };
+
+    const isVisibleOnHomeFeed = (item) => {
+        if (!item || typeof item !== 'object') return false;
+        if (item.hidden || item.deleted || item.shadowDeleted) return false;
+        if (item.appearance && item.appearance !== 'public') return false;
+        const image = String(item.imageUrl || item.thumbnail || item.image || '');
+        const videoUrl = String(item.videoUrl || item.url || item.src || '');
+        const hasValidImage = !!image && !image.startsWith('blob:');
+        const hasValidVideo = !!videoUrl && !videoUrl.startsWith('blob:');
+        return hasValidImage || hasValidVideo;
+    };
+
+    const getLatestVideoThumbnail = (predicate) => {
+        const pool = Array.isArray(allVideos) ? allVideos : [];
+        const matched = pool
+            .filter((item) => item && predicate(item) && isVisibleOnHomeFeed(item) && item.imageUrl)
+            .sort((a, b) => {
+                const ta = getVideoSortTimestamp(a);
+                const tb = getVideoSortTimestamp(b);
+                return tb - ta;
+            });
+        return matched.length > 0 ? (matched[0].imageUrl || null) : null;
+    };
+
+    const latestCreatorThumbnail = getLatestVideoThumbnail((item) => {
+        if (video.authorId && item.authorId) return String(item.authorId) === String(video.authorId);
+        return String(item.author || '') === String(video.author || '');
+    });
+
+    const latestRequesterThumbnail = getLatestVideoThumbnail((item) => {
+        if (video.requesterId && item.requesterId) return String(item.requesterId) === String(video.requesterId);
+        return String(item.requester || '') === String(video.requester || '');
+    });
 
     const renderContent = () => {
         switch (cardState) {
@@ -5310,8 +5211,9 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
 
                     </div>
 
+                    {/* Duration badge – always visible; shows detected time, backend time, or 0:00 */}
                     <div className="absolute bottom-3 right-3 bg-black bg-opacity-70 rounded-lg px-2 py-1">
-                        <span className="text-sm font-bold text-white">{displayTime}</span>
+                        <span className="text-sm font-bold text-white">{displayTime || video.time || '0:00'}</span>
                     </div>
                 </div>
 
@@ -5341,10 +5243,6 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
     useEffect(() => {
         const readCount = () => {
             try {
-                // If not logged in, avoid showing a stale badge
-                const token = window.localStorage.getItem('regaarder_token');
-                if (!token) { setNotifCount(0); return; }
-
                 const v1 = window.localStorage.getItem('notifications_count');
                 if (v1 != null) {
                     const n = parseInt(v1, 10);
@@ -5354,11 +5252,7 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
                 if (v2) {
                     try {
                         const arr = JSON.parse(v2);
-                        if (Array.isArray(arr)) {
-                            const validUnread = arr.filter(n => n && !n.read && (n.title || n.text || n.message));
-                            setNotifCount(validUnread.length);
-                            return;
-                        }
+                        if (Array.isArray(arr)) { setNotifCount(arr.length); return; }
                     } catch (e) { }
                 }
             } catch (e) { }
@@ -5419,69 +5313,26 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
     );
 };
 
-const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selectedLanguage = 'English', videos = [] }) => {
+const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selectedLanguage = 'English' }) => {
     const [isFocused, setIsFocused] = useState(false);
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
     const [highlight, setHighlight] = useState(-1);
-    const [dropdownStyle, setDropdownStyle] = useState({});
     const containerRef = useRef(null);
     const debounceRef = useRef(null);
 
     const SELECTED_CREATOR_KEY = 'ideas_selectedCreator_v1';
 
-    const getBackendBase = () => (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
-
-    // Extract unique creators from loaded video data (local fallback for search)
-    const extractLocalCreators = (query) => {
-        if (!query || !videos || !videos.length) return [];
-        const q = query.toLowerCase();
-        const creatorMap = new Map();
-        videos.forEach(v => {
-            const name = v.author || v.creator || v.channel || '';
-            if (!name) return;
-            const key = name.toLowerCase();
-            if (key.includes(q) && !creatorMap.has(key)) {
-                creatorMap.set(key, {
-                    id: v.authorId || v.creatorId || v.userId || `local-${key}`,
-                    name: name,
-                    handle: v.authorHandle || v.creatorHandle || key.replace(/\s+/g, ''),
-                    image: v.authorImage || v.creatorImage || v.authorAvatar || null,
-                    avatar: v.authorImage || v.creatorImage || v.authorAvatar || null,
-                    isCreator: true,
-                    _localFallback: true,
-                });
-            }
-            // Also check requester
-            const req = v.requester || '';
-            if (req) {
-                const rkey = req.toLowerCase();
-                if (rkey.includes(q) && !creatorMap.has(rkey)) {
-                    creatorMap.set(rkey, {
-                        id: v.requesterId || `local-${rkey}`,
-                        name: req,
-                        handle: rkey.replace(/\s+/g, ''),
-                        isCreator: false,
-                        _localFallback: true,
-                    });
-                }
-            }
-        });
-        return Array.from(creatorMap.values());
-    };
+    const getBackendBase = () => (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
     const normalizeImageUrl = (url) => {
         if (!url) return null;
         try {
             const base = getBackendBase();
-            let s = String(url || '');
+            const s = String(url || '');
             if (s.startsWith('uploaded:')) {
                 const filename = s.split(':')[1] || s.slice('uploaded:'.length);
                 return `${base}/uploads/${filename}`;
-            }
-            // Fix http → https for backend URLs
-            if (s.startsWith('http://') && s.includes('onrender.com')) {
-                s = s.replace('http://', 'https://');
             }
             return s;
         } catch (e) {
@@ -5489,26 +5340,9 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
         }
     };
 
-    // Compute dropdown position using fixed positioning to avoid overflow clipping
-    const updateDropdownPosition = () => {
-        if (containerRef.current) {
-            const rect = containerRef.current.getBoundingClientRect();
-            setDropdownStyle({
-                position: 'fixed',
-                top: rect.bottom + 8,
-                left: rect.left,
-                width: rect.width,
-                zIndex: 9999,
-            });
-        }
-    };
-
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (containerRef.current && !containerRef.current.contains(e.target)) {
-                // Also check if click was on the fixed dropdown
-                const dropdownEl = document.getElementById('creator-search-dropdown');
-                if (dropdownEl && dropdownEl.contains(e.target)) return;
                 setShowDropdown(false);
                 setHighlight(-1);
             }
@@ -5531,127 +5365,29 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
             return;
         }
         setLoading(true);
-        setShowDropdown(true);
-        updateDropdownPosition();
         try {
             const base = getBackendBase();
-            let allUsers = [];
-
-            // Strategy 1: Try /creators endpoint (most reliable - extracts from videos + users)
-            try {
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 10000);
-                const creatorsUrl = `${base}/creators?q=${encodeURIComponent(q)}`;
-                const creatorsRes = await fetch(creatorsUrl, { signal: controller.signal });
-                clearTimeout(timeout);
-                if (creatorsRes.ok) {
-                    const creatorsData = await creatorsRes.json();
-                    allUsers = creatorsData.creators || creatorsData.users || [];
-                }
-            } catch (e1) {
-                if (e1.name === 'AbortError') console.warn('[search] /creators timed out');
-                else console.warn('[search] /creators failed:', e1.message);
-            }
-
-            // Strategy 2: If /creators returned nothing, try /users
-            if (allUsers.length === 0) {
-                try {
-                    const controller2 = new AbortController();
-                    const timeout2 = setTimeout(() => controller2.abort(), 10000);
-                    const url = `${base}/users?q=${encodeURIComponent(q)}&creatorsOnly=1`;
-                    const res = await fetch(url, { signal: controller2.signal });
-                    clearTimeout(timeout2);
-                    if (res.ok) {
-                        const data = await res.json();
-                        allUsers = (data && data.users) || (Array.isArray(data) ? data : []);
-                    }
-                } catch (fetchErr) {
-                    console.warn('[search] /users also failed:', fetchErr.message);
-                }
-            }
-
-            // Strategy 3: If /users also returned nothing, try /users without creatorsOnly filter
-            if (allUsers.length === 0) {
-                try {
-                    const controller3 = new AbortController();
-                    const timeout3 = setTimeout(() => controller3.abort(), 10000);
-                    const fallbackUrl = `${base}/users?q=${encodeURIComponent(q)}`;
-                    const fallbackRes = await fetch(fallbackUrl, { signal: controller3.signal });
-                    clearTimeout(timeout3);
-                    if (fallbackRes.ok) {
-                        const fallbackData = await fallbackRes.json();
-                        allUsers = (fallbackData && fallbackData.users) || (Array.isArray(fallbackData) ? fallbackData : []);
-                    }
-                } catch (fallbackErr) {
-                    console.warn('[search] /users fallback also failed:', fallbackErr.message);
-                }
-            }
-
-            let normalized = allUsers.map((u) => {
+            const url = `${base}/users?q=${encodeURIComponent(q)}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('search failed');
+            const data = await res.json();
+            const users = (data && data.users) || (Array.isArray(data) ? data : []);
+            const normalized = users.map((u) => {
                 const img = normalizeImageUrl(u.image || u.avatar || u.photoURL || u.profilePicture || u.profileImage);
                 return {
                     ...u,
-                    // Handle both camelCase and snake_case field names
-                    isCreator: u.isCreator === true || u.is_creator === true,
                     image: img || u.image || u.avatar || u.photoURL || null,
                     avatar: img || u.avatar || u.image || null,
                     photoURL: img || u.photoURL || u.image || null,
-                    // Ensure price and followers are always carried through
-                    price: u.price || u.pricePerRequest || null,
-                    followers: u.followers || u.followers_count || u.followersCount || null,
                 };
             });
-
-            // Strategy 4: If API returned nothing, extract creators from locally loaded videos
-            if (normalized.length === 0) {
-                const localCreators = extractLocalCreators(q);
-                if (localCreators.length > 0) {
-                    // Enrich local creators with backend profile data
-                    const enriched = await Promise.all(localCreators.map(async (c) => {
-                        try {
-                            const lookupId = c.id || c.name;
-                            const res = await fetch(`${base}/users/${encodeURIComponent(lookupId)}`);
-                            if (res.ok) {
-                                const data = await res.json();
-                                const u = data.user || data;
-                                if (u && !u.isPlaceholder) {
-                                    return {
-                                        ...c,
-                                        ...u,
-                                        isCreator: true,
-                                        image: normalizeImageUrl(u.image || u.avatar || u.profileImage || c.image),
-                                        avatar: normalizeImageUrl(u.avatar || u.image || u.profileImage || c.avatar),
-                                        photoURL: normalizeImageUrl(u.photoURL || u.image || u.profileImage || c.image),
-                                        followers: u.followers || u.followers_count || 0,
-                                        price: u.price || u.pricePerRequest || c.price || null,
-                                    };
-                                }
-                            }
-                        } catch (e) { /* use original */ }
-                        return c;
-                    }));
-                    normalized = enriched;
-                }
-            }
-
-            // Deduplicate by unique id to avoid React duplicate key warnings
-            const seen = new Set();
-            normalized = normalized.filter(u => {
-                const key = u.id || u.email || u.name;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
             setResults(normalized);
-            setShowDropdown(true);
+            setShowDropdown(users && users.length > 0);
             setHighlight(-1);
-            updateDropdownPosition();
         } catch (err) {
             console.warn('creator search error', err);
-            // Even on error, try local fallback from video data
-            const localCreators = extractLocalCreators(q);
-            setResults(localCreators);
-            setShowDropdown(true);
+            setResults([]);
+            setShowDropdown(false);
         } finally {
             setLoading(false);
         }
@@ -5664,36 +5400,36 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
     };
 
     const selectCreator = (creator) => {
+        let creatorObj = null;
         try {
             const followers = creator.followersCount || creator.followers || creator.stats?.followers || creator.followers_count || null;
-            const img = normalizeImageUrl(creator.image || creator.avatar || creator.profileImage || creator.photoURL || null);
-            const creatorObj = {
+            creatorObj = {
                 id: creator.id || creator.handle || creator.username || String(creator.name || '').replace(/^@+/, '').toLowerCase(),
                 name: creator.handle ? `@${creator.handle}` : (creator.username ? `@${creator.username}` : (creator.name || '')),
                 displayName: creator.name || creator.handle || creator.username || '',
                 handle: creator.handle || creator.username,
                 username: creator.username || creator.handle,
                 email: creator.email || null,
-                image: img,
-                photoURL: img,
-                profileImage: img,
+                image: creator.image || creator.avatar || creator.photoURL || null,
+                photoURL: creator.image || creator.avatar || creator.photoURL || null,
+                avatar: creator.image || creator.avatar || creator.photoURL || null,
                 followers,
-                price: creator.price || creator.pricePerRequest || 0
+                price: creator.price || 0
             };
-            try {
-                window.localStorage.setItem(SELECTED_CREATOR_KEY, JSON.stringify(creatorObj));
-                // Dispatch event so ideas.jsx picks it up even if already mounted
-                window.dispatchEvent(new Event('ideas:creator_selected'));
-            } catch (e) { }
+            try { window.localStorage.setItem(SELECTED_CREATOR_KEY, JSON.stringify(creatorObj)); } catch (e) { }
+            try { window.sessionStorage.setItem(SELECTED_CREATOR_KEY, JSON.stringify(creatorObj)); } catch (e) { }
+            try { window.dispatchEvent(new Event('ideas:creator_selected')); } catch (e) { }
         } catch (e) { console.warn('persist creator failed', e); }
         if (onFocusChange) try { onFocusChange(false); } catch (e) { }
-        // Switch to ideas tab using FooterTabSwitcher's global setter (same mechanism as SharedBottomBar)
-        try { if (window.setFooterTab) window.setFooterTab('ideas'); } catch (e) { }
-        // Also navigate via React Router for URL sync
+        // navigate to ideas page so user can type request immediately with creator selected
         try { 
-            if (navigate) navigate('/ideas');
-            else window.location.href = '/ideas';
+            if (navigate) navigate('/ideas', { state: { selectedCreator: creatorObj } });
+            else if (window.setFooterTab) { window.setFooterTab('ideas'); return; }
+            else { window.location.href = '/ideas'; return; }
+            // Also sync the footer tab highlight
+            if (window.setFooterTab) window.setFooterTab('ideas');
         } catch (e) { 
+            try { if (window.setFooterTab) window.setFooterTab('ideas'); } catch (_) {}
             window.location.href = '/ideas';
         }
     };
@@ -5708,7 +5444,12 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                 const handle = term.substring(1);
                 if (handle.length > 0) {
                     // Navigate directly to creator profile with request modal
-                    window.location.href = `/@${handle}?request=true`;
+                    try {
+                        if (navigate) navigate(`/@${handle}?request=true`);
+                        else window.location.href = `/@${handle}?request=true`;
+                    } catch (_) {
+                        window.location.href = `/@${handle}?request=true`;
+                    }
                     return;
                 }
             }
@@ -5746,8 +5487,8 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                 className="flex-1 text-base placeholder-gray-400 text-gray-700 focus:outline-none bg-transparent"
                 value={searchTerm}
                 onChange={(e) => e.target.value.length < 80 ? onInputChange(e.target.value) : null}
-                onFocus={() => { setIsFocused(true); if (onFocusChange) try { onFocusChange(true); } catch (e) { } if (results && results.length) { setShowDropdown(true); updateDropdownPosition(); } }}
-                onBlur={() => { setIsFocused(false); }}
+                onFocus={() => { setIsFocused(true); if (onFocusChange) try { onFocusChange(true); } catch (e) { } if (results && results.length) setShowDropdown(true); }}
+                onBlur={() => { setIsFocused(false); if (onFocusChange) try { onFocusChange(false); } catch (e) { } }}
                 onKeyDown={onKeyDown}
                 aria-autocomplete="list"
             />
@@ -5762,12 +5503,12 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                 </button>
             )}
 
-            {/* Dropdown — uses fixed positioning to escape overflow:auto clipping */}
+            {/* Dropdown */}
             {showDropdown && (
-                <div id="creator-search-dropdown" style={dropdownStyle}>
+                <div className="absolute left-0 right-0 top-full mt-2 z-50">
                     <div
-                        className="bg-white rounded-xl shadow-xl border border-gray-100"
-                        style={{ maxHeight: '50vh', overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', width: '100%' }}
+                        className="bg-white rounded-xl shadow-xl border border-gray-100 w-full"
+                        style={{ maxHeight: '50vh', overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
                     >
                         {loading && (
                             <div className="p-3 text-sm text-gray-500">Searching creators...</div>
@@ -5779,9 +5520,8 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                             const handle = u.username || u.handle || '';
                             const followers = u.followersCount || u.followers || u.stats?.followers || u.followers_count || null;
                             const subtitle = handle
-                                ? `@${handle}${followers ? ` • ${followers} followers` : ''}${u.price ? ` • $${u.price}` : ''}`
-                                : (followers ? `${followers} followers${u.price ? ` • $${u.price}` : ''}` : (u.price ? `$${u.price}` : (u.tagline || u.category || (u.isCreator ? 'Creator' : 'User'))));
-                            const displayImg = u.image || u.avatar || u.profileImage || u.photoURL || null;
+                                ? `@${handle}${followers ? ` • ${followers} followers` : ''}`
+                                : (followers ? `${followers} followers` : (u.tagline || u.category || (u.isCreator ? 'Creator' : 'User')));
                             return (
                             <button
                                 key={u.id || u.email || idx}
@@ -5789,24 +5529,20 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                                 onClick={() => selectCreator(u)}
                                 className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between ${highlight === idx ? 'bg-gray-50' : ''}`}
                             >
-                                <div className="flex items-center" style={{ flex: 1, minWidth: 0 }}>
-                                    {displayImg ? (
-                                        <img src={displayImg} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" style={{ flexShrink: 0 }} onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
-                                    ) : null}
-                                    {/* First-letter avatar fallback — always rendered, hidden when image loads */}
-                                    <div style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: ['#f87171','#34d399','#a78bfa','#60a5fa','#fbbf24','#ec4899','#fb923c','#4ade80'][(u.name || 'U').charCodeAt(0) % 8], display: displayImg ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 12, color: '#fff', fontSize: 18, fontWeight: 700, textTransform: 'uppercase' }}>
-                                        {(u.name || 'U').charAt(0)}
-                                    </div>
-                                    <div className="flex flex-col text-sm" style={{ minWidth: 0 }}>
-                                        <span className="font-semibold text-gray-900" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name || u.handle || 'Unknown'}</span>
-                                        <span className="text-xs text-gray-500" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</span>
+                                <div className="flex items-center">
+                                    {u.image ? (
+                                        <img src={u.image} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/64x64/cccccc/000000?text=?'; }} />
+                                    ) : (
+                                        <img src={getPlaceholderAvatar(u.name)} alt={u.name} className="w-10 h-10 rounded-full object-cover mr-3" onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/64x64/cccccc/000000?text=?'; }} />
+                                    )}
+                                    <div className="flex flex-col text-sm">
+                                        <span className="font-semibold text-gray-900">{u.name || u.handle || 'Unknown'}</span>
+                                        <span className="text-xs text-gray-500">{subtitle}</span>
                                     </div>
                                 </div>
-                                {u.price ? (
-                                    <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a', marginLeft: 8, whiteSpace: 'nowrap', padding: '4px 10px', backgroundColor: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                                        ${u.price}
-                                    </div>
-                                ) : null}
+                                <div className="text-sm text-gray-600 ml-4">
+                                    {u.price ? `$${u.price}` : ''}
+                                </div>
                             </button>
                         );})}
                     </div>
@@ -5839,37 +5575,37 @@ const TabPills = ({ activeTab, setActiveTab, selectedLanguage = 'English' }) => 
     useEffect(() => {
         const fetchCategories = async () => {
              try {
-                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://regaarder-pwin.onrender.com';
+                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
                  const res = await fetch(`${BACKEND}/categories`);
                  if (res.ok) {
                      const catList = await res.json();
                      // Map to tabs structure
                      const catTabs = catList.map(name => {
-                         // Comprehensive category → icon mapping
-                         const catIconMap = {
-                             travel: 'globe', education: 'book', entertainment: 'film',
-                             music: 'music', sports: 'dumbbell', gaming: 'zap',
-                             tech: 'monitor', technology: 'monitor', science: 'sparkles',
-                             finance: 'dollar-sign', business: 'dollar-sign', money: 'dollar-sign',
-                             health: 'heart', fitness: 'dumbbell', wellness: 'heart',
-                             food: 'camera', cooking: 'camera', fashion: 'sparkles',
-                             art: 'palette', design: 'palette', beauty: 'sparkles',
-                             comedy: 'sparkles', humor: 'sparkles', funny: 'sparkles',
-                             news: 'globe', politics: 'flag', history: 'clock',
-                             love: 'heart', romance: 'heart', relationships: 'heart',
-                             lifestyle: 'sun', motivation: 'zap', inspiration: 'zap',
-                             golf: 'flag', nature: 'globe', animals: 'eye',
-                             cars: 'zap', auto: 'zap', markets: 'chart',
-                             crypto: 'dollar-sign', stocks: 'chart', investing: 'chart',
-                             photography: 'camera', film: 'film', movies: 'film',
-                             diy: 'sparkles', crafts: 'sparkles', other: 'star',
-                         };
-                         const icon = catIconMap[name.toLowerCase()] || 'tag';
+                         // Try to map existing icons, else 'folder'
+                         const lower = name.toLowerCase();
+                         let icon = 'folder';
+                         if(lower === 'travel') icon = 'globe';
+                         else if(lower === 'education') icon = 'book';
+                         else if(lower === 'entertainment') icon = 'film';
+                         else if(lower === 'music') icon = 'music';
+                         else if(lower === 'sports') icon = 'dumbbell';
                          
                          return { name, icon };
                      });
                      
-                     setTabs([...staticTabs, ...catTabs]);
+                     // Merge: keep all default categories, append any NEW ones from backend
+                     const defaultCategoryTabs = [
+                         { name: 'Travel', icon: 'globe' },
+                         { name: 'Education', icon: 'book' },
+                         { name: 'Entertainment', icon: 'film' },
+                         { name: 'Music', icon: 'music' },
+                         { name: 'Sports', icon: 'dumbbell' },
+                     ];
+                     const existingNames = new Set(
+                         [...staticTabs, ...defaultCategoryTabs].map(t => t.name.toLowerCase())
+                     );
+                     const extraTabs = catTabs.filter(t => !existingNames.has(t.name.toLowerCase()));
+                     setTabs([...staticTabs, ...defaultCategoryTabs, ...extraTabs]);
                  }
              } catch(e) { console.error("Failed to load categories", e); }
         };
@@ -6153,16 +5889,6 @@ const BottomBar = ({ selectedLanguage = 'English' }) => {
 const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate, onMiniPlayerReady }) => {
     // MiniPlayer uses its OWN video element for reliability
     const videoRef = useRef(null);
-    const ytIframeRef = useRef(null);
-    
-    // YouTube detection helpers
-    const isYTUrl = (url) => url && (url.includes('youtube.com') || url.includes('youtu.be'));
-    const getYTId = (url) => {
-        if (!url) return '';
-        if (url.includes('youtu.be/')) return url.split('youtu.be/')[1].split(/[?&#]/)[0];
-        if (url.includes('youtube.com')) { try { return new URL(url).searchParams.get('v') || ''; } catch { return ''; } }
-        return '';
-    };
     
     // Local state for dragging to prevent re-rendering the parent Home component
     const [pos, setPos] = useState({ right: 16, bottom: 100 });
@@ -6172,29 +5898,40 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
     // Track if video has loaded enough to display (prevents empty state flash)
     const [videoReady, setVideoReady] = useState(false);
     
-    // Opaque veil over YouTube iframe — hides branding on load & unpause
-    const [ytVeil, setYtVeil] = useState(true);
-    const ytVeilTimer = useRef(null);
-    
     // Track if we've signaled ready to parent (only once)
     const hasSignaledReady = useRef(false);
-    
-    // Track YouTube current time for seek functionality
-    const ytCurrentTime = useRef(data?.time || 0);
-    
-    // Capture initial paused state once (avoids using `data` in effect deps which causes loop)
-    const initialPausedRef = useRef(data?.paused);
-
-    // Stable start time — captured once at mount, never changes
-    // (prevents iframe src from changing → reloading YouTube on every time update)
-    const initialStartTimeRef = useRef(Math.floor(data?.time || 0));
 
     // Get video source URL and thumbnail from data
     const rawVideoSrc = data?.video?.src || data?.video?.videoUrl || data?.video?.url || '';
-    const isYouTube = isYTUrl(rawVideoSrc);
-    const youTubeId = isYouTube ? getYTId(rawVideoSrc) : '';
-    const videoSrc = isYouTube ? rawVideoSrc : (resolveMediaUrl(rawVideoSrc) || rawVideoSrc);
-    const thumbnailUrl = data?.video?.imageUrl || data?.video?.thumbnail || data?.imageUrl || (youTubeId ? `https://img.youtube.com/vi/${youTubeId}/mqdefault.jpg` : '');
+    const videoSrc = (() => {
+        try { return resolveMediaUrl(rawVideoSrc) || rawVideoSrc; } catch { return rawVideoSrc; }
+    })();
+    const isYouTubeSource = /youtube\.com|youtu\.be/i.test(videoSrc || '');
+    const getYouTubeId = useCallback((url) => {
+        try {
+            if (!url) return '';
+            const value = String(url);
+            if (value.includes('youtu.be/')) {
+                return value.split('youtu.be/')[1].split('?')[0];
+            }
+            if (value.includes('youtube.com')) {
+                const parsed = new URL(value);
+                return parsed.searchParams.get('v') || '';
+            }
+        } catch (e) { }
+        return '';
+    }, []);
+    const miniYouTubeId = getYouTubeId(videoSrc);
+    const thumbnailUrl = data?.video?.imageUrl || data?.video?.thumbnail || data?.imageUrl || '';
+    const startTime = data?.time || 0;
+    const miniYtIframeRef = useRef(null);
+    const miniYtTimeRef = useRef(Number(startTime) || 0);
+    const miniReadyTimerRef = useRef(null);
+    const [ytBrandCoverVisible, setYtBrandCoverVisible] = useState(false);
+    const ytBrandCoverTimerRef = useRef(null);
+    const controlBarHeight = 52;
+    
+
     
     // Signal ready to parent ONLY when video is actually ready
     // This allows fullscreen player to close, creating seamless handoff
@@ -6207,25 +5944,26 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
 
     // Initialize video when component mounts or source changes  
     useEffect(() => {
-        // For YouTube videos, we use an iframe — skip native <video> setup
-        if (isYouTube) {
-            setYtVeil(true);
-            // Minimal veil — just long enough for iframe to render a frame, then fade out
-            const timer = setTimeout(() => {
-                setVideoReady(true);
-                ytVeilTimer.current = setTimeout(() => setYtVeil(false), 400);
-            }, 800);
-            return () => { clearTimeout(timer); clearTimeout(ytVeilTimer.current); };
+        const v = videoRef.current;
+        if (!videoSrc) return;
+
+        if (isYouTubeSource && miniYouTubeId) {
+            setVideoReady(false);
+            try { clearTimeout(miniReadyTimerRef.current); } catch (e) { }
+            miniYtTimeRef.current = Number(startTime) || 0;
+            setPlaying(!(data && data.paused));
+            return () => {
+                try { clearTimeout(miniReadyTimerRef.current); } catch (e) { }
+            };
         }
 
-        const v = videoRef.current;
-        if (!v || !videoSrc) return;
+        if (!v) return;
 
         // Reset ready state when source changes
         setVideoReady(false);
 
         // Set source if different
-        if (videoSrc && v.src !== videoSrc) {
+        if (v.src !== videoSrc) {
             v.src = videoSrc;
             v.load();
         }
@@ -6233,54 +5971,57 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
         // Set start time once metadata is loaded
         const handleLoadedMetadata = () => {
             try {
-                if (initialStartTimeRef.current > 0) {
-                    v.currentTime = initialStartTimeRef.current;
+                if (startTime > 0) {
+                    v.currentTime = startTime;
                 }
             } catch (e) {}
-            
-            // Auto-play if not paused (muted for autoplay reliability)
-            // Uses ref instead of `data` prop to avoid re-running effect on every data update
-            if (initialPausedRef.current === false || initialPausedRef.current == null) {
-                v.muted = true;
-                v.volume = 0;
-                v.playsInline = true;
-                v.autoplay = true;
-                v.play().then(() => {
-                    setPlaying(true);
-                    // Auto-unmute after autoplay succeeds (mirrors YouTube's unmute approach)
-                    // Delay gives the browser time to settle after the muted autoplay
-                    setTimeout(() => {
-                        try { v.muted = false; } catch {}
-                        try { v.volume = 1; } catch {}
-                    }, 600);
-                    // Second attempt in case the first is too early
-                    setTimeout(() => {
-                        try { if (v.muted) v.muted = false; } catch {}
-                        try { if (v.volume < 1) v.volume = 1; } catch {}
-                    }, 1500);
-                }).catch(() => { /* autoplay may be blocked */ });
+
+            // Auto-play if data.paused is false, or default to playing on mini-player open
+            if ((data && data.paused === false) || !data?.paused) {
+                setTimeout(() => {
+                    try {
+                        v.muted = false;
+                        v.volume = 1;
+                        v.play().then(() => {
+                            setPlaying(true);
+                        }).catch(() => {
+                            // Unmuted autoplay blocked — try muted play as fallback
+                            v.muted = true;
+                            v.play().then(() => {
+                                setPlaying(true);
+                                // Try to unmute after play starts (some browsers allow this)
+                                setTimeout(() => { try { v.muted = false; v.volume = 1; } catch {} }, 300);
+                            }).catch(() => {
+                                setPlaying(false);
+                            });
+                        });
+                    } catch (e) { setPlaying(false); }
+                }, 100);
             }
         };
 
         const handleLoadedData = () => {
             try { setVideoReady(true); } catch (e) {}
         };
+        const handlePlay = () => {
+            setPlaying(true);
+        };
+        const handlePause = () => {
+            setPlaying(false);
+        };
 
         v.addEventListener('loadedmetadata', handleLoadedMetadata);
         v.addEventListener('loadeddata', handleLoadedData);
+        v.addEventListener('play', handlePlay);
+        v.addEventListener('pause', handlePause);
         // Only show video when it actually starts playing (prevents grey play overlay)
         const handlePlaying = () => {
             setVideoReady(true);
-        };
-        const handleError = () => {
-            // keep thumbnail visible if video fails
-            setVideoReady(false);
         };
         v.addEventListener('playing', handlePlaying);
         v.addEventListener('timeupdate', handlePlaying);
         v.addEventListener('canplay', handlePlaying);
         v.addEventListener('canplaythrough', handlePlaying);
-        v.addEventListener('error', handleError);
         
         // If already loaded, apply immediately
         if (v.readyState >= 1) {
@@ -6295,131 +6036,173 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
         return () => {
             v.removeEventListener('loadedmetadata', handleLoadedMetadata);
             v.removeEventListener('loadeddata', handleLoadedData);
+            v.removeEventListener('play', handlePlay);
+            v.removeEventListener('pause', handlePause);
             v.removeEventListener('playing', handlePlaying);
             v.removeEventListener('timeupdate', handlePlaying);
             v.removeEventListener('canplay', handlePlaying);
             v.removeEventListener('canplaythrough', handlePlaying);
-            v.removeEventListener('error', handleError);
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [videoSrc]);
+    }, [videoSrc, startTime, data, isYouTubeSource, miniYouTubeId]);
 
-    // YouTube MiniPlayer: listen for postMessage events to track current time & send periodic 'listening'
+    const sendMiniYouTubeCommand = useCallback((func, args = []) => {
+        try {
+            const frame = miniYtIframeRef.current;
+            const cw = frame && frame.contentWindow;
+            if (!cw) return;
+            cw.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+        } catch (e) { }
+    }, []);
+
+    const flashMiniYtCover = useCallback((durationMs = 480) => {
+        if (!isYouTubeSource || !miniYouTubeId) return;
+        try { clearTimeout(ytBrandCoverTimerRef.current); } catch (e) { }
+        setYtBrandCoverVisible(true);
+        ytBrandCoverTimerRef.current = setTimeout(() => {
+            setYtBrandCoverVisible(false);
+        }, durationMs);
+    }, [isYouTubeSource, miniYouTubeId]);
+
     useEffect(() => {
-        if (!isYouTube || !youTubeId) return;
-
-        const sendListening = () => {
-            try {
-                if (ytIframeRef.current && ytIframeRef.current.contentWindow) {
-                    ytIframeRef.current.contentWindow.postMessage(
-                        JSON.stringify({ event: 'listening', id: youTubeId }), '*'
-                    );
-                }
-            } catch { }
+        return () => {
+            try { clearTimeout(ytBrandCoverTimerRef.current); } catch (e) { }
         };
+    }, []);
 
-        const handleYTMsg = (e) => {
-            try {
-                let d = e.data;
-                if (typeof d === 'string') d = JSON.parse(d);
-                if (!d || !d.info) return;
-                const info = d.info;
-                // Track current time in local ref only — NO parent state updates
-                // (updating parent creates new data object → re-render → iframe src changes → RELOAD LOOP)
-                if (typeof info.currentTime === 'number') {
-                    ytCurrentTime.current = info.currentTime;
-                }
-                // Track duration if available (only update once when it changes)
-                if (typeof info.duration === 'number' && info.duration > 0) {
-                    if (onUpdateData) onUpdateData(prev => {
-                        if (prev.duration === info.duration) return prev; // no change, avoid re-render
-                        return { ...prev, duration: info.duration };
+    const attemptMiniResume = useCallback(() => {
+        if (!videoSrc) return;
+
+        if (isYouTubeSource && miniYouTubeId) {
+            if (playing) {
+                sendMiniYouTubeCommand('playVideo');
+                sendMiniYouTubeCommand('unMute');
+                sendMiniYouTubeCommand('setVolume', [100]);
+                if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
+            }
+            return;
+        }
+
+        const v = videoRef.current;
+        if (!v) return;
+
+        try {
+            v.muted = false;
+            v.volume = 1;
+        } catch (e) { }
+
+        try {
+            const playPromise = v.play();
+            if (playPromise && playPromise.then) {
+                playPromise
+                    .then(() => {
+                        setPlaying(true);
+                        if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
+                    })
+                    .catch(() => {
+                        try {
+                            v.muted = true;
+                            const mutedPromise = v.play();
+                            if (mutedPromise && mutedPromise.then) {
+                                mutedPromise.then(() => {
+                                    setPlaying(true);
+                                    if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
+                                    setTimeout(() => { try { v.muted = false; v.volume = 1; } catch (e) { } }, 300);
+                                }).catch(() => { });
+                            }
+                        } catch (e) { }
                     });
-                }
-                // Track play state
-                if (typeof info.playerState === 'number') {
-                    setPlaying(info.playerState === 1);
-                }
-            } catch { }
+            }
+        } catch (e) { }
+    }, [videoSrc, isYouTubeSource, miniYouTubeId, playing, onUpdateData, sendMiniYouTubeCommand]);
+
+    useEffect(() => {
+        if (!videoSrc) return;
+
+        const resumePlayback = () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            attemptMiniResume();
         };
 
-        window.addEventListener('message', handleYTMsg);
-
-        // Send explicit playVideo command to guarantee playback starts
-        const sendPlay = () => {
-            try {
-                if (ytIframeRef.current && ytIframeRef.current.contentWindow) {
-                    ytIframeRef.current.contentWindow.postMessage(
-                        JSON.stringify({ event: 'command', func: 'playVideo' }), '*'
-                    );
-                }
-            } catch { }
-        };
-        // Also unmute after playback starts (autoplay requires mute=1)
-        const sendUnmute = () => {
-            try {
-                if (ytIframeRef.current && ytIframeRef.current.contentWindow) {
-                    ytIframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute' }), '*');
-                    ytIframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
-                }
-            } catch { }
-        };
-
-        // Send listening more frequently and start earlier for faster YouTube postMessage init
-        const t0 = setTimeout(sendListening, 200);
-        const t1 = setTimeout(sendListening, 500);
-        const t2 = setTimeout(sendListening, 1000);
-        const t3 = setTimeout(sendListening, 2000);
-        const listeningInterval = setInterval(sendListening, 500);
-        // Play + unmute commands
-        const t4 = setTimeout(() => { sendPlay(); sendUnmute(); }, 800);
-        const t5 = setTimeout(() => { sendPlay(); sendUnmute(); }, 2000);
+        const kickoff = setTimeout(resumePlayback, 120);
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', resumePlayback);
+            document.addEventListener('resume', resumePlayback);
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener('focus', resumePlayback);
+            window.addEventListener('pageshow', resumePlayback);
+            window.addEventListener('resume', resumePlayback);
+        }
 
         return () => {
-            window.removeEventListener('message', handleYTMsg);
-            clearTimeout(t0);
-            clearTimeout(t1);
-            clearTimeout(t2);
-            clearTimeout(t3);
-            clearTimeout(t4);
-            clearTimeout(t5);
-            clearInterval(listeningInterval);
+            clearTimeout(kickoff);
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', resumePlayback);
+                document.removeEventListener('resume', resumePlayback);
+            }
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('focus', resumePlayback);
+                window.removeEventListener('pageshow', resumePlayback);
+                window.removeEventListener('resume', resumePlayback);
+            }
         };
-    }, [isYouTube, youTubeId]);
+    }, [videoSrc, attemptMiniResume]);
+
+    const handleMiniYouTubeLoad = useCallback(() => {
+        setVideoReady(false);
+        try { clearTimeout(miniReadyTimerRef.current); } catch (e) { }
+        flashMiniYtCover(700);
+        const seekTo = Number(startTime) || 0;
+        miniYtTimeRef.current = seekTo;
+        if (seekTo > 0) {
+            sendMiniYouTubeCommand('seekTo', [seekTo, true]);
+        }
+        sendMiniYouTubeCommand('unMute');
+        sendMiniYouTubeCommand('setVolume', [100]);
+        if ((data && data.paused) === true) {
+            sendMiniYouTubeCommand('pauseVideo');
+            setPlaying(false);
+        } else {
+            sendMiniYouTubeCommand('playVideo');
+            setPlaying(true);
+        }
+        miniReadyTimerRef.current = setTimeout(() => {
+            sendMiniYouTubeCommand('unMute');
+            sendMiniYouTubeCommand('setVolume', [100]);
+            setVideoReady(true);
+        }, 600);
+    }, [data, startTime, sendMiniYouTubeCommand, flashMiniYtCover]);
 
     // State to track if resizing or dragging
     const [isResizing, setIsResizing] = useState(false);
-    const [size, setSize] = useState({ width: 220, height: 172 }); // Combined height (124+48)
+    const [size, setSize] = useState({ width: 220, height: 160 }); // Combined height (116+44)
 
     const handlePointerDown = (e) => {
-        // Use touch coordinates for mobile, pointer for desktop
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const drag = dragRef.current;
         drag.isDragging = false;
         drag.hasMoved = false;
-        drag.startX = clientX;
-        drag.startY = clientY;
+        drag.startX = e.clientX;
+        drag.startY = e.clientY;
         drag.startRight = pos.right;
         drag.startBottom = pos.bottom;
         drag.startWidth = size.width;
         drag.startHeight = size.height;
-        const target = e.target || (e.touches && e.touches[0] && e.touches[0].target);
-        if (target && target.dataset && target.dataset.resize === "true") {
+        if (e.target.dataset.resize === "true") {
             setIsResizing(true);
             drag.isResizing = true;
         } else {
             setIsResizing(false);
             drag.isResizing = false;
         }
+        if (e.target.setPointerCapture) {
+            try { e.target.setPointerCapture(e.pointerId); } catch { }
+        }
     };
 
     const handlePointerMove = (e) => {
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const drag = dragRef.current;
-        const dx = clientX - drag.startX;
-        const dy = clientY - drag.startY;
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
 
         if (!drag.isDragging && !drag.isResizing && Math.sqrt(dx * dx + dy * dy) > 5) {
             if (!drag.isResizing) {
@@ -6449,16 +6232,14 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
         drag.isDragging = false;
         drag.isResizing = false;
         setIsResizing(false);
+        if (e.target.releasePointerCapture) {
+            try { e.target.releasePointerCapture(e.pointerId); } catch { }
+        }
     };
 
     const handleClick = (e) => {
         if (dragRef.current.hasMoved || dragRef.current.isResizing) return;
-        if (onExpand) {
-            // Pass live current time so fullscreen player can seek to the right position
-            const currentTime = isYouTube ? (ytCurrentTime.current || 0) : (videoRef.current ? videoRef.current.currentTime : 0);
-            onExpand(currentTime);
-            return;
-        }
+        if (onExpand) onExpand();
         else {
             showVideoLaunchMask();
             const video = data.video || {};
@@ -6470,8 +6251,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
             if (video.title) params.set('title', video.title);
             const channel = data.creatorName || video.creator || video.author || video.channel || '';
             if (channel) params.set('channel', channel);
-            const liveTime = isYouTube ? ytCurrentTime.current : (videoRef.current ? videoRef.current.currentTime : 0);
-            if (liveTime > 0) params.set('t', String(Math.floor(liveTime)));
+            if (typeof data.time === 'number') params.set('t', String(Math.floor(data.time || 0)));
             
             // Store video data in localStorage for immediate loading (near-instantaneous switch)
             try {
@@ -6495,8 +6275,6 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
             try {
                 navigate(`/videoplayer?${params.toString()}`, { state: { miniPlayerData: data } });
             } catch (err) {
-                // Fallback only if navigate is not available
-                console.warn('navigate failed, using location.href:', err);
                 window.location.href = `/videoplayer?${params.toString()}`;
             }
         }
@@ -6504,24 +6282,18 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
 
     const togglePlay = (e) => {
         e.stopPropagation();
-        // YouTube videos: use postMessage to control iframe
-        if (isYouTube && ytIframeRef.current) {
-            try {
-                if (playing) {
-                    ytIframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo' }), '*');
-                    setPlaying(false);
-                    if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: true, time: ytCurrentTime.current }));
-                } else {
-                    // Brief veil flash — hides YouTube's transient play-state overlay
-                    setYtVeil(true);
-                    clearTimeout(ytVeilTimer.current);
-                    ytIframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
-                    setPlaying(true);
-                    if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
-                    // Lift quickly — scale(1.3) + gradients already hide branding
-                    ytVeilTimer.current = setTimeout(() => setYtVeil(false), 600);
-                }
-            } catch { }
+        if (isYouTubeSource && miniYouTubeId) {
+            if (playing) {
+                sendMiniYouTubeCommand('pauseVideo');
+                setPlaying(false);
+                if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: true }));
+            } else {
+                sendMiniYouTubeCommand('playVideo');
+                sendMiniYouTubeCommand('unMute');
+                sendMiniYouTubeCommand('setVolume', [100]);
+                setPlaying(true);
+                if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
+            }
             return;
         }
         // Use local video ref
@@ -6530,9 +6302,18 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
         if (v.paused) {
             try { v.muted = false; } catch { }
             try { v.volume = 1; } catch { }
-            v.play().catch(() => { });
-            setPlaying(true);
-            if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
+            v.play().then(() => {
+                setPlaying(true);
+                if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
+            }).catch(() => {
+                // Fallback: try muted play
+                v.muted = true;
+                v.play().then(() => {
+                    setPlaying(true);
+                    if (onUpdateData) onUpdateData(prev => ({ ...prev, paused: false }));
+                    setTimeout(() => { try { v.muted = false; v.volume = 1; } catch {} }, 300);
+                }).catch(() => {});
+            });
         } else {
             v.pause();
             setPlaying(false);
@@ -6541,29 +6322,11 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
     };
 
     const seek = (seconds) => {
-        // YouTube: use postMessage to seek
-        if (isYouTube && ytIframeRef.current) {
-            try {
-                // Use tracked current time from YouTube infoDelivery
-                const curTime = ytCurrentTime.current || 0;
-                const newTime = Math.max(0, curTime + seconds);
-                ytIframeRef.current.contentWindow.postMessage(
-                    JSON.stringify({ event: 'command', func: 'seekTo', args: [newTime, true] }), '*'
-                );
-                ytCurrentTime.current = newTime;
-                // Update parent's time tracking
-                if (onUpdateData) onUpdateData(prev => ({ ...prev, time: newTime }));
-                // Re-send listening so YouTube resumes delivering infoDelivery events after seek
-                setTimeout(() => {
-                    try {
-                        if (ytIframeRef.current && ytIframeRef.current.contentWindow) {
-                            ytIframeRef.current.contentWindow.postMessage(
-                                JSON.stringify({ event: 'listening', id: youTubeId }), '*'
-                            );
-                        }
-                    } catch { }
-                }, 300);
-            } catch { }
+        if (isYouTubeSource && miniYouTubeId) {
+            const next = Math.max(0, (Number(miniYtTimeRef.current) || 0) + seconds);
+            miniYtTimeRef.current = next;
+            flashMiniYtCover(700);
+            sendMiniYouTubeCommand('seekTo', [next, true]);
             return;
         }
         const v = videoRef.current;
@@ -6594,12 +6357,11 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
 
     return (
         <div
-            onTouchStart={(e) => { handlePointerDown(e); showControls(); }}
-            onTouchMove={(e) => { handlePointerMove(e); showControls(); }}
-            onTouchEnd={(e) => { handlePointerUp(e); }}
-            onMouseDown={(e) => { handlePointerDown(e); showControls(); }}
-            onMouseMove={(e) => { handlePointerMove(e); showControls(); }}
-            onMouseUp={(e) => { handlePointerUp(e); }}
+            onPointerDown={(e) => { handlePointerDown(e); showControls(); }}
+            onPointerMove={(e) => { handlePointerMove(e); showControls(); }}
+            onPointerUp={(e) => { handlePointerUp(e); }}
+            onPointerEnter={showControls}
+            onPointerLeave={hideControlsDelayed}
             onClick={handleClick}
             style={{
                 position: 'fixed',
@@ -6607,7 +6369,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                 bottom: pos.bottom,
                 width: size.width,
                 height: size.height,
-                zIndex: 55,
+                zIndex: 9999,
                 borderRadius: 16,
                 overflow: 'hidden',
                 boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
@@ -6616,10 +6378,9 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                 touchAction: 'none',
                 display: 'flex',
                 flexDirection: 'column',
-                opacity: 1,
-                transform: 'scale(1)',
-                pointerEvents: 'auto',
-                transition: 'opacity 0.3s ease-out'
+                opacity: videoReady ? 1 : 0,
+                pointerEvents: videoReady ? 'auto' : 'none',
+                transition: 'opacity 0.18s ease-out'
             }}
         >
             {/* Resize Handle (Top-Left) - where requested */}
@@ -6647,7 +6408,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
 
             <div style={{ 
                 width: '100%', 
-                height: size.height - 48, 
+                height: size.height - controlBarHeight,
                 position: 'relative', 
                 overflow: 'hidden',
                 background: '#000',
@@ -6671,50 +6432,56 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                     }} />
                 )}
                 
-                {/* MiniPlayer's video content - YouTube iframe OR native video element */}
-                {isYouTube && youTubeId ? (
+                {/* MiniPlayer playback surface */}
+                {isYouTubeSource && miniYouTubeId ? (
                     <>
-                        <iframe
-                            ref={ytIframeRef}
-                            src={`https://www.youtube-nocookie.com/embed/${youTubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&start=${initialStartTimeRef.current}`}
-                            allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen={false}
+                    <iframe
+                        ref={miniYtIframeRef}
+                        src={`https://www.youtube-nocookie.com/embed/${miniYouTubeId}?autoplay=1&mute=0&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}${startTime > 0 ? `&start=${Math.floor(startTime)}` : ''}`}
+                        title="Mini player"
+                        allow="autoplay; encrypted-media; picture-in-picture"
+                        style={{
+                            position: 'absolute',
+                            top: '-35%',
+                            left: '-35%',
+                            width: '170%',
+                            height: '170%',
+                            border: 0,
+                            background: '#000',
+                            pointerEvents: 'none',
+                            visibility: videoReady ? 'visible' : 'hidden'
+                        }}
+                        onLoad={handleMiniYouTubeLoad}
+                    />
+                    {ytBrandCoverVisible && (
+                        <div
                             style={{
                                 position: 'absolute',
                                 inset: 0,
-                                width: '100%',
-                                height: '100%',
+                                zIndex: 5,
                                 background: '#000',
-                                border: 'none',
                                 pointerEvents: 'none',
-                                opacity: videoReady ? 1 : 0,
-                                transform: 'scale(1.3)',
-                                transformOrigin: 'center center'
+                                opacity: 1,
+                                transition: 'opacity 160ms ease-out'
                             }}
-                            title="MiniPlayer YouTube"
                         />
-
-                        {/* Edge gradient masks — permanently hide YouTube watermark & title */}
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '15%', background: 'linear-gradient(to top, #000 20%, transparent 100%)', zIndex: 2, pointerEvents: 'none' }} />
-                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '10%', background: 'linear-gradient(to bottom, #000 5%, transparent 100%)', zIndex: 2, pointerEvents: 'none' }} />
-
-                        {/* Solid veil — hides branding on load & unpause, fades out smoothly */}
-                        <div style={{
-                            position: 'absolute', inset: 0, zIndex: 4,
-                            background: '#000',
-                            backgroundImage: thumbnailUrl ? `url(${thumbnailUrl})` : 'none',
-                            backgroundSize: 'cover', backgroundPosition: 'center',
-                            opacity: ytVeil ? 1 : 0,
-                            transition: 'opacity 0.5s ease-out',
-                            pointerEvents: 'none'
-                        }} />
-                        {/* Click-blocking overlay for YouTube */}
-                        <div style={{ position: 'absolute', inset: 0, zIndex: 5 }} />
+                    )}
+                    {/* Click-blocker overlay to prevent YouTube native UI interaction */}
+                    <div style={{ position: 'absolute', inset: 0, zIndex: 3 }} />
+                    {/* Bottom gradient - hide YouTube branding/controls */}
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '28%', background: 'linear-gradient(to top, #000 50%, transparent 100%)', zIndex: 4, pointerEvents: 'none' }} />
+                    {/* Top gradient - hide YouTube title/logo */}
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '22%', background: 'linear-gradient(to bottom, #000 42%, transparent 100%)', zIndex: 4, pointerEvents: 'none' }} />
+                    {/* Left edge cover */}
+                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: '2%', background: '#000', zIndex: 4, pointerEvents: 'none' }} />
+                    {/* Right edge cover */}
+                    <div style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '2%', background: '#000', zIndex: 4, pointerEvents: 'none' }} />
                     </>
                 ) : (
                     <video 
                         ref={videoRef}
                         playsInline
+                        controls={false}
                         poster={thumbnailUrl || undefined}
                         style={{ 
                             position: 'absolute',
@@ -6726,6 +6493,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                             objectFit: 'cover',
                             visibility: videoReady ? 'visible' : 'hidden'
                         }}
+                        crossOrigin="anonymous"
                     />
                 )}
                 
@@ -6750,12 +6518,15 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
             {/* Control Bar - Below video */}
             <div style={{
                 width: '100%',
-                height: 48,
+                height: controlBarHeight,
                 background: '#fff',
-                display: 'flex',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
                 alignItems: 'center',
-                justifyContent: 'space-evenly',
+                justifyItems: 'center',
                 borderTop: '1px solid rgba(0,0,0,0.05)',
+                paddingTop: 4,
+                paddingBottom: 6,
                 pointerEvents: 'auto',
                 flexShrink: 0
             }}
@@ -6766,7 +6537,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                     onClick={(e) => { e.stopPropagation(); seek(-10); }}
                     className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 active:scale-95 transition-transform"
                 >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                         <path d="M3 3v5h5" />
                         <text x="12" y="17" fontSize="8" fill="#333" textAnchor="middle" stroke="none" fontWeight="bold">10</text>
@@ -6776,7 +6547,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                 {/* Play/Pause */}
                 <button
                     onClick={togglePlay}
-                    className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-gray-100 active:scale-95 transition-transform"
+                    className="w-11 h-11 flex items-center justify-center rounded-full hover:bg-gray-100 active:scale-95 transition-transform"
                 >
                     {!playing ? (
                         <svg width="20" height="22" viewBox="0 0 24 24" fill="#111"><path d="M5 3l14 9-14 9V3z" /></svg>
@@ -6790,7 +6561,7 @@ const MiniPlayer = React.memo(({ data, onClose, onExpand, onUpdateData, navigate
                     onClick={(e) => { e.stopPropagation(); seek(10); }}
                     className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 active:scale-95 transition-transform"
                 >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
                         <path d="M21 3v5h-5" />
                         <text x="12" y="17" fontSize="8" fill="#333" textAnchor="middle" stroke="none" fontWeight="bold">10</text>

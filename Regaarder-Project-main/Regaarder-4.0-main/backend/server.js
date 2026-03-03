@@ -2,39 +2,527 @@
 /* eslint-disable no-empty, no-unused-vars */
 const express = require('express');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const bodyParser = require('body-parser');
-const crypto = require('crypto');
-let nodemailer;
-try { nodemailer = require('nodemailer'); } catch (e) { console.warn('nodemailer not installed – forgot-password emails disabled'); }
-
-// ── Persistent data directory ──
-// On Railway set DATA_DIR=/data and mount a volume there so JSON files + uploads
-// survive redeploys. Locally this falls back to the backend dir itself.
-const PERSIST_DIR = process.env.DATA_DIR || __dirname;
-if (PERSIST_DIR !== __dirname && !fs.existsSync(PERSIST_DIR)) {
-  fs.mkdirSync(PERSIST_DIR, { recursive: true });
-}
+const { Pool } = require('pg');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 const app = express();
-app.set('trust proxy', true); // Railway / reverse-proxy: trust X-Forwarded-Proto
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 8080;
 const WEB_URL = process.env.WEB_URL || 'https://regaarder.com';
 const PUBLIC_BACKEND_URL =
   process.env.PUBLIC_BACKEND_URL ||
   process.env.BACKEND_URL ||
   process.env.VITE_BACKEND_URL ||
-  'https://pwin-copy-production.up.railway.app';
+  null;
+const CLEANUP_TOKEN = process.env.CLEANUP_TOKEN || null;
 
 app.use(cors());
 app.use(bodyParser.json());
 
+const DATABASE_URL = process.env.DATABASE_URL || null;
+const DB_ENABLED = Boolean(DATABASE_URL);
+const dbPool = DB_ENABLED
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    })
+  : null;
+
+const dbQuery = async (text, params = []) => {
+  if (!DB_ENABLED || !dbPool) throw new Error('Database not configured');
+  return dbPool.query(text, params);
+};
+
+const initDb = async () => {
+  if (!DB_ENABLED) return;
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS users (
+      id text PRIMARY KEY,
+      email text UNIQUE NOT NULL,
+      name text,
+      password_hash text NOT NULL,
+      token text,
+      referral_code text,
+      referrer_id text,
+      referral_count integer DEFAULT 0,
+      created_at timestamptz DEFAULT now(),
+      password_changed_at timestamptz,
+      handle text,
+      tag text,
+      bio text,
+      interests jsonb,
+      image text,
+      social jsonb,
+      is_creator boolean DEFAULT false,
+      creator_since timestamptz,
+      intro_video text,
+      document text,
+      price numeric,
+      tagline text,
+      pricing_type text,
+      categories jsonb,
+      user_plan text,
+      creator_plan text,
+      creator_plan_upgraded_at timestamptz,
+      streak integer,
+      last_streak_date date,
+      meta jsonb
+    );
+  `);
+
+  await dbQuery(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS creator_plan text,
+      ADD COLUMN IF NOT EXISTS creator_plan_upgraded_at timestamptz,
+      ADD COLUMN IF NOT EXISTS streak integer,
+      ADD COLUMN IF NOT EXISTS last_streak_date date,
+      ADD COLUMN IF NOT EXISTS meta jsonb;
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS requests (
+      id text PRIMARY KEY,
+      title text NOT NULL,
+      description text NOT NULL,
+      likes integer DEFAULT 0,
+      comments integer DEFAULT 0,
+      boosts integer DEFAULT 0,
+      amount numeric DEFAULT 0,
+      funding numeric DEFAULT 0,
+      is_trending boolean DEFAULT false,
+      is_sponsored boolean DEFAULT false,
+      company text,
+      company_initial text,
+      company_color text,
+      image_url text,
+      creator_id text,
+      creator_name text,
+      creator_email text,
+      created_by text,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz,
+      current_step integer,
+      claimed boolean DEFAULT false,
+      claimed_by text,
+      claimed_at timestamptz,
+      meta jsonb
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS request_reactions (
+      request_id text NOT NULL,
+      user_id text NOT NULL,
+      is_liked boolean DEFAULT false,
+      is_disliked boolean DEFAULT false,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now(),
+      PRIMARY KEY (request_id, user_id)
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS request_bookmarks (
+      id text PRIMARY KEY,
+      user_id text NOT NULL,
+      request_id text NOT NULL,
+      title text,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS videos (
+      id text PRIMARY KEY,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS request_comments (
+      id text PRIMARY KEY,
+      request_id text,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS watch_history (
+      video_id text NOT NULL,
+      user_id text NOT NULL,
+      payload jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now(),
+      PRIMARY KEY (video_id, user_id)
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS sponsors (
+      id text PRIMARY KEY,
+      owner_id text,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id text PRIMARY KEY,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id text PRIMARY KEY,
+      to_id text,
+      from_id text,
+      type text,
+      read boolean DEFAULT false,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS video_reactions (
+      video_id text NOT NULL,
+      user_id text NOT NULL,
+      is_liked boolean DEFAULT false,
+      is_disliked boolean DEFAULT false,
+      updated_at timestamptz DEFAULT now(),
+      PRIMARY KEY (video_id, user_id)
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS comment_reactions (
+      comment_id text NOT NULL,
+      user_id text NOT NULL,
+      is_liked boolean DEFAULT false,
+      is_disliked boolean DEFAULT false,
+      updated_at timestamptz DEFAULT now(),
+      PRIMARY KEY (comment_id, user_id)
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS staff_state (
+      id text PRIMARY KEY,
+      payload jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS user_video_bookmarks (
+      id text PRIMARY KEY,
+      user_id text NOT NULL,
+      video_url text NOT NULL,
+      title text,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS user_segment_bookmarks (
+      id text PRIMARY KEY,
+      user_id text NOT NULL,
+      video_url text NOT NULL,
+      label text,
+      start_time integer DEFAULT 0,
+      end_time integer DEFAULT 0,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS products (
+      id text PRIMARY KEY,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS bottom_templates (
+      id text PRIMARY KEY,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS categories (
+      name text PRIMARY KEY,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS onboarding_info (
+      id text PRIMARY KEY,
+      user_id text NOT NULL,
+      payload jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS playback_positions (
+      id text PRIMARY KEY,
+      user_id text,
+      anon_id text,
+      video_id text NOT NULL,
+      current_time numeric DEFAULT 0,
+      updated_at timestamptz DEFAULT now()
+    );
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS advertiser_campaigns (
+      id text PRIMARY KEY,
+      owner_id text NOT NULL,
+      payload jsonb NOT NULL,
+      created_at timestamptz DEFAULT now()
+    );
+  `);
+};
+
+let staffCache = null;
+const DEFAULT_STAFF_STATE = { employees: [], pendingAccounts: [], reports: [], shadowDeleted: [], notifications: [] };
+
+const loadStaffStateFromDb = async () => {
+  if (!DB_ENABLED) return;
+  try {
+    const { rows } = await dbQuery('SELECT payload FROM staff_state WHERE id = $1 LIMIT 1', ['staff_state']);
+    if (rows[0] && rows[0].payload) {
+      staffCache = rows[0].payload;
+    } else {
+      staffCache = DEFAULT_STAFF_STATE;
+    }
+  } catch (err) {
+    console.error('load staff state db error', err);
+  }
+};
+
+initDb()
+  .then(() => loadStaffStateFromDb())
+  .catch((err) => {
+    console.error('Database init error', err);
+  });
+
+const S3_BUCKET = process.env.S3_BUCKET || null;
+const S3_REGION = process.env.S3_REGION || 'auto';
+const S3_ENDPOINT = process.env.S3_ENDPOINT || null;
+const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || null;
+const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || null;
+const S3_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL || null;
+const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === 'true';
+const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+
+const S3_ENABLED = Boolean(S3_BUCKET && S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY);
+const s3Client = S3_ENABLED
+  ? new S3Client({
+      region: S3_REGION,
+      endpoint: S3_ENDPOINT || undefined,
+      forcePathStyle: S3_FORCE_PATH_STYLE || Boolean(S3_ENDPOINT),
+      credentials: { accessKeyId: S3_ACCESS_KEY_ID, secretAccessKey: S3_SECRET_ACCESS_KEY }
+    })
+  : null;
+
+const buildS3PublicUrl = (key) => {
+  if (S3_PUBLIC_BASE_URL) return `${S3_PUBLIC_BASE_URL.replace(/\/$/, '')}/${key}`;
+  if (S3_ENDPOINT) return `${S3_ENDPOINT.replace(/\/$/, '')}/${S3_BUCKET}/${key}`;
+  return `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+};
+
+const persistUploadedFile = async (req, file, prefix = 'uploads') => {
+  if (!file) return null;
+  if (S3_ENABLED && s3Client) {
+    const ext = path.extname(file.originalname || file.filename || '') || '';
+    const key = `${prefix}/${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+    const body = file.buffer ? file.buffer : fs.createReadStream(file.path);
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: file.mimetype || 'application/octet-stream'
+    }));
+    if (file.path) {
+      fs.unlink(file.path, () => {});
+    }
+    return buildS3PublicUrl(key);
+  }
+  const publicBase = (PUBLIC_BACKEND_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  return `${publicBase}/uploads/${file.filename}`;
+};
+
+const normalizeMediaUrl = (rawUrl, req) => {
+  if (!rawUrl || String(rawUrl).startsWith('blob:')) return null;
+  try {
+    const base = (PUBLIC_BACKEND_URL || `${req.protocol}://${req.get('host')}`);
+    const u = new URL(String(rawUrl), base);
+    const host = (u.hostname || '').toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+      const baseUrl = new URL(base);
+      u.protocol = baseUrl.protocol;
+      u.hostname = baseUrl.hostname;
+      u.port = baseUrl.port;
+    }
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
+};
+
+// One-time cleanup: normalize stored video URLs to public absolute URLs
+app.post('/admin/normalize-video-urls', async (req, res) => {
+  try {
+    const token = req.headers['x-cleanup-token'] || req.query.token || null;
+    if (CLEANUP_TOKEN && token !== CLEANUP_TOKEN) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const videos = await loadVideos();
+    let updated = 0;
+    const normalized = videos.map((v) => {
+      const next = { ...v };
+      const nextVideoUrl = normalizeMediaUrl(v.videoUrl || v.url || v.src || v.videoLink || v.youtubeUrl || v.mediaUrl, req);
+      const nextThumb = normalizeMediaUrl(v.imageUrl || v.thumbnail || v.image, req);
+      if (nextVideoUrl && nextVideoUrl !== v.videoUrl) {
+        next.videoUrl = nextVideoUrl;
+        updated += 1;
+      }
+      if (nextThumb && nextThumb !== v.imageUrl) {
+        next.imageUrl = nextThumb;
+        updated += 1;
+      }
+      return next;
+    });
+
+    writeVideos(normalized);
+    return res.json({ success: true, updated });
+  } catch (err) {
+    console.error('normalize-video-urls error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+const transcodeVideoToH264 = (inputPath, outputPath) => new Promise((resolve, reject) => {
+  const args = [
+    '-y',
+    '-i', inputPath,
+    '-c:v', 'libx264',
+    '-profile:v', 'baseline',
+    '-level', '3.0',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    outputPath
+  ];
+  const proc = spawn(FFMPEG_PATH, args, { stdio: 'ignore' });
+  proc.on('error', reject);
+  proc.on('close', (code) => {
+    if (code === 0) resolve(outputPath);
+    else reject(new Error(`ffmpeg failed with code ${code}`));
+  });
+});
+
+const ensureH264Mp4 = async (file) => {
+  try {
+    if (!file || !file.path) return file;
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (!mime.startsWith('video/')) return file;
+    const dir = path.dirname(file.path);
+    const base = path.basename(file.path, path.extname(file.path));
+    const outputPath = path.join(dir, `${base}-h264.mp4`);
+    await transcodeVideoToH264(file.path, outputPath);
+    try { fs.unlink(file.path, () => {}); } catch {}
+    return {
+      ...file,
+      path: outputPath,
+      filename: path.basename(outputPath),
+      mimetype: 'video/mp4',
+      originalname: `${base}.mp4`
+    };
+  } catch (err) {
+    console.warn('Video transcode skipped:', err && err.message ? err.message : err);
+    return file;
+  }
+};
+
+const toPublicUser = (user) => {
+  if (!user) return null;
+  const { password_hash, token, ...rest } = user;
+  return rest;
+};
+
+const mapUserRow = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    password_hash: row.password_hash,
+    token: row.token,
+    referral_code: row.referral_code,
+    referrer_id: row.referrer_id,
+    referral_count: row.referral_count,
+    created_at: row.created_at,
+    password_changed_at: row.password_changed_at,
+    handle: row.handle,
+    tag: row.tag,
+    bio: row.bio,
+    interests: row.interests,
+    image: row.image,
+    social: row.social,
+    is_creator: row.is_creator,
+    creator_since: row.creator_since,
+    introVideo: row.intro_video,
+    document: row.document,
+    price: row.price,
+    tagline: row.tagline,
+    pricingType: row.pricing_type,
+    categories: row.categories,
+    userPlan: row.user_plan
+  };
+};
+
+const getUserFromAuthHeader = async (req) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer ')) return null;
+    const token = auth.slice(7).trim();
+    if (!token) return null;
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT * FROM users WHERE token = $1 LIMIT 1', [token]);
+      return rows[0] ? mapUserRow(rows[0]) : null;
+    }
+    const users = readUsers();
+    const user = users.find(u => u.token === token);
+    return user || null;
+  } catch {
+    return null;
+  }
+};
+
 const isRewritableHost = (hostname) => {
   if (!hostname) return false;
   const h = hostname.toLowerCase();
-  return h === 'localhost' || h === '127.0.0.1' || h === 'pwin.onrender.com' || h === 'regaarder-pwin.onrender.com' || h === 'pwin-copy-production.up.railway.app';
+  return h === 'localhost'
+    || h === '127.0.0.1'
+    || h === 'pwin.onrender.com'
+    || h === 'regaarder-pwin.onrender.com';
 };
 
 const normalizeUrlString = (value, baseUrl) => {
@@ -84,14 +572,12 @@ const escapeHtml = (value) => {
   } catch { return ''; }
 };
 
-const buildShareHtml = ({ title, description, image, url, redirectUrl, type = 'website' }, req) => {
+const buildShareHtml = ({ title, description, image, url, redirectUrl, type = 'website' }) => {
   const safeTitle = escapeHtml(title || 'Regaarder');
   const safeDesc = escapeHtml(description || 'Watch on Regaarder');
   const safeUrl = escapeHtml(url || WEB_URL);
   const safeRedirect = escapeHtml(redirectUrl || WEB_URL);
-  // Always show an image — use backend's own origin so WhatsApp/social crawlers can reach it
-  const backendOrigin = PUBLIC_BACKEND_URL || (req ? `${req.protocol}://${req.get('host')}` : WEB_URL);
-  const safeImage = escapeHtml(image || `${backendOrigin}/regaarder-og-banner.png`);
+  const safeImage = image ? escapeHtml(image) : '';
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -104,22 +590,18 @@ const buildShareHtml = ({ title, description, image, url, redirectUrl, type = 'w
     <meta property="og:type" content="${type}" />
     <meta property="og:url" content="${safeUrl}" />
     <meta property="og:site_name" content="Regaarder" />
-    <meta property="og:image" content="${safeImage}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    ${safeImage ? `<meta property="og:image" content="${safeImage}" />` : ''}
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${safeTitle}" />
     <meta name="twitter:description" content="${safeDesc}" />
-    <meta name="twitter:image" content="${safeImage}" />
+    ${safeImage ? `<meta name="twitter:image" content="${safeImage}" />` : ''}
     <meta http-equiv="refresh" content="0; url=${safeRedirect}" />
-    <link rel="icon" href="${WEB_URL}/favicon.ico" />
   </head>
-  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0b0b; color: #fff; margin: 0; padding: 0;">
+  <body style="font-family: Arial, sans-serif; background: #0b0b0b; color: #fff;">
     <main style="max-width: 680px; margin: 40px auto; padding: 20px; text-align: center;">
-      <img src="${safeImage}" alt="${safeTitle}" style="max-width: 100%; border-radius: 12px; margin-bottom: 16px;" />
       <h1 style="font-size: 22px; margin: 0 0 12px;">${safeTitle}</h1>
       <p style="font-size: 14px; opacity: 0.8;">${safeDesc}</p>
-      <p style="font-size: 12px; opacity: 0.7; margin-top: 16px;">Opening Regaarder… If nothing happens, <a href="${safeRedirect}" style="color: #CB8A00;">tap here</a>.</p>
+      <p style="font-size: 12px; opacity: 0.7; margin-top: 16px;">Opening Regaarder… If nothing happens, <a href="${safeRedirect}" style="color: #8ab4ff;">tap here</a>.</p>
     </main>
   </body>
 </html>`;
@@ -134,16 +616,18 @@ app.use((req, res, next) => {
     next();
 });
 
-const DATA_FILE = path.join(PERSIST_DIR, 'users.json');
-const SPONSORS_FILE = path.join(PERSIST_DIR, 'sponsors.json');
-const REQUESTS_FILE = path.join(PERSIST_DIR, 'requests.json');
-const VIDEOS_FILE = path.join(PERSIST_DIR, 'videos.json');
-const CATEGORIES_FILE = path.join(PERSIST_DIR, 'categories.json');
-const ONBOARDING_FILE = path.join(PERSIST_DIR, 'onboarding.json');
+const DATA_FILE = path.join(__dirname, 'users.json');
+const SPONSORS_FILE = path.join(__dirname, 'sponsors.json');
+const REQUESTS_FILE = path.join(__dirname, 'requests.json');
+const VIDEOS_FILE = path.join(__dirname, 'videos.json');
+const CATEGORIES_FILE = path.join(__dirname, 'categories.json');
+const ONBOARDING_FILE = path.join(__dirname, 'onboarding.json');
+
+const crypto = require('crypto');
 const multer = require('multer');
 
 // simple disk storage for demo: store uploads under ./uploads
-const UPLOAD_DIR = path.join(PERSIST_DIR, 'uploads');
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -217,45 +701,11 @@ function fileFilter(req, file, cb) {
 
 const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_BYTES }, fileFilter });
 
-function normalizeUserFields(u) {
-  if (!u || typeof u !== 'object') return u;
-  return {
-    ...u,
-    isCreator: u.isCreator === true || u.is_creator === true || false,
-    referralCode: u.referralCode || u.referral_code || null,
-    createdAt: u.createdAt || u.created_at || null,
-    passwordChangedAt: u.passwordChangedAt || u.password_changed_at || null,
-    creatorSince: u.creatorSince || u.creator_since || null,
-    referralCount: u.referralCount || u.referral_count || 0,
-    referrerId: u.referrerId || u.referrer_id || null,
-  };
-}
-
 function readUsers() {
   try {
     if (!fs.existsSync(DATA_FILE)) return [];
-    let raw = fs.readFileSync(DATA_FILE, 'utf8');
-    // Strip BOM if present
-    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-    // Remove control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F-0x9F) that break JSON.parse
-    // Keep \t (0x09), \n (0x0A), \r (0x0D) which are valid in JSON whitespace
-    raw = Array.from(raw)
-      .filter((ch) => {
-        const code = ch.charCodeAt(0);
-        if (code === 0x09 || code === 0x0A || code === 0x0D) return true;
-        if ((code >= 0x00 && code <= 0x08) || code === 0x0B || code === 0x0C) return false;
-        if (code >= 0x0E && code <= 0x1F) return false;
-        if (code >= 0x7F && code <= 0x9F) return false;
-        return true;
-      })
-      .join('');
-    const parsed = JSON.parse(raw || '[]');
-    if (!Array.isArray(parsed)) {
-      console.error('readUsers: DATA_FILE is not an array, got', typeof parsed);
-      return [];
-    }
-    // Normalize snake_case fields to camelCase for consistency
-    return parsed.map(normalizeUserFields);
+    const raw = fs.readFileSync(DATA_FILE, 'utf8');
+    return JSON.parse(raw || '[]');
   } catch (err) {
     console.error('readUsers error', err);
     return [];
@@ -280,6 +730,44 @@ function readSponsors() {
 function writeSponsors(sponsors) {
   fs.writeFileSync(SPONSORS_FILE, JSON.stringify(sponsors, null, 2), 'utf8');
 }
+
+const loadSponsors = async () => {
+  if (!DB_ENABLED) return readSponsors();
+  const { rows } = await dbQuery('SELECT payload FROM sponsors ORDER BY created_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveSponsors = async (sponsors) => {
+  if (!DB_ENABLED) {
+    writeSponsors(sponsors);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = sponsors.map(s => String(s.id));
+  try {
+    await client.query('BEGIN');
+    for (const sponsor of sponsors) {
+      const createdAt = sponsor.createdAt ? new Date(sponsor.createdAt) : new Date();
+      await client.query(
+        `INSERT INTO sponsors (id, owner_id, payload, created_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE SET owner_id = EXCLUDED.owner_id, payload = EXCLUDED.payload`,
+        [String(sponsor.id), sponsor.ownerId || null, sponsor, createdAt]
+      );
+    }
+    if (ids.length > 0) {
+      await client.query('DELETE FROM sponsors WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+    } else {
+      await client.query('DELETE FROM sponsors');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
 
 function updateStreak(userId) {
   if (!userId || userId === 'anonymous') return;
@@ -336,8 +824,53 @@ function writeRequests(requests) {
   }
 }
 
+function toNonNegativeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return parsed < 0 ? 0 : parsed;
+}
+
+function getPaidAmountFromRequest(request) {
+  const meta = (request && request.meta && typeof request.meta === 'object') ? request.meta : {};
+  const explicitPaid = meta.paidAmount;
+  if (Number.isFinite(Number(explicitPaid))) {
+    return toNonNegativeNumber(explicitPaid, 0);
+  }
+
+  const funding = Number(request && request.funding);
+  if (Number.isFinite(funding)) return toNonNegativeNumber(funding, 0);
+
+  const amount = Number(request && request.amount);
+  if (Number.isFinite(amount)) return toNonNegativeNumber(amount, 0);
+
+  return 0;
+}
+
+function getEffectiveAmountFromRequest(request) {
+  const meta = (request && request.meta && typeof request.meta === 'object') ? request.meta : {};
+  const override = (meta.staffAmountOverride && typeof meta.staffAmountOverride === 'object')
+    ? meta.staffAmountOverride
+    : null;
+
+  if (override && override.active && Number.isFinite(Number(override.amount))) {
+    return toNonNegativeNumber(override.amount, 0);
+  }
+
+  return getPaidAmountFromRequest(request);
+}
+
+function applyRequestAmountPresentation(request) {
+  if (!request || typeof request !== 'object') return request;
+  const effectiveAmount = getEffectiveAmountFromRequest(request);
+  return {
+    ...request,
+    amount: effectiveAmount,
+    funding: effectiveAmount
+  };
+}
+
 // Comments persistence
-const COMMENTS_FILE = path.join(PERSIST_DIR, 'comments.json');
+const COMMENTS_FILE = path.join(__dirname, 'comments.json');
 function readComments() {
   try {
     if (!fs.existsSync(COMMENTS_FILE)) return [];
@@ -348,6 +881,44 @@ function readComments() {
 function writeComments(comments) {
   try { fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2), 'utf8'); } catch (err) { console.error('writeComments error', err); }
 }
+
+const loadComments = async () => {
+  if (!DB_ENABLED) return readComments();
+  const { rows } = await dbQuery('SELECT payload FROM request_comments ORDER BY created_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveComments = async (comments) => {
+  if (!DB_ENABLED) {
+    writeComments(comments);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = comments.map(c => String(c.id));
+  try {
+    await client.query('BEGIN');
+    for (const comment of comments) {
+      const createdAt = comment.createdAt ? new Date(comment.createdAt) : new Date();
+      await client.query(
+        `INSERT INTO request_comments (id, request_id, payload, created_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE SET request_id = EXCLUDED.request_id, payload = EXCLUDED.payload`,
+        [String(comment.id), comment.requestId || null, comment, createdAt]
+      );
+    }
+    if (ids.length > 0) {
+      await client.query('DELETE FROM request_comments WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+    } else {
+      await client.query('DELETE FROM request_comments');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
 
 function readVideos() {
   try {
@@ -368,7 +939,45 @@ function writeVideos(videos) {
   }
 }
 
-const PRODUCTS_FILE = path.join(PERSIST_DIR, 'products.json');
+const loadVideos = async () => {
+  if (!DB_ENABLED) return readVideos();
+  const { rows } = await dbQuery('SELECT payload FROM videos ORDER BY created_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveVideos = async (videos) => {
+  if (!DB_ENABLED) {
+    writeVideos(videos);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = videos.map(v => String(v.id));
+  try {
+    await client.query('BEGIN');
+    for (const video of videos) {
+      const createdAt = video.createdAt ? new Date(video.createdAt) : new Date();
+      await client.query(
+        `INSERT INTO videos (id, payload, created_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`,
+        [String(video.id), video, createdAt]
+      );
+    }
+    if (ids.length > 0) {
+      await client.query('DELETE FROM videos WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+    } else {
+      await client.query('DELETE FROM videos');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const PRODUCTS_FILE = path.join(__dirname, 'products.json');
 function readProducts() {
   try {
     if (!fs.existsSync(PRODUCTS_FILE)) return [];
@@ -388,84 +997,130 @@ function writeProducts(products) {
   }
 }
 
+const loadProducts = async () => {
+  if (!DB_ENABLED) return readProducts();
+  const { rows } = await dbQuery('SELECT payload FROM products ORDER BY created_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveProducts = async (products) => {
+  if (!DB_ENABLED) {
+    writeProducts(products);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = products.map(p => String(p.id || p.name || crypto.randomBytes(8).toString('hex')));
+  try {
+    await client.query('BEGIN');
+    for (const product of products) {
+      const id = String(product.id || product.name || crypto.randomBytes(8).toString('hex'));
+      const createdAt = product.createdAt ? new Date(product.createdAt) : new Date();
+      await client.query(
+        `INSERT INTO products (id, payload, created_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`,
+        [id, product, createdAt]
+      );
+    }
+    if (ids.length > 0) {
+      await client.query('DELETE FROM products WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+    } else {
+      await client.query('DELETE FROM products');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const NOTIFICATIONS_FILE = path.join(__dirname, 'suggestions.json');
+const readNotifications = () => {
+  try {
+    if (!fs.existsSync(NOTIFICATIONS_FILE)) return [];
+    const raw = fs.readFileSync(NOTIFICATIONS_FILE, 'utf8');
+    return JSON.parse(raw || '[]');
+  } catch (err) {
+    console.error('readNotifications error', err);
+    return [];
+  }
+};
+
+const writeNotifications = (list) => {
+  try {
+    fs.writeFileSync(NOTIFICATIONS_FILE, JSON.stringify(list, null, 2), 'utf8');
+  } catch (err) {
+    console.error('writeNotifications error', err);
+  }
+};
+
+const loadNotifications = async () => {
+  if (!DB_ENABLED) return readNotifications();
+  const { rows } = await dbQuery('SELECT payload FROM notifications ORDER BY created_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveNotifications = async (list) => {
+  if (!DB_ENABLED) {
+    writeNotifications(list);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = list.map(n => String(n.id));
+  try {
+    await client.query('BEGIN');
+    for (const notif of list) {
+      if (!notif || !notif.id) continue;
+      const createdAt = notif.createdAt ? new Date(notif.createdAt) : new Date();
+      const toId = notif.to?.id || notif.userId || null;
+      const fromId = notif.from?.id || null;
+      const type = notif.type || null;
+      const isRead = Boolean(notif.read);
+      await client.query(
+        `INSERT INTO notifications (id, to_id, from_id, type, read, payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO UPDATE SET to_id = EXCLUDED.to_id, from_id = EXCLUDED.from_id, type = EXCLUDED.type, read = EXCLUDED.read, payload = EXCLUDED.payload`,
+        [String(notif.id), toId, fromId, type, isRead, notif, createdAt]
+      );
+    }
+    if (ids.length > 0) {
+      await client.query('DELETE FROM notifications WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+    } else {
+      await client.query('DELETE FROM notifications');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Regaarder backend running' });
 });
 
-// ── Startup data cleanup: deduplicate requests.json ──
-// Remove duplicate IDs keeping the newest (by updatedAt/createdAt) version.
-(function deduplicateRequests() {
-  try {
-    const requests = readRequests();
-    const seen = new Map();
-    for (const r of requests) {
-      if (!r || !r.id) continue;
-      if (seen.has(r.id)) {
-        const existing = seen.get(r.id);
-        const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-        const newTime = new Date(r.updatedAt || r.createdAt || 0).getTime();
-        if (newTime > existingTime) seen.set(r.id, r);
-      } else {
-        seen.set(r.id, r);
-      }
-    }
-    const deduped = Array.from(seen.values());
-    if (deduped.length < requests.length) {
-      console.log(`[STARTUP] Deduplicated requests.json: ${requests.length} → ${deduped.length} (removed ${requests.length - deduped.length} duplicates)`);
-      writeRequests(deduped);
-    } else {
-      console.log(`[STARTUP] requests.json clean: ${requests.length} entries, no duplicates`);
-    }
-  } catch (e) {
-    console.error('[STARTUP] deduplicateRequests error', e);
-  }
-})();
-
-// Also deduplicate videos.json at startup
-(function deduplicateVideos() {
-  try {
-    const videos = readVideos();
-    const seen = new Map();
-    for (const v of videos) {
-      if (!v || !v.id) continue;
-      if (seen.has(v.id)) {
-        const existing = seen.get(v.id);
-        const existingTime = new Date(existing.updatedAt || existing.createdAt || existing.publishedAt || 0).getTime();
-        const newTime = new Date(v.updatedAt || v.createdAt || v.publishedAt || 0).getTime();
-        if (newTime > existingTime) seen.set(v.id, v);
-      } else {
-        seen.set(v.id, v);
-      }
-    }
-    const deduped = Array.from(seen.values());
-    if (deduped.length < videos.length) {
-      console.log(`[STARTUP] Deduplicated videos.json: ${videos.length} → ${deduped.length} (removed ${videos.length - deduped.length} duplicates)`);
-      writeVideos(deduped);
-    }
-  } catch (e) {
-    console.error('[STARTUP] deduplicateVideos error', e);
-  }
-})();
-
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', version: '2.0.0' });
+  res.status(200).json({ status: 'ok' });
 });
 
-// Keep /healthz for backwards compatibility (Render health checks)
 app.get('/healthz', (req, res) => {
-  res.status(200).json({ status: 'ok', version: '2.0.0' });
-});
-
-// Version endpoint to verify deployment
-app.get('/version', (req, res) => {
-  res.json({ version: '2.0.0', deployed: new Date().toISOString(), features: ['creators-endpoint', 'normalize-fields', 'user-id-lookup'] });
+  res.status(200).json({ status: 'ok' });
 });
 
 // Get all marketplace products
 app.get('/products', (req, res) => {
   try {
-    const products = readProducts();
-    return res.json({ success: true, products });
+    return (async () => {
+      const products = await loadProducts();
+      return res.json({ success: true, products });
+    })().catch((err) => {
+      console.error('get products error', err);
+      return res.status(500).json({ error: 'Server error' });
+    });
   } catch (err) {
     console.error('get products error', err);
     return res.status(500).json({ error: 'Server error' });
@@ -473,7 +1128,7 @@ app.get('/products', (req, res) => {
 });
 
 // Bottom ad templates persistence
-const BOTTOM_TEMPLATES_FILE = path.join(PERSIST_DIR, 'bottom_ad_templates.json');
+const BOTTOM_TEMPLATES_FILE = path.join(__dirname, 'bottom_ad_templates.json');
 function readBottomTemplates() {
   try {
     if (!fs.existsSync(BOTTOM_TEMPLATES_FILE)) return [];
@@ -485,25 +1140,69 @@ function writeBottomTemplates(list) {
   try { fs.writeFileSync(BOTTOM_TEMPLATES_FILE, JSON.stringify(list, null, 2), 'utf8'); } catch (err) { console.error('writeBottomTemplates error', err); }
 }
 
+const loadBottomTemplates = async () => {
+  if (!DB_ENABLED) return readBottomTemplates();
+  const { rows } = await dbQuery('SELECT payload FROM bottom_templates ORDER BY created_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveBottomTemplates = async (list) => {
+  if (!DB_ENABLED) {
+    writeBottomTemplates(list);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = list.map(t => String(t.id));
+  try {
+    await client.query('BEGIN');
+    for (const tpl of list) {
+      const createdAt = tpl.createdAt ? new Date(tpl.createdAt) : new Date();
+      await client.query(
+        `INSERT INTO bottom_templates (id, payload, created_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`,
+        [String(tpl.id), tpl, createdAt]
+      );
+    }
+    if (ids.length > 0) {
+      await client.query('DELETE FROM bottom_templates WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+    } else {
+      await client.query('DELETE FROM bottom_templates');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 app.get('/templates/bottom', (req, res) => {
   try {
-    const templates = readBottomTemplates();
-    return res.json({ success: true, templates });
+    return (async () => {
+      const templates = await loadBottomTemplates();
+      return res.json({ success: true, templates });
+    })().catch((err) => {
+      console.error('get bottom templates error', err);
+      return res.status(500).json({ error: 'Server error' });
+    });
   } catch (err) {
     console.error('get bottom templates error', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.post('/templates/bottom', (req, res) => {
+app.post('/templates/bottom', async (req, res) => {
   try {
     const { name, avatar, text, link, assets } = req.body || {};
     if (!name || !text) return res.status(400).json({ error: 'Missing fields' });
-    const list = readBottomTemplates();
+    const list = DB_ENABLED ? await loadBottomTemplates() : readBottomTemplates();
     const id = Date.now();
     const tpl = { id, name, avatar: avatar || '', text: text || '', link: link || '', assets: assets || [] };
     list.unshift(tpl);
-    writeBottomTemplates(list);
+    if (!DB_ENABLED) writeBottomTemplates(list);
+    else await saveBottomTemplates(list);
     return res.json({ success: true, template: tpl });
   } catch (err) {
     console.error('post bottom template error', err);
@@ -511,53 +1210,33 @@ app.post('/templates/bottom', (req, res) => {
   }
 });
 
-app.put('/templates/bottom/:id', (req, res) => {
+app.put('/templates/bottom/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const body = req.body || {};
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT payload FROM bottom_templates WHERE id = $1 LIMIT 1', [String(id)]);
+      if (!rows[0]) return res.status(404).json({ error: 'Template not found' });
+      const existing = rows[0].payload || {};
+      const updated = { ...existing, ...body, id: existing.id };
+      await dbQuery(
+        `INSERT INTO bottom_templates (id, payload, created_at)
+         VALUES ($1, $2, COALESCE(($2->>'createdAt')::timestamptz, now()))
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`,
+        [String(id), updated]
+      );
+      return res.json({ success: true, template: updated });
+    }
+
     const list = readBottomTemplates();
     const idx = list.findIndex(t => Number(t.id) === id);
-    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    if (idx === -1) return res.status(404).json({ error: 'Template not found' });
     const updated = { ...list[idx], ...body, id: list[idx].id };
     list[idx] = updated;
     writeBottomTemplates(list);
     return res.json({ success: true, template: updated });
   } catch (err) {
-    console.error('put bottom template error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.delete('/templates/bottom/:id', (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const list = readBottomTemplates();
-    const newList = list.filter(t => Number(t.id) !== id);
-    writeBottomTemplates(newList);
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('delete bottom template error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Add a new product to marketplace
-app.post('/products', authMiddleware, (req, res) => {
-  try {
-    const body = req.body || {};
-    const products = readProducts();
-    const newProduct = {
-      ...body,
-      id: Date.now(),
-      createdAt: new Date().toISOString(),
-      creatorId: req.user.id,
-      creatorName: req.user.name || 'Anonymous'
-    };
-    products.unshift(newProduct);
-    writeProducts(products);
-    return res.json({ success: true, product: newProduct });
-  } catch (err) {
-    console.error('add product error', err);
+    console.error('update bottom template error', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -568,6 +1247,44 @@ app.post('/signup', async (req, res) => {
   const emailLower = String(email).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) return res.status(400).json({ error: 'Invalid email format' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  if (DB_ENABLED) {
+    try {
+      const existing = await dbQuery('SELECT id FROM users WHERE email = $1 LIMIT 1', [emailLower]);
+      if (existing.rows.length) return res.status(409).json({ error: 'Account already exists for this email' });
+
+      let referrerUser = null;
+      if (referralCode && referralCode.trim()) {
+        const trimmedCode = referralCode.trim().toUpperCase();
+        const refRes = await dbQuery('SELECT id, referral_code FROM users WHERE UPPER(referral_code) = $1 LIMIT 1', [trimmedCode]);
+        referrerUser = refRes.rows[0] || null;
+        if (!referrerUser) return res.status(400).json({ error: 'Invalid referral code' });
+      }
+
+      const hash = await bcrypt.hash(password, 10);
+      const token = crypto.randomBytes(16).toString('hex');
+      const newReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 8);
+      const userId = `user-${Date.now()}`;
+      const now = new Date().toISOString();
+
+      await dbQuery(
+        `INSERT INTO users
+          (id, email, name, password_hash, referral_code, referrer_id, referral_count, created_at, password_changed_at, token)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [userId, emailLower, name, hash, newReferralCode, referrerUser ? referrerUser.id : null, 0, now, now, token]
+      );
+
+      if (referrerUser) {
+        await dbQuery('UPDATE users SET referral_count = COALESCE(referral_count, 0) + 1 WHERE id = $1', [referrerUser.id]);
+      }
+
+      const { rows } = await dbQuery('SELECT * FROM users WHERE id = $1', [userId]);
+      return res.json({ user: toPublicUser(mapUserRow(rows[0])), token });
+    } catch (err) {
+      console.error('signup db error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  }
 
   const users = readUsers();
   if (users.find(u => u.email === emailLower)) return res.status(409).json({ error: 'Account already exists for this email' });
@@ -619,6 +1336,25 @@ app.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
   const emailLower = String(email).toLowerCase();
 
+  if (DB_ENABLED) {
+    try {
+      const { rows } = await dbQuery('SELECT * FROM users WHERE email = $1 LIMIT 1', [emailLower]);
+      const user = rows[0] ? mapUserRow(rows[0]) : null;
+      if (!user) return res.status(404).json({ error: 'No account found for this email' });
+
+      const ok = await bcrypt.compare(password, user.password_hash || user.passwordHash);
+      if (!ok) return res.status(401).json({ error: 'Incorrect password' });
+
+      const token = crypto.randomBytes(16).toString('hex');
+      await dbQuery('UPDATE users SET token = $1 WHERE id = $2', [token, user.id]);
+      const refreshed = await dbQuery('SELECT * FROM users WHERE id = $1', [user.id]);
+      return res.json({ user: toPublicUser(mapUserRow(refreshed.rows[0])), token });
+    } catch (err) {
+      console.error('login db error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  }
+
   const users = readUsers();
   const user = users.find(u => u.email === emailLower);
   if (!user) return res.status(404).json({ error: 'No account found for this email' });
@@ -633,16 +1369,26 @@ app.post('/login', async (req, res) => {
   if (idx !== -1) users[idx] = updated;
   writeUsers(users);
 
-  const { passwordHash: _ph2, ...publicUser } = updated;
+  const { passwordHash: _ph, ...publicUser } = updated;
   res.json({ user: publicUser, token });
 });
 
-// Simple auth middleware that validates Bearer token against users.json
-function authMiddleware(req, res, next) {
+// Simple auth middleware that validates Bearer token
+async function authMiddleware(req, res, next) {
   try {
     const auth = req.headers.authorization || '';
     if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
     const token = auth.slice(7).trim();
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT id, email, name FROM users WHERE token = $1 LIMIT 1', [token]);
+      const user = rows[0];
+      if (!user) return res.status(401).json({ error: 'Invalid token' });
+      req.user = { id: user.id, email: user.email, name: user.name };
+      return next();
+    }
+
     const users = readUsers();
     const user = users.find(u => u.token === token);
     if (!user) return res.status(401).json({ error: 'Invalid token' });
@@ -654,7 +1400,7 @@ function authMiddleware(req, res, next) {
 }
 
 // Playback persistence helpers (simple file-backed store)
-const PLAYBACK_FILE = path.join(PERSIST_DIR, 'playback.json');
+const PLAYBACK_FILE = path.join(__dirname, 'playback.json');
 function readPlayback() {
   try {
     if (!fs.existsSync(PLAYBACK_FILE)) return {};
@@ -666,16 +1412,50 @@ function writePlayback(data) {
   try { fs.writeFileSync(PLAYBACK_FILE, JSON.stringify(data, null, 2), 'utf8'); } catch (err) { console.error('writePlayback error', err); }
 }
 
+const playbackKeyFor = ({ userId, anonId }) => (userId ? `user:${userId}` : `anon:${anonId || 'anonymous'}`);
+
+const savePlaybackDb = async ({ userId, anonId, videoId, currentTime }) => {
+  const key = playbackKeyFor({ userId, anonId });
+  await dbQuery(
+    `INSERT INTO playback_positions (id, user_id, anon_id, video_id, current_time, updated_at)
+     VALUES ($1,$2,$3,$4,$5,now())
+     ON CONFLICT (id)
+     DO UPDATE SET user_id = EXCLUDED.user_id, anon_id = EXCLUDED.anon_id, video_id = EXCLUDED.video_id, current_time = EXCLUDED.current_time, updated_at = now()`,
+    [key, userId || null, anonId || null, String(videoId), Number(currentTime) || 0]
+  );
+};
+
+const loadPlaybackDb = async ({ userId, anonId }) => {
+  const key = playbackKeyFor({ userId, anonId });
+  const { rows } = await dbQuery('SELECT video_id, current_time, updated_at FROM playback_positions WHERE id = $1 LIMIT 1', [key]);
+  if (!rows[0]) return {};
+  return {
+    videoId: rows[0].video_id,
+    currentTime: Number(rows[0].current_time || 0),
+    updatedAt: rows[0].updated_at
+  };
+};
+
 // Save playback position (authenticated preferred, anonymous fallback)
-app.post('/api/playback', (req, res) => {
+app.post('/api/playback', async (req, res) => {
   try {
     const body = req.body || {};
     const { videoId, currentTime } = body;
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
 
+    if (DB_ENABLED) {
+      const user = await getUserFromAuthHeader(req);
+      if (user) {
+        await savePlaybackDb({ userId: user.id, videoId, currentTime });
+        return res.json({ ok: true });
+      }
+      const anonKey = body.anonId || 'anonymous';
+      await savePlaybackDb({ anonId: anonKey, videoId, currentTime });
+      return res.json({ ok: true });
+    }
+
     const playback = readPlayback();
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      // try to resolve user
       const token = req.headers.authorization.slice(7).trim();
       const users = readUsers();
       const user = users.find(u => u.token === token);
@@ -686,7 +1466,6 @@ app.post('/api/playback', (req, res) => {
       }
     }
 
-    // anonymous: store under special key using a client-provided anonId if present, else 'anonymous'
     const anonKey = body.anonId || 'anonymous';
     playback[anonKey] = { videoId, currentTime: Number(currentTime) || 0, updatedAt: new Date().toISOString() };
     writePlayback(playback);
@@ -698,8 +1477,19 @@ app.post('/api/playback', (req, res) => {
 });
 
 // Get playback position for current user/anon
-app.get('/api/playback', (req, res) => {
+app.get('/api/playback', async (req, res) => {
   try {
+    if (DB_ENABLED) {
+      const user = await getUserFromAuthHeader(req);
+      if (user) {
+        const data = await loadPlaybackDb({ userId: user.id });
+        return res.json(data || {});
+      }
+      const anonKey = req.query.anonId || 'anonymous';
+      const data = await loadPlaybackDb({ anonId: anonKey });
+      return res.json(data || {});
+    }
+
     const playback = readPlayback();
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
       const token = req.headers.authorization.slice(7).trim();
@@ -734,7 +1524,7 @@ app.post('/claim', authMiddleware, (req, res) => {
     }
 
     // Check daily claim limit for paid requests (amount > 0 or funding > 0)
-    const requestAmount = Number(request.amount) || Number(request.funding) || 0;
+    const requestAmount = getEffectiveAmountFromRequest(request);
     if (requestAmount > 0) {
       const users = readUsers();
       const user = users.find(u => u.id === req.user.id);
@@ -989,13 +1779,13 @@ app.get('/creator-plan', authMiddleware, (req, res) => {
 });
 
 // Create sponsor profile (protected). Links sponsor to current user (1:Many)
-app.post('/sponsors', authMiddleware, (req, res) => {
+app.post('/sponsors', authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
     const { name, brief, assets } = body;
     if (!name) return res.status(400).json({ error: 'Missing sponsor name' });
 
-    const sponsors = readSponsors();
+    const sponsors = await loadSponsors();
     const id = `sponsor-${Date.now()}`;
     const sponsor = {
       id,
@@ -1006,7 +1796,7 @@ app.post('/sponsors', authMiddleware, (req, res) => {
       createdAt: new Date().toISOString()
     };
     sponsors.push(sponsor);
-    writeSponsors(sponsors);
+    await saveSponsors(sponsors);
 
     return res.json({ success: true, sponsor });
   } catch (err) {
@@ -1016,9 +1806,9 @@ app.post('/sponsors', authMiddleware, (req, res) => {
 });
 
 // Get sponsors for current authenticated user
-app.get('/sponsors/me', authMiddleware, (req, res) => {
+app.get('/sponsors/me', authMiddleware, async (req, res) => {
   try {
-    const sponsors = readSponsors().filter(s => s.ownerId === req.user.id);
+    const sponsors = (await loadSponsors()).filter(s => s.ownerId === req.user.id);
     return res.json({ sponsors });
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
@@ -1026,14 +1816,19 @@ app.get('/sponsors/me', authMiddleware, (req, res) => {
 });
 
 // Advertiser dashboard endpoint: only owner can access their dashboard data
-app.get('/advertiser/dashboard', authMiddleware, (req, res) => {
+app.get('/advertiser/dashboard', authMiddleware, async (req, res) => {
   try {
-    const sponsors = readSponsors().filter(s => s.ownerId === req.user.id);
+    const sponsors = (await loadSponsors()).filter(s => s.ownerId === req.user.id);
     // For demo purposes, also include recent campaigns from local file if present
     let campaigns = [];
-    const campaignsFile = path.join(PERSIST_DIR, 'advertiser_campaigns.json');
-    if (fs.existsSync(campaignsFile)) {
-      try { campaigns = JSON.parse(fs.readFileSync(campaignsFile, 'utf8') || '[]').filter(c => c.ownerId === req.user.id); } catch (e) { campaigns = []; }
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT payload FROM advertiser_campaigns WHERE owner_id = $1 ORDER BY created_at DESC', [req.user.id]);
+      campaigns = rows.map(r => r.payload);
+    } else {
+      const campaignsFile = path.join(__dirname, 'advertiser_campaigns.json');
+      if (fs.existsSync(campaignsFile)) {
+        try { campaigns = JSON.parse(fs.readFileSync(campaignsFile, 'utf8') || '[]').filter(c => c.ownerId === req.user.id); } catch (e) { campaigns = []; }
+      }
     }
     return res.json({ sponsors, campaigns });
   } catch (err) {
@@ -1042,10 +1837,10 @@ app.get('/advertiser/dashboard', authMiddleware, (req, res) => {
 });
 
 // Get a sponsor by id and ensure only owner can access
-app.get('/sponsors/:id', authMiddleware, (req, res) => {
+app.get('/sponsors/:id', authMiddleware, async (req, res) => {
   try {
     const id = req.params.id;
-    const sponsors = readSponsors();
+    const sponsors = await loadSponsors();
     const s = sponsors.find(x => x.id === id);
     if (!s) return res.status(404).json({ error: 'Sponsor not found' });
     if (s.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
@@ -1061,8 +1856,30 @@ app.post('/bookmark', authMiddleware, (req, res) => {
     const { requestId, action, title } = req.body || {};
     console.log('POST /bookmark - userId:', req.user.id, 'requestId:', requestId, 'action:', action);
     if (!requestId || !action) return res.status(400).json({ error: 'Missing requestId or action' });
+    if (DB_ENABLED) {
+      return (async () => {
+        if (action === 'add') {
+          const exists = await dbQuery(
+            'SELECT id FROM request_bookmarks WHERE user_id = $1 AND request_id = $2 LIMIT 1',
+            [req.user.id, requestId]
+          );
+          if (!exists.rows[0]) {
+            const id = `req_${Date.now()}`;
+            await dbQuery('INSERT INTO request_bookmarks (id, user_id, request_id, title) VALUES ($1,$2,$3,$4)', [id, req.user.id, requestId, title || '']);
+          }
+        } else if (action === 'remove') {
+          await dbQuery('DELETE FROM request_bookmarks WHERE user_id = $1 AND request_id = $2', [req.user.id, requestId]);
+        } else {
+          return res.status(400).json({ error: 'Invalid action' });
+        }
+        return res.json({ success: true, requestId, action });
+      })().catch((err) => {
+        console.error('bookmark db error', err);
+        return res.status(500).json({ error: 'Server error' });
+      });
+    }
+
     const all = readBookmarks();
-    // add or remove request bookmark for current user
     if (action === 'add') {
       const exists = (all.requests || []).some(b => String(b.userId || 'anonymous') === String(req.user.id) && String(b.requestId) === String(requestId));
       if (!exists) {
@@ -1088,11 +1905,25 @@ app.post('/bookmark', authMiddleware, (req, res) => {
 });
 
 // Add request bookmark (auth optional; uses token if present, else anonymous)
-app.post('/bookmarks/requests', (req, res) => {
+app.post('/bookmarks/requests', async (req, res) => {
   try {
-    const userId = getUserIdOrAnon(req);
+    const user = await getUserFromAuthHeader(req);
+    const userId = user ? user.id : 'anonymous';
     const { requestId, title } = req.body || {};
     if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
+
+    if (DB_ENABLED) {
+      const exists = await dbQuery(
+        'SELECT id FROM request_bookmarks WHERE user_id = $1 AND request_id = $2 LIMIT 1',
+        [userId, requestId]
+      );
+      if (!exists.rows.length) {
+        const id = `req_${Date.now()}`;
+        await dbQuery('INSERT INTO request_bookmarks (id, user_id, request_id, title) VALUES ($1,$2,$3,$4)', [id, userId, requestId, title || '']);
+      }
+      return res.json({ success: true, requestId, action: 'add', userId });
+    }
+
     const all = readBookmarks();
     const exists = (all.requests || []).some(b => String(b.userId || 'anonymous') === String(userId) && String(b.requestId) === String(requestId));
     if (!exists) {
@@ -1106,11 +1937,18 @@ app.post('/bookmarks/requests', (req, res) => {
 });
 
 // Remove request bookmark (auth optional; uses token if present, else anonymous)
-app.delete('/bookmarks/requests', (req, res) => {
+app.delete('/bookmarks/requests', async (req, res) => {
   try {
-    const userId = getUserIdOrAnon(req);
+    const user = await getUserFromAuthHeader(req);
+    const userId = user ? user.id : 'anonymous';
     const { requestId } = req.body || {};
     if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
+
+    if (DB_ENABLED) {
+      const { rowCount } = await dbQuery('DELETE FROM request_bookmarks WHERE user_id = $1 AND request_id = $2', [userId, requestId]);
+      return res.json({ success: true, removed: rowCount, requestId, userId });
+    }
+
     const all = readBookmarks();
     const before = (all.requests || []).length;
     all.requests = (all.requests || []).filter(b => !(String(b.userId || 'anonymous') === String(userId) && String(b.requestId) === String(requestId)));
@@ -1120,7 +1958,7 @@ app.delete('/bookmarks/requests', (req, res) => {
 });
 
 // Suggestion endpoint: requires authentication (persisted for notifications)
-    app.post('/suggestion', authMiddleware, (req, res) => {
+    app.post('/suggestion', authMiddleware, async (req, res) => {
       try {
         const { requestId, text, targetCreatorId, targetCreatorHandle, videoUrl, videoTitle, type, parentId } = req.body || {};
         if (!text) return res.status(400).json({ error: 'Missing text' });
@@ -1171,12 +2009,9 @@ app.delete('/bookmarks/requests', (req, res) => {
           createdAt: new Date().toISOString()
         };
     
-        // Persist to suggestions.json
-        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-        let arr = [];
-        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
+        const arr = await loadNotifications();
         arr.unshift(suggestion);
-        try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
+        await saveNotifications(arr);
     
         return res.json({ success: true, suggestion });
       } catch (err) {
@@ -1186,12 +2021,10 @@ app.delete('/bookmarks/requests', (req, res) => {
     });
     
     // Get suggestions for a specific request
-    app.get('/requests/:id/suggestions', (req, res) => {
+    app.get('/requests/:id/suggestions', async (req, res) => {
       try {
         const requestId = req.params.id;
-        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-        let arr = [];
-        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
+        const arr = await loadNotifications();
         
         // Filter suggestions for this request
         // Also map to match frontend expectation (userName, timestamp)
@@ -1217,11 +2050,9 @@ app.delete('/bookmarks/requests', (req, res) => {
     // Modified to return threaded conversations:
     // 1. Get all suggestions where user is sender OR receiver
     // 2. Client will group them
-    app.get('/suggestions/me', authMiddleware, (req, res) => {
+    app.get('/suggestions/me', authMiddleware, async (req, res) => {
       try {
-        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-        let arr = [];
-        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
+        const arr = await loadNotifications();
         
         const mine = arr.filter(s => 
             (s.to && s.to.id === req.user.id) || 
@@ -1235,11 +2066,9 @@ app.delete('/bookmarks/requests', (req, res) => {
     });
     
     // Alias: notifications for current user (same logic)
-    app.get('/notifications', authMiddleware, (req, res) => {
+    app.get('/notifications', authMiddleware, async (req, res) => {
       try {
-        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-        let arr = [];
-        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
+        const arr = await loadNotifications();
         
         const mine = arr.filter(s => 
             (s.to && s.to.id === req.user.id) || 
@@ -1252,12 +2081,10 @@ app.delete('/bookmarks/requests', (req, res) => {
     });
 
     // Delete a notification (suggestion)
-    app.delete('/notifications/:id', authMiddleware, (req, res) => {
+    app.delete('/notifications/:id', authMiddleware, async (req, res) => {
       try {
         const id = req.params.id;
-        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-        let arr = [];
-        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
+        let arr = await loadNotifications();
         
         const before = arr.length;
         // Allow deleting if user is sender or receiver
@@ -1268,7 +2095,7 @@ app.delete('/bookmarks/requests', (req, res) => {
             return !isMine; // Keep if not mine (i.e. remove if mine)
         });
         
-        try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
+        await saveNotifications(arr);
         
         return res.json({ success: true, deleted: before - arr.length });
       } catch (e) {
@@ -1277,12 +2104,10 @@ app.delete('/bookmarks/requests', (req, res) => {
     });
 
     // Mark notification as read
-    app.post('/notifications/:id/read', authMiddleware, (req, res) => {
+    app.post('/notifications/:id/read', authMiddleware, async (req, res) => {
       try {
         const id = req.params.id;
-        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-        let arr = [];
-        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
+        let arr = await loadNotifications();
         
         // Find and mark notification as read
         let found = false;
@@ -1297,12 +2122,52 @@ app.delete('/bookmarks/requests', (req, res) => {
           return s;
         });
         
-        if (found) {
-          try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
-        }
+        if (found) await saveNotifications(arr);
         
         return res.json({ success: true, marked: found });
       } catch (e) {
+        return res.status(500).json({ error: 'Server error' });
+      }
+    });
+
+    // POST /notifications - create a new notification (used by creator tagging, etc.)
+    app.post('/notifications', async (req, res) => {
+      try {
+        const body = req.body || {};
+        const { recipientId, type, title, message, requestId, senderId, isRead, createdAt } = body;
+        if (!recipientId) {
+          return res.status(400).json({ error: 'recipientId is required' });
+        }
+
+        const notifId = `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const notification = {
+          id: notifId,
+          to: { id: String(recipientId) },
+          from: { id: String(senderId || 'system'), name: 'System' },
+          type: type || 'general',
+          title: title || 'New Notification',
+          message: message || '',
+          requestId: requestId || null,
+          read: isRead === true,
+          createdAt: createdAt || new Date().toISOString()
+        };
+
+        // Try to enrich from/to names from user data
+        try {
+          if (req.user) {
+            notification.from.name = req.user.name || req.user.email || 'Someone';
+            notification.from.id = req.user.id || senderId || 'system';
+          }
+        } catch {}
+
+        const arr = await loadNotifications();
+        arr.unshift(notification);
+        await saveNotifications(arr);
+
+        console.log('Notification created:', notifId, 'to:', recipientId, 'type:', type);
+        return res.json({ success: true, notification });
+      } catch (err) {
+        console.error('POST /notifications error:', err);
         return res.status(500).json({ error: 'Server error' });
       }
     });
@@ -1316,9 +2181,7 @@ app.post('/staff/send-promotion', async (req, res) => {
     // Simple staff check for demo
     if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
 
-    const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-    let arr = [];
-    try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch (e) { arr = []; }
+    let arr = await loadNotifications();
 
     const users = readUsers();
     let targets = [];
@@ -1356,7 +2219,7 @@ app.post('/staff/send-promotion', async (req, res) => {
       created.push(notif);
     });
 
-    try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch (e) { console.error('write promotion notifications error', e); }
+    await saveNotifications(arr);
 
     return res.json({ success: true, created: created.length, notifications: created });
   } catch (err) {
@@ -1366,7 +2229,7 @@ app.post('/staff/send-promotion', async (req, res) => {
 });
 
 // POST /staff/apply-overlay-ad - apply overlay ad to videos with timing
-app.post('/staff/apply-overlay-ad', (req, res) => {
+app.post('/staff/apply-overlay-ad', async (req, res) => {
   try {
     const { employeeId, videoIds, ad } = req.body || {};
     console.log('Apply overlay request:', { employeeId, videoIds, adKeys: ad ? Object.keys(ad) : null });
@@ -1377,21 +2240,13 @@ app.post('/staff/apply-overlay-ad', (req, res) => {
     }
     if (!ad) return res.status(400).json({ error: 'Ad data missing' });
 
-    const videos = readVideos();
+    const videos = await loadVideos();
     const updated = [];
 
     videos.forEach((v) => {
       if (videoIds.includes(v.id)) {
-        // Ensure ads is an object (not an array) with bottom and overlays arrays
-        if (!v.ads || Array.isArray(v.ads)) {
-          v.ads = { bottom: [], overlays: [] };
-        }
-        if (!Array.isArray(v.ads.overlays)) {
-          v.ads.overlays = [];
-        }
-        if (!Array.isArray(v.ads.bottom)) {
-          v.ads.bottom = v.ads.bottom || [];
-        }
+        if (!v.ads) v.ads = {};
+        if (!v.ads.overlays) v.ads.overlays = [];
         v.ads.overlays.push({
           id: `overlay-${Date.now()}-${Math.random().toString(36).substr(2,9)}`,
           type: 'overlay',
@@ -1403,13 +2258,8 @@ app.post('/staff/apply-overlay-ad', (req, res) => {
       }
     });
 
-    try {
-      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
-      console.log(`Successfully applied overlay to ${updated.length} videos`);
-    } catch (e) {
-      console.error('write videos error:', e);
-      return res.status(500).json({ error: 'Failed to save' });
-    }
+    await saveVideos(videos);
+    console.log(`Successfully applied overlay to ${updated.length} videos`);
 
     return res.json({ success: true, applied: updated.length, videos: updated });
   } catch (err) {
@@ -1419,7 +2269,7 @@ app.post('/staff/apply-overlay-ad', (req, res) => {
 });
 
 // POST /staff/apply-bottom-ad - apply bottom ad to videos with timing
-app.post('/staff/apply-bottom-ad', (req, res) => {
+app.post('/staff/apply-bottom-ad', async (req, res) => {
   try {
     const { employeeId, videoIds, ad } = req.body || {};
     if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
@@ -1428,7 +2278,7 @@ app.post('/staff/apply-bottom-ad', (req, res) => {
     }
     if (!ad) return res.status(400).json({ error: 'Ad data missing' });
 
-    const videos = readVideos();
+    const videos = await loadVideos();
     const updated = [];
 
     videos.forEach((v) => {
@@ -1452,12 +2302,7 @@ app.post('/staff/apply-bottom-ad', (req, res) => {
       }
     });
 
-    try {
-      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
-    } catch (e) {
-      console.error('write videos error:', e);
-      return res.status(500).json({ error: 'Failed to save' });
-    }
+    await saveVideos(videos);
 
     return res.json({ success: true, applied: updated.length, videos: updated });
   } catch (err) {
@@ -1466,69 +2311,8 @@ app.post('/staff/apply-bottom-ad', (req, res) => {
   }
 });
 
-// POST /staff/apply-default2-ad - apply default2 (card-based) ad to videos
-app.post('/staff/apply-default2-ad', (req, res) => {
-  try {
-    const { employeeId, videoIds, ad } = req.body || {};
-    console.log('Apply default2 ad request:', { employeeId, videoIds, adKeys: ad ? Object.keys(ad) : null });
-
-    if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
-    if (!videoIds || !Array.isArray(videoIds) || videoIds.length === 0) {
-      return res.status(400).json({ error: 'No videos selected' });
-    }
-    if (!ad) return res.status(400).json({ error: 'Ad data missing' });
-
-    const videos = readVideos();
-    const updated = [];
-
-    videos.forEach((v) => {
-      if (videoIds.includes(v.id)) {
-        if (!v.ads || Array.isArray(v.ads)) {
-          v.ads = { bottom: [], overlays: [] };
-        }
-        if (!Array.isArray(v.ads.bottom)) {
-          v.ads.bottom = [];
-        }
-        // Store with default2 prefix so the frontend can read them directly
-        v.ads.bottom.push({
-          id: `default2-${Date.now()}-${Math.random().toString(36).substr(2,9)}`,
-          type: 'default2',
-          default2Title: ad.title || '',
-          default2Description: ad.description || '',
-          default2Logo: ad.logo || '',
-          default2Image: ad.image || ad.logo || '',
-          default2Link: ad.link || '',
-          default2BgColor: ad.bgColor || '#ffffff',
-          default2TextColor: ad.textColor || '#111827',
-          default2LineColor: ad.lineColor || '#d946ef',
-          startTime: ad.startTime || 0,
-          duration: ad.duration || 30,
-          displayCount: ad.displayCount || 1,
-          appliedAt: new Date().toISOString(),
-          appliedBy: employeeId
-        });
-        console.log(`Applied default2 ad to video ${v.id}:`, v.ads);
-        updated.push(v);
-      }
-    });
-
-    try {
-      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
-      console.log(`Successfully applied default2 ad to ${updated.length} videos`);
-    } catch (e) {
-      console.error('write videos error:', e);
-      return res.status(500).json({ error: 'Failed to save' });
-    }
-
-    return res.json({ success: true, applied: updated.length, videos: updated });
-  } catch (err) {
-    console.error('apply-default2-ad error', err);
-    return res.status(500).json({ error: 'Server error: ' + err.message });
-  }
-});
-
 // POST /staff/remove-ad-from-video - remove ads from a video
-app.post('/staff/remove-ad-from-video', (req, res) => {
+app.post('/staff/remove-ad-from-video', async (req, res) => {
   try {
     const { employeeId, videoId, adType, adId } = req.body || {};
     if (parseInt(employeeId) !== 1000) return res.status(403).json({ error: 'Unauthorized' });
@@ -1536,7 +2320,7 @@ app.post('/staff/remove-ad-from-video', (req, res) => {
       return res.status(400).json({ error: 'videoId and adType are required' });
     }
 
-    const videos = readVideos();
+    const videos = await loadVideos();
     const videoIdx = videos.findIndex(v => String(v.id) === String(videoId));
     
     if (videoIdx === -1) {
@@ -1585,12 +2369,7 @@ app.post('/staff/remove-ad-from-video', (req, res) => {
       console.log(`Removed ${removed} total ads from video ${videoId}`);
     }
 
-    try {
-      fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2), 'utf8');
-    } catch (e) {
-      console.error('write videos error:', e);
-      return res.status(500).json({ error: 'Failed to save' });
-    }
+    await saveVideos(videos);
 
     return res.json({ success: true, removed: removed, video: video });
   } catch (err) {
@@ -1607,95 +2386,13 @@ app.post('/boost', authMiddleware, (req, res) => {
   return res.json({ success: true, requestId, amount, provider: provider || 'unknown', creditedTo: req.user });
 });
 
-// Reliable creators endpoint: extracts from videos + users to guarantee results
-app.get('/creators', (req, res) => {
-  try {
-    const videos = readVideos();
-    const users = readUsers();
-    const q = (req.query.query || req.query.q || '').trim().toLowerCase();
-
-    // Build creator map from videos (guaranteed data source)
-    const creatorMap = new Map();
-    videos.forEach(v => {
-      const authorId = v.authorId || v.creatorId || v.userId;
-      const authorName = v.author || v.creator || v.channel;
-      if (!authorId && !authorName) return;
-      const key = (authorId || authorName || '').toLowerCase();
-      if (!creatorMap.has(key)) {
-        creatorMap.set(key, {
-          id: authorId || null,
-          name: authorName || 'Unknown',
-          image: v.authorImage || v.creatorImage || null,
-          handle: v.authorHandle || null,
-          email: authorId && authorId.includes('@') ? authorId : null,
-        });
-      }
-    });
-
-    // Enrich with full user data and add users marked as creators
-    const creators = [];
-    const addedIds = new Set();
-
-    creatorMap.forEach((creator) => {
-      const user = users.find(u =>
-        (creator.id && (u.id === creator.id || u.email === creator.id)) ||
-        (creator.name && u.name && u.name.toLowerCase() === creator.name.toLowerCase())
-      );
-      if (user) {
-        const { passwordHash, password_hash, token, ...pub } = user;
-        const img = pub.image || pub.avatar || pub.profileImage || creator.image || null;
-        const merged = {
-          ...pub,
-          isCreator: true,
-          image: img,
-          profileImage: img,
-          name: pub.name || creator.name,
-          id: pub.id || creator.id,
-        };
-        creators.push(merged);
-        addedIds.add(pub.id);
-        if (pub.email) addedIds.add(pub.email);
-      } else {
-        creators.push({ ...creator, isCreator: true, profileImage: creator.image || null });
-        if (creator.id) addedIds.add(creator.id);
-      }
-    });
-
-    // Also add any users marked as creator who don't have videos yet
-    users.forEach(u => {
-      if ((u.isCreator === true || u.is_creator === true) && !addedIds.has(u.id) && !addedIds.has(u.email)) {
-        const { passwordHash, password_hash, token, ...pub } = u;
-        creators.push({ ...pub, isCreator: true });
-      }
-    });
-
-    // Filter by query if provided
-    let results = creators;
-    if (q) {
-      results = results.filter(c => {
-        const name = (c.name || '').toLowerCase();
-        const handle = (c.handle || c.tag || '').toLowerCase();
-        const email = (c.email || '').toLowerCase();
-        return name.includes(q) || handle.includes(q) || email.includes(q);
-      });
-    }
-
-    console.log(`[GET /creators] returning ${results.length} creators from ${videos.length} videos + ${users.length} users`);
-    return res.json({ creators: results });
-  } catch (err) {
-    console.error('get creators error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
 app.get('/users', (req, res) => {
   try {
     const users = readUsers();
-    console.log(`[GET /users] readUsers returned ${users.length} users`);
     const q = (req.query.query || req.query.q || '').trim().toLowerCase();
     const creatorsOnly = req.query.creatorsOnly === '1' || req.query.creatorsOnly === 'true';
-    let results = users.map(({ passwordHash, password_hash, token, ...u }) => u);
-    if (creatorsOnly) results = results.filter(u => u.isCreator === true || u.is_creator === true);
+    let results = users.map(({ passwordHash, token, ...u }) => u);
+    if (creatorsOnly) results = results.filter(u => u.isCreator);
     if (q) {
       results = results.filter(u => {
         const name = (u.name || '').toLowerCase();
@@ -1704,9 +2401,6 @@ app.get('/users', (req, res) => {
         return name.includes(q) || handle.includes(q) || email.includes(q);
       });
     }
-    // Add profileImage alias for frontend compatibility
-    results = results.map(u => ({ ...u, profileImage: u.image || u.avatar || u.profileImage || null }));
-    console.log(`[GET /users] returning ${results.length} results (creatorsOnly=${creatorsOnly}, q=${q || 'none'})`);
     return res.json({ users: results });
   } catch (err) {
     console.error('get users error', err);
@@ -1717,6 +2411,25 @@ app.get('/users', (req, res) => {
 // Get current authenticated user profile (full details)
 app.get('/users/me', authMiddleware, (req, res) => {
   try {
+    if (DB_ENABLED) {
+      return dbQuery('SELECT * FROM users WHERE id = $1 LIMIT 1', [req.user.id])
+        .then(async ({ rows }) => {
+          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+          const u = mapUserRow(rows[0]);
+          if (!u.referral_code && !u.referralCode) {
+            const newReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 8);
+            await dbQuery('UPDATE users SET referral_code = $1 WHERE id = $2', [newReferralCode, u.id]);
+            const refreshed = await dbQuery('SELECT * FROM users WHERE id = $1', [u.id]);
+            return res.json({ user: toPublicUser(mapUserRow(refreshed.rows[0])) });
+          }
+          return res.json({ user: toPublicUser(u) });
+        })
+        .catch((err) => {
+          console.error('get me db error', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
+
     const users = readUsers();
     const idx = users.findIndex(x => x.id === req.user.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -1742,6 +2455,60 @@ app.post('/users/update', authMiddleware, (req, res) => {
   try {
     const body = req.body || {};
     const allowed = ['name', 'handle', 'bio', 'interests', 'image', 'email', 'social'];
+    if (DB_ENABLED) {
+      const fieldMap = {
+        name: 'name',
+        handle: 'handle',
+        bio: 'bio',
+        interests: 'interests',
+        image: 'image',
+        email: 'email',
+        social: 'social'
+      };
+
+      const fields = [];
+      const values = [];
+      let i = 1;
+
+      allowed.forEach((k) => {
+        if (typeof body[k] !== 'undefined') {
+          fields.push(`${fieldMap[k]} = $${i}`);
+          values.push(body[k]);
+          i += 1;
+        }
+      });
+
+      if (body.handle) {
+        fields.push(`tag = $${i}`);
+        values.push(body.handle);
+        i += 1;
+      }
+
+      if (!fields.length) {
+        return dbQuery('SELECT * FROM users WHERE id = $1', [req.user.id])
+          .then(({ rows }) => {
+            if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+            return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
+          })
+          .catch((err) => {
+            console.error('user update db error', err);
+            return res.status(500).json({ error: 'Server error' });
+          });
+      }
+
+      values.push(req.user.id);
+      const sql = `UPDATE users SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`;
+      return dbQuery(sql, values)
+        .then(({ rows }) => {
+          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+          return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
+        })
+        .catch((err) => {
+          console.error('user update db error', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
+
     const users = readUsers();
     const idx = users.findIndex(u => u.id === req.user.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -1774,33 +2541,40 @@ app.get('/users/:id', (req, res) => {
     if (id === 'anonymous') {
          return res.json({ user: { id: 'anonymous', name: 'Anonymous', isAnonymous: true } });
     }
+    if (DB_ENABLED) {
+      return dbQuery('SELECT * FROM users WHERE id = $1 LIMIT 1', [id])
+        .then(async ({ rows }) => {
+          let u = rows[0] ? mapUserRow(rows[0]) : null;
+          if (!u) {
+            const fallback = await dbQuery('SELECT * FROM users WHERE name = $1 OR email = $1 LIMIT 1', [id]);
+            u = fallback.rows[0] ? mapUserRow(fallback.rows[0]) : null;
+          }
+          if (!u) {
+            return res.json({ user: { id: id, name: 'Unknown User', isPlaceholder: true } });
+          }
+          return res.json({ user: toPublicUser(u) });
+        })
+        .catch((err) => {
+          console.error('get user by id db error', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
+
     const users = readUsers();
-    console.log(`[GET /users/:id] Looking for "${id}" among ${users.length} users`);
     // Also try to match by name roughly if ID is not found (for legacy test data compatibility)
     let u = users.find(x => x.id === id);
     if (!u) {
-       // Fallback: is it a test user ID or name? Also try case-insensitive match
+       // Fallback: is it a test user ID or name?
        u = users.find(x => x.name === id || x.email === id);
-    }
-    if (!u) {
-       // Case-insensitive fallback for names
-       const idLower = String(id).toLowerCase();
-       u = users.find(x => 
-         (x.name && x.name.toLowerCase() === idLower) ||
-         (x.email && x.email.toLowerCase() === idLower) ||
-         (x.handle && x.handle.toLowerCase() === idLower) ||
-         (x.tag && x.tag.toLowerCase() === idLower)
-       );
     }
     
     if (!u) {
          // Return a dummy placeholder instead of 404 to prevent UI crashes for missing users
+         // Only if strict validation is not required
          return res.json({ user: { id: id, name: 'Unknown User', isPlaceholder: true } });
     }
     
-    const { passwordHash, password_hash, token, ...publicUser } = u;
-    // Add profileImage alias for frontend compatibility
-    publicUser.profileImage = publicUser.image || publicUser.avatar || publicUser.profileImage || null;
+    const { passwordHash, token, ...publicUser } = u;
     return res.json({ user: publicUser });
   } catch (err) {
     console.error('get user by id error', err);
@@ -1814,6 +2588,25 @@ app.get('/users/handle/:handle', (req, res) => {
     let handle = String(req.params.handle || '').trim();
     if (handle.startsWith('@')) handle = handle.slice(1);
     if (!handle) return res.status(400).json({ error: 'Missing handle' });
+    if (DB_ENABLED) {
+      return dbQuery(
+        `SELECT * FROM users
+         WHERE lower(tag) = lower($1)
+            OR lower(handle) = lower($1)
+            OR lower(name) = lower($1)
+         LIMIT 1`,
+        [handle]
+      )
+        .then(({ rows }) => {
+          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+          return res.json({ user: toPublicUser(mapUserRow(rows[0])) });
+        })
+        .catch((err) => {
+          console.error('get user by handle db error', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
+
     const users = readUsers();
     const u = users.find(x => (x.tag && String(x.tag).toLowerCase() === handle.toLowerCase()) || (x.handle && String(x.handle).toLowerCase() === handle.toLowerCase()) || (x.name && String(x.name).toLowerCase() === handle.toLowerCase()));
     if (!u) return res.status(404).json({ error: 'User not found' });
@@ -1830,13 +2623,24 @@ app.get('/users/handle/:handle', (req, res) => {
 // --- Categories API ---
 app.get('/categories', (req, res) => {
     try {
-        if (!fs.existsSync(CATEGORIES_FILE)) {
-            // Default if missing
-            return res.json(['Travel', 'Education', 'Entertainment', 'Music', 'Sports']);
-        }
-        const data = fs.readFileSync(CATEGORIES_FILE, 'utf8');
-        const categories = JSON.parse(data);
-        res.json(categories);
+    const defaults = ['Travel', 'Education', 'Entertainment', 'Music', 'Sports'];
+    if (DB_ENABLED) {
+      return (async () => {
+        const { rows } = await dbQuery('SELECT name FROM categories ORDER BY created_at ASC');
+        const list = rows.map(r => r.name);
+        return res.json(list.length ? list : defaults);
+      })().catch((err) => {
+        console.error('Error reading categories (db):', err);
+        return res.status(500).json({ error: 'Failed to fetch categories' });
+      });
+    }
+
+    if (!fs.existsSync(CATEGORIES_FILE)) {
+      return res.json(defaults);
+    }
+    const data = fs.readFileSync(CATEGORIES_FILE, 'utf8');
+    const categories = JSON.parse(data);
+    res.json(categories);
     } catch (err) {
         console.error('Error reading categories:', err);
         res.status(500).json({ error: 'Failed to fetch categories' });
@@ -1852,70 +2656,113 @@ app.post('/categories', (req, res) => {
         }
         
         const catName = category.trim();
-        let categories = [];
-        
-        if (fs.existsSync(CATEGORIES_FILE)) {
-             categories = JSON.parse(fs.readFileSync(CATEGORIES_FILE, 'utf8'));
-        } else {
-             categories = ['Travel', 'Education', 'Entertainment', 'Music', 'Sports'];
+    if (DB_ENABLED) {
+      return (async () => {
+        const { rows } = await dbQuery('SELECT name FROM categories WHERE lower(name) = lower($1) LIMIT 1', [catName]);
+        if (!rows[0]) {
+          await dbQuery('INSERT INTO categories (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [catName]);
         }
+        const list = await dbQuery('SELECT name FROM categories ORDER BY created_at ASC');
+        res.json(list.rows.map(r => r.name));
+      })().catch((err) => {
+        console.error('Error saving category (db):', err);
+        return res.status(500).json({ error: 'Failed to save category' });
+      });
+    }
 
-        // Case-insensitive duplicate check
-        const exists = categories.some(c => c.toLowerCase() === catName.toLowerCase());
-        if (!exists) {
-            categories.push(catName); // Add in original case
-            fs.writeFileSync(CATEGORIES_FILE, JSON.stringify(categories, null, 2));
-        }
+    let categories = [];
+    if (fs.existsSync(CATEGORIES_FILE)) {
+       categories = JSON.parse(fs.readFileSync(CATEGORIES_FILE, 'utf8'));
+    } else {
+       categories = ['Travel', 'Education', 'Entertainment', 'Music', 'Sports'];
+    }
 
-        res.json(categories);
+    const exists = categories.some(c => c.toLowerCase() === catName.toLowerCase());
+    if (!exists) {
+      categories.push(catName);
+      fs.writeFileSync(CATEGORIES_FILE, JSON.stringify(categories, null, 2));
+    }
+
+    res.json(categories);
     } catch (err) {
         console.error('Error saving category:', err);
         res.status(500).json({ error: 'Failed to save category' });
     }
 });
 
-app.get('/requests', (req, res) => {
+app.get('/requests', async (req, res) => {
   try {
-    let requests = readRequests();
-    console.log(`DEBUG /requests: Read ${requests.length} requests from file`);
+    let requests = [];
 
-    // Filter out hidden and deleted requests server-side
-    requests = requests.filter(r => !r.hidden && !r.deleted);
-    console.log(`DEBUG /requests: After hidden/deleted filter: ${requests.length}`);
-
-    const users = readUsers();
-    
-    // Enrich first (needed for some scores)
-    requests = requests.map(r => {
-       try {
-         const copy = { ...r };
-         // Enrich creator object
-         if (copy.creator && copy.creator.id) {
-           const u = users.find(x => x.id === copy.creator.id);
-           if (u) {
-             copy.creator = { id: u.id, name: u.name || 'Anonymous', image: u.image || u.avatar || u.photoURL || '' };
-             if ((!copy.imageUrl || copy.imageUrl === '') && (u.image || u.avatar || u.photoURL)) copy.imageUrl = u.image || u.avatar || u.photoURL;
-           }
-         } else {
-            if (!copy.creator) copy.creator = { id: null, name: 'Anonymous', image: '' };
-         }
-         // Also enrich from createdBy user (the person who made the request)
-         if (copy.createdBy && typeof copy.createdBy === 'string') {
-           const requester = users.find(x => x.id === copy.createdBy);
-           if (requester) {
-             const reqImage = requester.image || requester.avatar || requester.photoURL || '';
-             copy.requesterName = copy.requesterName || requester.name || 'Anonymous';
-             copy.requesterAvatar = reqImage;
-             // Also set creator image if creator IS the requester and has no image
-             if (copy.creator && copy.creator.id === copy.createdBy && !copy.creator.image) {
-               copy.creator.image = reqImage;
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery(
+        `SELECT r.*, u.name AS creator_user_name, u.email AS creator_user_email, u.image AS creator_user_image
+         FROM requests r
+         LEFT JOIN users u ON u.id = r.creator_id`
+      );
+      requests = rows.map((row) => {
+        const base = {
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          likes: Number(row.likes || 0),
+          comments: Number(row.comments || 0),
+          boosts: Number(row.boosts || 0),
+          amount: row.amount != null ? Number(row.amount) : 0,
+          funding: row.funding != null ? Number(row.funding) : 0,
+          isTrending: Boolean(row.is_trending),
+          isSponsored: Boolean(row.is_sponsored),
+          company: row.company,
+          companyInitial: row.company_initial,
+          companyColor: row.company_color,
+          imageUrl: row.image_url,
+          creator: row.creator_id || row.creator_user_name
+            ? {
+                id: row.creator_id,
+                name: row.creator_user_name || row.creator_name || 'Anonymous',
+                email: row.creator_user_email || row.creator_email || null,
+                image: row.creator_user_image || null
+              }
+            : null,
+          creatorId: row.creator_id,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          currentStep: row.current_step,
+          claimed: row.claimed,
+          claimedBy: row.claimed_by,
+          claimedAt: row.claimed_at,
+          meta: row.meta
+        };
+        if (base.creator && (!base.imageUrl || base.imageUrl === '') && base.creator.image) {
+          base.imageUrl = base.creator.image;
+        }
+        return applyRequestAmountPresentation(base);
+      });
+      console.log(`DEBUG /requests: Read ${requests.length} requests from database`);
+    } else {
+      requests = readRequests();
+      console.log(`DEBUG /requests: Read ${requests.length} requests from file`);
+      const users = readUsers();
+      
+      // Enrich first (needed for some scores)
+      requests = requests.map(r => {
+         try {
+           const copy = { ...r };
+           if (copy.creator && copy.creator.id) {
+             const u = users.find(x => x.id === copy.creator.id);
+             if (u) {
+               copy.creator = { id: u.id, name: u.name || 'Anonymous', image: u.image || '' };
+               if ((!copy.imageUrl || copy.imageUrl === '') && u.image) copy.imageUrl = u.image;
              }
-             if ((!copy.imageUrl || copy.imageUrl === '') && reqImage) copy.imageUrl = reqImage;
+           } else {
+              // Fallback enrichment
+               if (!copy.creator) copy.creator = { id: null, name: 'Anonymous', image: '' };
            }
-         }
-         return copy;
-       } catch (e) { return r; }
-    });
+           return applyRequestAmountPresentation(copy);
+         } catch (e) { return r; }
+      });
+    }
 
     const feed = req.query.feed || 'recommended';
     
@@ -2013,7 +2860,7 @@ app.get('/requests', (req, res) => {
 });
 
 // --- Comment reactions storage ---
-const COMMENT_REACTIONS_FILE = path.join(PERSIST_DIR, 'comment_reactions.json');
+const COMMENT_REACTIONS_FILE = path.join(__dirname, 'comment_reactions.json');
 function readCommentReactions() {
   try { if (!fs.existsSync(COMMENT_REACTIONS_FILE)) return { likes: {}, dislikes: {} }; const raw = fs.readFileSync(COMMENT_REACTIONS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { likes: j.likes || {}, dislikes: j.dislikes || {} }; } catch (e) { return { likes: {}, dislikes: {} }; }
 }
@@ -2022,17 +2869,78 @@ function writeCommentReactions(data) {
 }
 
 // Persist comment reactions and aggregate counts
-app.post('/comments/react', authMiddleware, (req, res) => {
+app.post('/comments/react', authMiddleware, async (req, res) => {
   try {
     const { commentId, action, requestId } = req.body || {};
     if (!commentId || !action) return res.status(400).json({ error: 'Missing commentId or action' });
     
     const userId = req.user.id;
-    const reactions = readCommentReactions();
-    const comments = readComments();
+    const comments = await loadComments();
     const idx = comments.findIndex(c => String(c.id) === String(commentId));
     
     if (idx === -1) return res.status(404).json({ error: 'Comment not found' });
+
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery(
+        'SELECT is_liked, is_disliked FROM comment_reactions WHERE comment_id = $1 AND user_id = $2',
+        [String(commentId), String(userId)]
+      );
+      const prevLiked = Boolean(rows[0]?.is_liked);
+      const prevDisliked = Boolean(rows[0]?.is_disliked);
+
+      let likesCount = Number(comments[idx].likesCount || 0);
+      let dislikesCount = Number(comments[idx].dislikesCount || 0);
+      let nextLiked = prevLiked;
+      let nextDisliked = prevDisliked;
+
+      if (action === 'like') {
+        if (!prevLiked) {
+          nextLiked = true;
+          likesCount += 1;
+        }
+        if (prevDisliked) {
+          nextDisliked = false;
+          dislikesCount = Math.max(0, dislikesCount - 1);
+        }
+      } else if (action === 'unlike') {
+        if (prevLiked) {
+          nextLiked = false;
+          likesCount = Math.max(0, likesCount - 1);
+        }
+      } else if (action === 'dislike') {
+        if (!prevDisliked) {
+          nextDisliked = true;
+          dislikesCount += 1;
+        }
+        if (prevLiked) {
+          nextLiked = false;
+          likesCount = Math.max(0, likesCount - 1);
+        }
+      } else if (action === 'undislike') {
+        if (prevDisliked) {
+          nextDisliked = false;
+          dislikesCount = Math.max(0, dislikesCount - 1);
+        }
+      } else {
+        return res.status(400).json({ error: 'Invalid action' });
+      }
+
+      await dbQuery(
+        `INSERT INTO comment_reactions (comment_id, user_id, is_liked, is_disliked, updated_at)
+         VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (comment_id, user_id)
+         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
+        [String(commentId), String(userId), nextLiked, nextDisliked]
+      );
+
+      comments[idx].likesCount = likesCount;
+      comments[idx].dislikesCount = dislikesCount;
+      await saveComments(comments);
+
+      return res.json({ success: true, likesCount, dislikesCount });
+    }
+
+    const reactions = readCommentReactions();
     
     // Initialize maps
     reactions.likes[commentId] = reactions.likes[commentId] || {};
@@ -2074,7 +2982,7 @@ app.post('/comments/react', authMiddleware, (req, res) => {
     comments[idx].likesCount = likesCount;
     comments[idx].dislikesCount = dislikesCount;
     
-    writeComments(comments);
+    await saveComments(comments);
     writeCommentReactions(reactions);
     
     return res.json({ success: true, likesCount, dislikesCount });
@@ -2085,25 +2993,42 @@ app.post('/comments/react', authMiddleware, (req, res) => {
 });
 
 // Update comments fetch to include reaction state for user
-app.get('/requests/:id/comments', (req, res) => {
+app.get('/requests/:id/comments', async (req, res) => {
   try {
     const requestId = req.params.id;
-    const all = readComments();
+    const all = await loadComments();
     let filtered = (all || []).filter(c => String(c.requestId) === String(requestId)).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
     
     // If user is authenticated, check their reaction status
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
        try {
-         const token = req.headers.authorization.slice(7).trim();
-         const users = readUsers();
-         const user = users.find(u => u.token === token);
+         const user = await getUserFromAuthHeader(req);
          if (user) {
-            const reactions = readCommentReactions();
-            filtered = filtered.map(c => ({
+            if (DB_ENABLED) {
+              const ids = filtered.map(c => String(c.id));
+              let map = {};
+              if (ids.length > 0) {
+                const { rows } = await dbQuery(
+                  'SELECT comment_id, is_liked, is_disliked FROM comment_reactions WHERE user_id = $1 AND comment_id = ANY($2)',
+                  [String(user.id), ids]
+                );
+                rows.forEach(r => {
+                  map[String(r.comment_id)] = { liked: Boolean(r.is_liked), disliked: Boolean(r.is_disliked) };
+                });
+              }
+              filtered = filtered.map(c => ({
                 ...c,
-                likedByUser: !!(reactions.likes[c.id] && reactions.likes[c.id][user.id]),
-                dislikedByUser: !!(reactions.dislikes[c.id] && reactions.dislikes[c.id][user.id])
-            }));
+                likedByUser: !!map[String(c.id)]?.liked,
+                dislikedByUser: !!map[String(c.id)]?.disliked
+              }));
+            } else {
+              const reactions = readCommentReactions();
+              filtered = filtered.map(c => ({
+                  ...c,
+                  likedByUser: !!(reactions.likes[c.id] && reactions.likes[c.id][user.id]),
+                  dislikedByUser: !!(reactions.dislikes[c.id] && reactions.dislikes[c.id][user.id])
+              }));
+            }
          }
        } catch (e) {}
     }
@@ -2112,7 +3037,7 @@ app.get('/requests/:id/comments', (req, res) => {
   } catch (err) { console.error('GET /requests/:id/comments error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.post('/requests/:id/comments', authMiddleware, (req, res) => {
+app.post('/requests/:id/comments', authMiddleware, async (req, res) => {
   try {
     const requestId = req.params.id;
     const { text, parentId } = req.body || {};
@@ -2130,31 +3055,35 @@ app.post('/requests/:id/comments', authMiddleware, (req, res) => {
       createdAt: new Date().toISOString()
     };
 
-    const all = readComments();
+    const all = await loadComments();
     all.push(comment);
-    writeComments(all);
+    await saveComments(all);
 
     // increment comment counter on request if present
     try {
-      const requests = readRequests();
-      const idx = requests.findIndex(r => String(r.id) === String(requestId));
-      if (idx !== -1) {
-        requests[idx].comments = (Number(requests[idx].comments) || 0) + 1;
-        writeRequests(requests);
+      if (DB_ENABLED) {
+        await dbQuery('UPDATE requests SET comments = COALESCE(comments, 0) + 1 WHERE id = $1', [requestId]);
+      } else {
+        const requests = readRequests();
+        const idx = requests.findIndex(r => String(r.id) === String(requestId));
+        if (idx !== -1) {
+          requests[idx].comments = (Number(requests[idx].comments) || 0) + 1;
+          writeRequests(requests);
+        }
       }
     } catch (e) {}
 
     // Also increment comment counter on video if present
     try {
-      const videos = readVideos();
+      const videos = await loadVideos();
       const vidIdx = videos.findIndex(v => String(v.id) === String(requestId));
       if (vidIdx !== -1) {
         videos[vidIdx].comments = (Number(videos[vidIdx].comments) || 0) + 1;
-        writeVideos(videos);
+        await saveVideos(videos);
         
         // Also increment the creator's total comments in the user object
         const video = videos[vidIdx];
-        if (video.authorId || video.author || video.authorEmail) {
+        if (!DB_ENABLED && (video.authorId || video.author || video.authorEmail)) {
           const users = readUsers();
           const creatorIdx = users.findIndex(u => 
             u.id === video.authorId || 
@@ -2173,14 +3102,14 @@ app.post('/requests/:id/comments', authMiddleware, (req, res) => {
   } catch (err) { console.error('POST /requests/:id/comments error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.put('/requests/:id/comments/:cid', authMiddleware, (req, res) => {
+app.put('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
   try {
     const requestId = req.params.id;
     const cid = req.params.cid;
     const { text } = req.body || {};
     if (!text) return res.status(400).json({ error: 'Missing text' });
 
-    const all = readComments();
+    const all = await loadComments();
     const idx = all.findIndex(c => String(c.id) === String(cid) && String(c.requestId) === String(requestId));
     if (idx === -1) return res.status(404).json({ error: 'Comment not found' });
     const comment = all[idx];
@@ -2189,30 +3118,34 @@ app.put('/requests/:id/comments/:cid', authMiddleware, (req, res) => {
     comment.text = String(text).trim();
     comment.updatedAt = new Date().toISOString();
     all[idx] = comment;
-    writeComments(all);
+    await saveComments(all);
     return res.json({ success: true, comment });
   } catch (err) { console.error('PUT /requests/:id/comments/:cid error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.delete('/requests/:id/comments/:cid', authMiddleware, (req, res) => {
+app.delete('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
   try {
     const requestId = req.params.id;
     const cid = req.params.cid;
-    const all = readComments();
+    const all = await loadComments();
     const idx = all.findIndex(c => String(c.id) === String(cid) && String(c.requestId) === String(requestId));
     if (idx === -1) return res.status(404).json({ error: 'Comment not found' });
     const comment = all[idx];
     if (String(comment.userId) !== String(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
     all.splice(idx, 1);
-    writeComments(all);
+    await saveComments(all);
 
     // decrement comment counter on request if present
     try {
-      const requests = readRequests();
-      const ridx = requests.findIndex(r => String(r.id) === String(requestId));
-      if (ridx !== -1) {
-        requests[ridx].comments = Math.max(0, (Number(requests[ridx].comments) || 0) - 1);
-        writeRequests(requests);
+      if (DB_ENABLED) {
+        await dbQuery('UPDATE requests SET comments = GREATEST(COALESCE(comments, 0) - 1, 0) WHERE id = $1', [requestId]);
+      } else {
+        const requests = readRequests();
+        const ridx = requests.findIndex(r => String(r.id) === String(requestId));
+        if (ridx !== -1) {
+          requests[ridx].comments = Math.max(0, (Number(requests[ridx].comments) || 0) - 1);
+          writeRequests(requests);
+        }
       }
     } catch (e) {}
 
@@ -2221,10 +3154,43 @@ app.delete('/requests/:id/comments/:cid', authMiddleware, (req, res) => {
 });
 
 // Get requests created by the logged-in user
-app.get('/requests/my', authMiddleware, (req, res) => {
+app.get('/requests/my', authMiddleware, async (req, res) => {
   try {
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT * FROM requests WHERE created_by = $1 ORDER BY created_at DESC', [req.user.id]);
+      const mapped = rows.map((row) => applyRequestAmountPresentation({
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        likes: Number(row.likes || 0),
+        comments: Number(row.comments || 0),
+        boosts: Number(row.boosts || 0),
+        amount: row.amount != null ? Number(row.amount) : 0,
+        funding: row.funding != null ? Number(row.funding) : 0,
+        isTrending: Boolean(row.is_trending),
+        isSponsored: Boolean(row.is_sponsored),
+        company: row.company,
+        companyInitial: row.company_initial,
+        companyColor: row.company_color,
+        imageUrl: row.image_url,
+        creator: row.creator_id ? { id: row.creator_id, name: row.creator_name, email: row.creator_email } : null,
+        creatorId: row.creator_id,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        currentStep: row.current_step,
+        claimed: row.claimed,
+        claimedBy: row.claimed_by,
+        claimedAt: row.claimed_at,
+        meta: row.meta
+      }));
+      return res.json({ requests: mapped });
+    }
+
     const allRequests = readRequests();
-    const userRequests = allRequests.filter(r => r.createdBy === req.user.id);
+    const userRequests = allRequests
+      .filter(r => r.createdBy === req.user.id)
+      .map((request) => applyRequestAmountPresentation(request));
     return res.json({ requests: userRequests });
   } catch (err) {
     console.error('get my requests error', err);
@@ -2232,23 +3198,68 @@ app.get('/requests/my', authMiddleware, (req, res) => {
   }
 });
 
-app.post('/requests', authMiddleware, (req, res) => {
+app.post('/requests', authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
     if (!body.title || !body.description) return res.status(400).json({ error: 'Missing title or description' });
-    const requests = readRequests();
-    
-    // Use client-provided ID if available (for optimistic UI consistency), else generate one
+
+    const parsedAmount = (typeof body.amount === 'number') ? body.amount : (body.amount ? Number(body.amount) : 0);
     const id = (body.id && String(body.id).startsWith('req_')) ? body.id : `req_${Date.now()}`;
-    
+
+    if (DB_ENABLED) {
+      const existing = await dbQuery('SELECT * FROM requests WHERE id = $1', [id]);
+      if (existing.rows.length) {
+        return res.json({ success: true, request: existing.rows[0], duplicate: true });
+      }
+
+      const company = body.company || (body.creator && body.creator.name) || req.user.name || 'Community';
+      const companyInitial = (body.creator && body.creator.name ? String(body.creator.name)[0] : (req.user.name ? String(req.user.name)[0] : 'C'));
+      const funding = (typeof body.funding === 'number' && body.funding > 0) ? body.funding : (parsedAmount || 0);
+      const createdAt = new Date().toISOString();
+
+      await dbQuery(
+        `INSERT INTO requests
+          (id, title, description, likes, comments, boosts, amount, funding, is_trending, is_sponsored, company, company_initial, company_color, image_url, creator_id, creator_name, creator_email, created_by, created_at, meta)
+         VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+        [
+          id,
+          body.title,
+          body.description,
+          0,
+          0,
+          0,
+          parsedAmount || 0,
+          funding,
+          false,
+          false,
+          company,
+          companyInitial,
+          body.companyColor || 'bg-gray-400',
+          body.imageUrl || '',
+          req.user.id,
+          req.user.name,
+          req.user.email,
+          req.user.id,
+          createdAt,
+          body.meta || null
+        ]
+      );
+
+      const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1', [id]);
+      return res.json({ success: true, request: rows[0] });
+    }
+
+    const requests = readRequests();
+
+    // Use client-provided ID if available (for optimistic UI consistency), else generate one
     // CRITICAL: Check for duplicate ID to prevent re-submitting the same request
     const existingIdx = requests.findIndex(r => String(r.id) === String(id));
     if (existingIdx !== -1) {
       console.log('Request with this ID already exists, returning existing:', id);
       return res.json({ success: true, request: requests[existingIdx], duplicate: true });
     }
-    
-    const parsedAmount = (typeof body.amount === 'number') ? body.amount : (body.amount ? Number(body.amount) : 0);
+
     const newReq = {
       id,
       title: body.title,
@@ -2410,25 +3421,22 @@ app.delete('/requests/:id', authMiddleware, (req, res) => {
 });
 
 // Serve uploaded static files
-app.use('/uploads', express.static(UPLOAD_DIR));
-
-// Serve OG branding banner for social share previews
-app.get('/regaarder-og-banner.png', (req, res) => {
-  const bannerPath = path.join(__dirname, 'regaarder-og-banner.png');
-  if (fs.existsSync(bannerPath)) {
-    res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=604800');
-    return res.sendFile(bannerPath);
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range,Content-Type,Accept');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   }
-  res.status(404).send('Not found');
-});
+}));
 
 // --- Share / Open Graph endpoints ---
-app.get('/share/video/:id', (req, res) => {
+app.get('/share/video/:id', async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
     const t = req.query.t ? String(req.query.t) : '';
-    const videos = readVideos();
+    const videos = await loadVideos();
     const video = videos.find(v => String(v.id) === id) || null;
     const title = video?.title || 'Watch a video on Regaarder';
     const description = video?.requester ? `Requested by ${video.requester}` : 'Watch on Regaarder';
@@ -2436,7 +3444,7 @@ app.get('/share/video/:id', (req, res) => {
     const redirectUrl = `${WEB_URL}/videoplayer?v=${encodeURIComponent(id)}${t ? `&t=${encodeURIComponent(t)}` : ''}`;
     const url = `${WEB_URL}/share/video/${encodeURIComponent(id)}${t ? `?t=${encodeURIComponent(t)}` : ''}`;
     res.set('Content-Type', 'text/html');
-    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'video.other' }, req));
+    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'video.other' }));
   } catch (e) {
     res.set('Content-Type', 'text/html');
     return res.status(200).send(buildShareHtml({
@@ -2444,7 +3452,7 @@ app.get('/share/video/:id', (req, res) => {
       description: 'Watch on Regaarder',
       url: `${WEB_URL}/share/video`,
       redirectUrl: WEB_URL
-    }, req));
+    }));
   }
 });
 
@@ -2453,17 +3461,13 @@ app.get('/share/request/:id', (req, res) => {
     const id = String(req.params.id || '').trim();
     const requests = readRequests();
     const request = requests.find(r => String(r.id) === id) || null;
-    const requesterName = request?.requesterName || (request?.creator && request.creator.name) || request?.company || '';
-    const title = request?.title ? `${request.title} — Regaarder` : 'View this request on Regaarder';
-    const rawDesc = request?.description || '';
-    const description = rawDesc
-      ? `${rawDesc.slice(0, 150)}${rawDesc.length > 150 ? '…' : ''}${requesterName ? ` — requested by ${requesterName}` : ''}`
-      : `Support this request on Regaarder${requesterName ? ` by ${requesterName}` : ''}`;
+    const title = request?.title || 'View this request on Regaarder';
+    const description = request?.description || 'Support this request on Regaarder';
     const image = request?.imageUrl || '';
     const redirectUrl = `${WEB_URL}/requests?id=${encodeURIComponent(id)}`;
     const url = `${WEB_URL}/share/request/${encodeURIComponent(id)}`;
     res.set('Content-Type', 'text/html');
-    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'website' }, req));
+    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'website' }));
   } catch (e) {
     res.set('Content-Type', 'text/html');
     return res.status(200).send(buildShareHtml({
@@ -2471,7 +3475,7 @@ app.get('/share/request/:id', (req, res) => {
       description: 'Explore requests on Regaarder',
       url: `${WEB_URL}/share/request`,
       redirectUrl: `${WEB_URL}/requests`
-    }, req));
+    }));
   }
 });
 
@@ -2496,7 +3500,7 @@ app.get('/share/profile/:key', (req, res) => {
     const redirectUrl = `${WEB_URL}/@${encodeURIComponent(handle)}`;
     const url = `${WEB_URL}/share/profile/${encodeURIComponent(handle)}`;
     res.set('Content-Type', 'text/html');
-    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'profile' }, req));
+    return res.status(200).send(buildShareHtml({ title, description, image, url, redirectUrl, type: 'profile' }));
   } catch (e) {
     res.set('Content-Type', 'text/html');
     return res.status(200).send(buildShareHtml({
@@ -2504,30 +3508,13 @@ app.get('/share/profile/:key', (req, res) => {
       description: 'Discover creators on Regaarder',
       url: `${WEB_URL}/share/profile`,
       redirectUrl: WEB_URL
-    }, req));
-  }
-});
-
-// --- Share count increment ---
-app.post('/videos/:id/share', (req, res) => {
-  try {
-    const videoId = String(req.params.id || '').trim();
-    if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
-    const videos = readVideos();
-    const idx = videos.findIndex(v => String(v.id) === videoId);
-    if (idx === -1) return res.status(404).json({ error: 'Video not found' });
-    videos[idx].shares = String(Number(videos[idx].shares || 0) + 1);
-    writeVideos(videos);
-    return res.json({ success: true, shares: Number(videos[idx].shares) });
-  } catch (err) {
-    console.error('POST /videos/:id/share error', err);
-    return res.status(500).json({ error: 'Server error' });
+    }));
   }
 });
 
 // Upload overlay media (video/image/gif) - for staff dashboard
 app.post('/staff/upload-overlay-media', (req, res) => {
-  upload.single('media')(req, res, function (err) {
+  upload.single('media')(req, res, async function (err) {
     if (err) {
       console.error('overlay media upload error', err && err.message ? err.message : err);
       if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large (max 100MB)' });
@@ -2537,8 +3524,9 @@ app.post('/staff/upload-overlay-media', (req, res) => {
 
     try {
       if (!req.file) return res.status(400).json({ error: 'Missing file' });
-      const url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-      return res.json({ success: true, url, filename: req.file.filename });
+      const processed = await ensureH264Mp4(req.file);
+      const url = await persistUploadedFile(req, processed, 'overlays');
+      return res.json({ success: true, url, filename: processed.filename || req.file.filename });
     } catch (err2) {
       console.error('overlay media upload error', err2);
       return res.status(500).json({ error: 'Server error' });
@@ -2549,7 +3537,7 @@ app.post('/staff/upload-overlay-media', (req, res) => {
 // Upload intro video for creator profile
 app.post('/creator/intro-video', authMiddleware, (req, res) => {
   // Use the multer middleware instance manually so we can handle errors nicely
-  upload.single('video')(req, res, function (err) {
+  upload.single('video')(req, res, async function (err) {
     if (err) {
       console.error('upload error', err && err.message ? err.message : err);
       if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large' });
@@ -2559,13 +3547,18 @@ app.post('/creator/intro-video', authMiddleware, (req, res) => {
 
     try {
       if (!req.file) return res.status(400).json({ error: 'Missing file' });
-      const url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+      const processed = await ensureH264Mp4(req.file);
+      const url = await persistUploadedFile(req, processed, 'intro-videos');
       // For demo, attach to user record
-      const users = readUsers();
-      const idx = users.findIndex(u => u.id === req.user.id);
-      if (idx !== -1) {
-        users[idx] = { ...users[idx], introVideo: url };
-        writeUsers(users);
+      if (DB_ENABLED) {
+        await dbQuery('UPDATE users SET intro_video = $1 WHERE id = $2', [url, req.user.id]);
+      } else {
+        const users = readUsers();
+        const idx = users.findIndex(u => u.id === req.user.id);
+        if (idx !== -1) {
+          users[idx] = { ...users[idx], introVideo: url };
+          writeUsers(users);
+        }
       }
       return res.json({ success: true, url });
     } catch (err2) {
@@ -2578,7 +3571,7 @@ app.post('/creator/intro-video', authMiddleware, (req, res) => {
 // Upload profile image for creator (optional)
 app.post('/creator/photo', authMiddleware, (req, res) => {
   // Accept any file field name to be tolerant of client mismatches during debugging
-  upload.any()(req, res, function (err) {
+  upload.any()(req, res, async function (err) {
     if (err) {
       console.error('photo upload error', err && err.message ? err.message : err);
       if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large' });
@@ -2597,18 +3590,26 @@ app.post('/creator/photo', authMiddleware, (req, res) => {
     try {
       const uploaded = (req.files && req.files[0]) || req.file || null;
       if (!uploaded) return res.status(400).json({ error: 'Missing file' });
-      const url = `${req.protocol}://${req.get('host')}/uploads/${uploaded.filename}`;
+      const url = await persistUploadedFile(req, uploaded, 'creator-uploads');
       const mimeType = uploaded.mimetype || '';
-      const users = readUsers();
-      const idx = users.findIndex(u => u.id === req.user.id);
-      if (idx !== -1) {
-        // If uploaded file is an image, store as `image` for avatar; otherwise store under `document`.
+      if (DB_ENABLED) {
         if (mimeType.startsWith('image/')) {
-          users[idx] = { ...users[idx], image: url };
+          await dbQuery('UPDATE users SET image = $1 WHERE id = $2', [url, req.user.id]);
         } else {
-          users[idx] = { ...users[idx], document: url };
+          await dbQuery('UPDATE users SET document = $1 WHERE id = $2', [url, req.user.id]);
         }
-        writeUsers(users);
+      } else {
+        const users = readUsers();
+        const idx = users.findIndex(u => u.id === req.user.id);
+        if (idx !== -1) {
+          // If uploaded file is an image, store as `image` for avatar; otherwise store under `document`.
+          if (mimeType.startsWith('image/')) {
+            users[idx] = { ...users[idx], image: url };
+          } else {
+            users[idx] = { ...users[idx], document: url };
+          }
+          writeUsers(users);
+        }
       }
       return res.json({ success: true, url, mimeType, field: uploaded.fieldname });
     } catch (err2) {
@@ -2623,6 +3624,49 @@ app.post('/creator/complete', authMiddleware, (req, res) => {
   try {
     const body = req.body || {};
     const allowed = ['name', 'bio', 'tag', 'introVideo', 'image', 'social', 'price', 'tagline', 'handle', 'pricingType', 'categories'];
+    if (DB_ENABLED) {
+      const fieldMap = {
+        name: 'name',
+        bio: 'bio',
+        tag: 'tag',
+        introVideo: 'intro_video',
+        image: 'image',
+        social: 'social',
+        price: 'price',
+        tagline: 'tagline',
+        handle: 'handle',
+        pricingType: 'pricing_type',
+        categories: 'categories'
+      };
+
+      const fields = [];
+      const values = [];
+      let i = 1;
+
+      allowed.forEach((k) => {
+        if (typeof body[k] !== 'undefined') {
+          fields.push(`${fieldMap[k]} = $${i}`);
+          values.push(body[k]);
+          i += 1;
+        }
+      });
+
+      fields.push(`is_creator = true`);
+      fields.push(`creator_since = now()`);
+
+      values.push(req.user.id);
+      const sql = `UPDATE users SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`;
+      return dbQuery(sql, values)
+        .then(({ rows }) => {
+          if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+          return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
+        })
+        .catch((err) => {
+          console.error('creator complete db error', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
+
     const users = readUsers();
     const idx = users.findIndex(u => u.id === req.user.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -2641,17 +3685,62 @@ app.post('/creator/complete', authMiddleware, (req, res) => {
 });
 
 // Get all published videos
-app.get('/videos', (req, res) => {
+// --- YouTube Duration Auto-Fill ---
+// Extracts YouTube video ID from a URL
+function getYouTubeIdFromUrl(url) {
+  if (!url) return null;
+  const m = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+// Background: fill missing YouTube durations by scraping the video page for lengthSeconds
+let _ytFillRunning = false;
+async function fillYoutubeDurations() {
+  if (_ytFillRunning) return;
+  _ytFillRunning = true;
   try {
-    let videos = readVideos();
+    const videos = await loadVideos();
+    let updated = false;
+    for (const v of videos) {
+      if (v.time && v.time !== '0:00' && v.time !== '' && v.time !== '--:--') continue;
+      const url = v.videoUrl || v.url;
+      const ytId = getYouTubeIdFromUrl(url);
+      if (!ytId) continue;
+      try {
+        const resp = await fetch(`https://www.youtube.com/watch?v=${ytId}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        });
+        const html = await resp.text();
+        const match = html.match(/"lengthSeconds"\s*:\s*"(\d+)"/);
+        if (match) {
+          const secs = parseInt(match[1]);
+          if (secs > 0) {
+            const mins = Math.floor(secs / 60);
+            const s = secs % 60;
+            v.time = `${mins}:${String(s).padStart(2, '0')}`;
+            updated = true;
+            console.log(`[yt-fill] ${ytId} → ${v.time}`);
+          }
+        }
+      } catch (e) { /* skip individual failures */ }
+    }
+    if (updated) await saveVideos(videos);
+  } catch (err) { console.error('fillYoutubeDurations error:', err); }
+  _ytFillRunning = false;
+}
+
+// Run once at startup (non-blocking)
+setTimeout(() => fillYoutubeDurations(), 5000);
+
+app.get('/videos', async (req, res) => {
+  try {
+    let videos = await loadVideos();
     const feed = req.query.feed; // 'trending' | 'recommended' | undefined
     const category = req.query.category;
-    const user = tryGetUser(req); // helper to get user from token if present
+    const user = await tryGetUser(req); // helper to get user from token if present
 
     console.log(`GET /videos feed=${feed} category=${category} user=${user ? user.id : 'anon'}`);
 
-    // Filter out hidden and deleted videos server-side
-    videos = videos.filter(v => !v.hidden && !v.deleted);
     // Filter by category if provided
     if (category && category !== 'All') {
         videos = videos.filter(v => v.category === category);
@@ -2687,7 +3776,7 @@ app.get('/videos', (req, res) => {
 
         if (user || req.query.userId) {
              const userId = user ? user.id : (req.query.userId || 'anonymous');
-             const history = readWatchHistory().filter(h => String(h.userId) === String(userId));
+             const history = (await loadWatchHistory()).filter(h => String(h.userId) === String(userId));
              
              history.forEach(h => {
                  if (h.isComplete || h.duration > 30 || (h.lastWatchedTime / h.duration) > 0.5) {
@@ -2729,6 +3818,9 @@ app.get('/videos', (req, res) => {
         videos.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }
 
+    // Trigger background YouTube duration fill (non-blocking)
+    fillYoutubeDurations();
+
     return res.json({ success: true, videos });
   } catch (err) {
     console.error('get videos error', err);
@@ -2737,22 +3829,16 @@ app.get('/videos', (req, res) => {
 });
 
 // Get a single video by ID (including fresh ads data)
-app.get('/videos/:id', (req, res) => {
+app.get('/videos/:id', async (req, res) => {
   try {
     const videoId = req.params.id;
     console.log(`GET /videos/${videoId}`);
     
-    const videos = readVideos();
+    const videos = await loadVideos();
     const video = videos.find(v => String(v.id) === String(videoId));
     
     if (!video) {
       console.log(`Video not found: ${videoId}`);
-      return res.status(404).json({ error: 'Video not found' });
-    }
-
-    // Don't serve hidden/deleted videos via direct ID lookup
-    if (video.hidden || video.deleted) {
-      console.log(`Video ${videoId} is hidden/deleted`);
       return res.status(404).json({ error: 'Video not found' });
     }
     
@@ -2764,8 +3850,33 @@ app.get('/videos/:id', (req, res) => {
   }
 });
 
+// PATCH /videos/:id/duration - update video duration when detected client-side
+app.patch('/videos/:id/duration', async (req, res) => {
+  try {
+    const { time } = req.body || {};
+    const videoId = req.params.id;
+    if (!time || !videoId) return res.status(400).json({ error: 'Missing time or videoId' });
+
+    const videos = await loadVideos();
+    const video = videos.find(v => String(v.id) === String(videoId));
+    if (!video) return res.status(404).json({ error: 'Video not found' });
+
+    // Only update if current time is 0:00 or empty
+    if (video.time && video.time !== '0:00' && video.time !== '') {
+      return res.json({ success: true, message: 'Duration already set', time: video.time });
+    }
+
+    video.time = time;
+    await saveVideos(videos);
+    return res.json({ success: true, time });
+  } catch (err) {
+    console.error('PATCH video duration error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Publish a new video
-app.post('/videos/publish', (req, res) => {
+app.post('/videos/publish', async (req, res) => {
   try {
     console.log('POST /videos/publish received');
     console.log('Request body:', req.body);
@@ -2780,8 +3891,7 @@ app.post('/videos/publish', (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7).trim();
-      const users = readUsers();
-      const user = users.find(u => u.token === token);
+      const user = await getUserFromAuthHeader(req);
       if (user) {
         author = user.name || user.email;
         authorId = user.email;
@@ -2809,7 +3919,10 @@ app.post('/videos/publish', (req, res) => {
       finalVideoUrl = null;
     }
 
-    const videos = readVideos();
+    finalThumbnail = normalizeMediaUrl(finalThumbnail, req);
+    finalVideoUrl = normalizeMediaUrl(finalVideoUrl, req);
+
+    const videos = await loadVideos();
     console.log('Current videos count:', videos.length);
     
     // Generate unique ID by combining timestamp with random string
@@ -2846,13 +3959,13 @@ app.post('/videos/publish', (req, res) => {
 
     videos.unshift(newVideo);
     console.log('Writing videos, new count:', videos.length);
-    writeVideos(videos);
+    await saveVideos(videos);
     
     // Update streak for the author if authenticated
-    if (authorId && authorId !== 'anonymous') {
-        const users = readUsers(); // Re-read to get ID if we only have email
-        const user = users.find(u => u.email === authorId || u.id === authorId);
-        if (user) updateStreak(user.id);
+    if (!DB_ENABLED && authorId && authorId !== 'anonymous') {
+      const users = readUsers(); // Re-read to get ID if we only have email
+      const user = users.find(u => u.email === authorId || u.id === authorId);
+      if (user) updateStreak(user.id);
     }
     
     console.log('Video published successfully:', newVideo.title);
@@ -2865,11 +3978,11 @@ app.post('/videos/publish', (req, res) => {
 });
 
 // Delete a published video
-app.delete('/videos/:id', authMiddleware, (req, res) => {
+app.delete('/videos/:id', authMiddleware, async (req, res) => {
   try {
     const videoId = parseInt(req.params.id);
     const user = req.user;
-    const videos = readVideos();
+    const videos = await loadVideos();
     
     const videoIndex = videos.findIndex(v => v.id === videoId);
     if (videoIndex === -1) {
@@ -2882,7 +3995,7 @@ app.delete('/videos/:id', authMiddleware, (req, res) => {
     }
 
     videos.splice(videoIndex, 1);
-    writeVideos(videos);
+    await saveVideos(videos);
 
     return res.json({ success: true });
   } catch (err) {
@@ -2985,19 +4098,19 @@ app.post('/unfollow', authMiddleware, (req, res) => {
 });
 
 // Get following list with full creator details
-app.get('/following', authMiddleware, (req, res) => {
+app.get('/following', authMiddleware, async (req, res) => {
   try {
     const users = readUsers();
     const user = users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const following = user.following || [];
+    const videos = await loadVideos();
     const creators = following.map(creatorId => {
       const creator = users.find(u => u.id === creatorId);
       if (!creator) return null;
       
       // Count videos for this creator
-      const videos = readVideos();
       const videoCount = videos.filter(v => v.authorId === creator.email || v.authorId === creator.id).length;
 
       return {
@@ -3090,123 +4203,8 @@ app.post('/me/password', authMiddleware, async (req, res) => {
   }
 });
 
-// --- Forgot Password / Reset Password ---
-// In-memory store for reset codes (cleared on restart — acceptable for small-scale app)
-const resetCodes = new Map(); // email -> { code, expiresAt }
-
-// Configure SMTP transporter from env vars
-function getMailTransporter() {
-  if (!nodemailer) return null;
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  if (!host || !user || !pass) return null;
-  return nodemailer.createTransport({
-    host,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: (process.env.SMTP_SECURE === 'true'),
-    auth: { user, pass }
-  });
-}
-
-// Step 1: Request a password reset code
-app.post('/forgot-password', async (req, res) => {
-  try {
-    const { email: rawEmail } = req.body || {};
-    if (!rawEmail) return res.status(400).json({ error: 'Email is required' });
-    const emailLower = String(rawEmail).trim().toLowerCase();
-    const users = readUsers();
-    const user = users.find(u => String(u.email || '').toLowerCase() === emailLower);
-    // Always respond success to prevent email enumeration
-    if (!user) return res.json({ success: true, message: 'If an account exists, a code was sent' });
-
-    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-    resetCodes.set(emailLower, { code, expiresAt });
-
-    const transporter = getMailTransporter();
-    if (transporter) {
-      const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
-      await transporter.sendMail({
-        from: `"Regaarder" <${fromAddr}>`,
-        to: emailLower,
-        subject: 'Your Regaarder Password Reset Code',
-        text: `Your password reset code is: ${code}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, ignore this email.`,
-        html: `<div style="font-family:sans-serif;max-width:400px;margin:0 auto;padding:20px">
-          <h2 style="color:#333">Password Reset</h2>
-          <p>Your verification code is:</p>
-          <div style="font-size:32px;font-weight:bold;letter-spacing:8px;text-align:center;padding:20px;background:#f5f5f5;border-radius:12px;margin:16px 0">${code}</div>
-          <p style="color:#666;font-size:14px">This code expires in 10 minutes.</p>
-          <p style="color:#999;font-size:12px">If you didn't request this, ignore this email.</p>
-        </div>`
-      });
-      console.log(`Reset code sent to ${emailLower}`);
-    } else {
-      // No email configured — log code to console (dev fallback)
-      console.log(`[DEV] Reset code for ${emailLower}: ${code}`);
-    }
-
-    return res.json({ success: true, message: 'If an account exists, a code was sent' });
-  } catch (err) {
-    console.error('POST /forgot-password error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Step 2: Verify the reset code
-app.post('/verify-reset-code', (req, res) => {
-  try {
-    const { email: rawEmail, code } = req.body || {};
-    if (!rawEmail || !code) return res.status(400).json({ error: 'Email and code are required' });
-    const emailLower = String(rawEmail).trim().toLowerCase();
-    const stored = resetCodes.get(emailLower);
-    if (!stored) return res.status(400).json({ error: 'No reset code found. Request a new one.' });
-    if (Date.now() > stored.expiresAt) {
-      resetCodes.delete(emailLower);
-      return res.status(400).json({ error: 'Code expired. Request a new one.' });
-    }
-    if (String(stored.code) !== String(code).trim()) {
-      return res.status(400).json({ error: 'Incorrect code' });
-    }
-    // Code is valid — generate a one-time reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    resetCodes.set(emailLower, { ...stored, resetToken, tokenExpiresAt: Date.now() + 5 * 60 * 1000 });
-    return res.json({ success: true, resetToken });
-  } catch (err) {
-    console.error('POST /verify-reset-code error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Step 3: Set new password with reset token
-app.post('/reset-password', async (req, res) => {
-  try {
-    const { email: rawEmail, resetToken, newPassword } = req.body || {};
-    if (!rawEmail || !resetToken || !newPassword) return res.status(400).json({ error: 'Missing fields' });
-    if (String(newPassword).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    const emailLower = String(rawEmail).trim().toLowerCase();
-    const stored = resetCodes.get(emailLower);
-    if (!stored || stored.resetToken !== resetToken) return res.status(400).json({ error: 'Invalid or expired reset token' });
-    if (Date.now() > (stored.tokenExpiresAt || 0)) {
-      resetCodes.delete(emailLower);
-      return res.status(400).json({ error: 'Reset token expired. Start over.' });
-    }
-    const users = readUsers();
-    const idx = users.findIndex(u => String(u.email || '').toLowerCase() === emailLower);
-    if (idx === -1) return res.status(404).json({ error: 'User not found' });
-    const hash = await bcrypt.hash(newPassword, 10);
-    users[idx] = { ...users[idx], passwordHash: hash, passwordChangedAt: new Date().toISOString() };
-    writeUsers(users);
-    resetCodes.delete(emailLower);
-    return res.json({ success: true, message: 'Password updated successfully' });
-  } catch (err) {
-    console.error('POST /reset-password error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // --- Watch History storage ---
-const WATCH_FILE = path.join(PERSIST_DIR, 'watchhistory.json');
+const WATCH_FILE = path.join(__dirname, 'watchhistory.json');
 function readWatchHistory() {
   try {
     if (!fs.existsSync(WATCH_FILE)) return [];
@@ -3217,100 +4215,113 @@ function readWatchHistory() {
 function writeWatchHistory(list) {
   try { fs.writeFileSync(WATCH_FILE, JSON.stringify(list, null, 2), 'utf8'); } catch (err) { console.error('writeWatchHistory error', err); }
 }
-function tryGetUser(req) {
+const loadWatchHistory = async () => {
+  if (!DB_ENABLED) return readWatchHistory();
+  const { rows } = await dbQuery('SELECT payload FROM watch_history ORDER BY updated_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveWatchHistory = async (list) => {
+  if (!DB_ENABLED) {
+    writeWatchHistory(list);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = list.map(entry => `${entry.videoId}::${entry.userId || 'anonymous'}`);
   try {
-    const auth = req.headers.authorization || '';
-    if (auth && auth.startsWith('Bearer ')) {
-      const token = auth.slice(7).trim();
-      const users = readUsers();
-      const user = users.find(u => u.token === token);
-      if (user) return { id: user.id, email: user.email, name: user.name };
+    await client.query('BEGIN');
+    for (const entry of list) {
+      await client.query(
+        `INSERT INTO watch_history (video_id, user_id, payload, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (video_id, user_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at`,
+        [String(entry.videoId), String(entry.userId || 'anonymous'), entry, new Date(entry.timestamp || Date.now())]
+      );
     }
+    if (ids.length > 0) {
+      const params = ids.map((_, i) => `$${i + 1}`).join(',');
+      await client.query(
+        `DELETE FROM watch_history WHERE (video_id || '::' || user_id) NOT IN (${params})`,
+        ids
+      );
+    } else {
+      await client.query('DELETE FROM watch_history');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const tryGetUser = async (req) => {
+  try {
+    const user = await getUserFromAuthHeader(req);
+    if (user) return { id: user.id, email: user.email, name: user.name };
   } catch {}
   return null;
-}
+};
 // Upsert watch progress
-app.post('/watch/history', (req, res) => {
+app.post('/watch/history', async (req, res) => {
   try {
     const { videoId, userId: bodyUserId, lastWatchedTime = 0, duration = 0, timestamp, isComplete = false } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
-    const user = tryGetUser(req);
+    const user = await tryGetUser(req);
     const userId = user ? user.id : (bodyUserId || 'anonymous');
     const ts = timestamp ? (typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString()) : new Date().toISOString();
-    const list = readWatchHistory();
+    const list = await loadWatchHistory();
     const idx = list.findIndex(e => String(e.videoId) === String(videoId) && String(e.userId || 'anonymous') === String(userId));
+    const isNewWatch = idx < 0; // Track if this is a new watch entry
     const entry = { videoId, userId, lastWatchedTime: Number(lastWatchedTime) || 0, duration: Number(duration) || 0, timestamp: ts, isComplete: Boolean(isComplete) };
     if (idx >= 0) list[idx] = { ...list[idx], ...entry }; else list.unshift(entry);
     if (list.length > 2000) list.splice(2000);
-    writeWatchHistory(list);
-
-    // Compute aggregate retention rate for this video
-    try {
-      const videoDur = Number(duration) || 0;
-      if (videoDur > 0) {
-        const allWatches = list.filter(e => String(e.videoId) === String(videoId) && Number(e.duration) > 0);
-        if (allWatches.length > 0) {
-          const totalWatched = allWatches.reduce((sum, e) => sum + (Number(e.lastWatchedTime) || 0), 0);
-          const totalDuration = allWatches.reduce((sum, e) => sum + (Number(e.duration) || 0), 0);
-          const retPct = totalDuration > 0 ? Math.min(100, Math.round((totalWatched / totalDuration) * 100)) : 0;
-          const videos = readVideos();
-          const vi = videos.findIndex(v => String(v.id) === String(videoId));
-          if (vi !== -1) {
-            videos[vi].retentionRate = String(retPct);
-            videos[vi].retentionPercentage = `${retPct}%`;
-            writeVideos(videos);
+    await saveWatchHistory(list);
+    
+    // Increment view count on video only if this is a new watch (not an update to existing watch)
+    if (isNewWatch) {
+      try {
+        const videos = await loadVideos();
+        const vidIdx = videos.findIndex(v => String(v.id) === String(videoId));
+        if (vidIdx !== -1) {
+          videos[vidIdx].views = String(Number(videos[vidIdx].views || 0) + 1);
+          await saveVideos(videos);
+          
+          // Also increment the creator's total views in the user object
+          const video = videos[vidIdx];
+          if (!DB_ENABLED && (video.authorId || video.author || video.authorEmail)) {
+            const users = readUsers();
+            const creatorIdx = users.findIndex(u => 
+              u.id === video.authorId || 
+              u.email === video.authorEmail ||
+              (u.name && u.name.toLowerCase() === (video.author || '').toLowerCase())
+            );
+            if (creatorIdx !== -1) {
+              users[creatorIdx].views = (users[creatorIdx].views || 0) + 1;
+              writeUsers(users);
+            }
           }
         }
+      } catch (e) {
+        console.warn('Failed to increment video views:', e);
       }
-    } catch (e) { console.warn('Retention rate calc error:', e); }
+    }
     
-    if (user) updateStreak(user.id);
+    if (user && !DB_ENABLED) updateStreak(user.id);
     return res.json({ success: true });
   } catch (err) {
     console.error('POST /watch/history error', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
-
-// Increment view count every time a video is opened/clicked
-app.post('/videos/:id/view', (req, res) => {
-  try {
-    const videoId = String(req.params.id || '').trim();
-    if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
-    const videos = readVideos();
-    const idx = videos.findIndex(v => String(v.id) === videoId);
-    if (idx === -1) return res.status(404).json({ error: 'Video not found' });
-    videos[idx].views = String(Number(videos[idx].views || 0) + 1);
-    writeVideos(videos);
-    // Also increment creator's total views
-    try {
-      const video = videos[idx];
-      if (video.authorId || video.author || video.authorEmail) {
-        const users = readUsers();
-        const ci = users.findIndex(u =>
-          u.id === video.authorId ||
-          u.email === video.authorEmail ||
-          (u.name && u.name.toLowerCase() === (video.author || '').toLowerCase())
-        );
-        if (ci !== -1) {
-          users[ci].views = (users[ci].views || 0) + 1;
-          writeUsers(users);
-        }
-      }
-    } catch (e) { console.warn('Creator view increment error:', e); }
-    return res.json({ success: true, views: Number(videos[idx].views) });
-  } catch (err) {
-    console.error('POST /videos/:id/view error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
 // Get watch history for current user (token optional; falls back to anonymous)
-app.get('/watch/history', (req, res) => {
+app.get('/watch/history', async (req, res) => {
   try {
-    const user = tryGetUser(req);
+    const user = await tryGetUser(req);
     const qUser = req.query.userId || null;
     const userId = user ? user.id : (qUser || 'anonymous');
-    const list = readWatchHistory().filter(e => String(e.userId || 'anonymous') === String(userId));
+    const list = (await loadWatchHistory()).filter(e => String(e.userId || 'anonymous') === String(userId));
     return res.json({ success: true, history: list });
   } catch (err) {
     console.error('GET /watch/history error', err);
@@ -3318,15 +4329,15 @@ app.get('/watch/history', (req, res) => {
   }
 });
 // Delete single entry
-app.delete('/watch/history/:videoId', (req, res) => {
+app.delete('/watch/history/:videoId', async (req, res) => {
   try {
-    const user = tryGetUser(req);
+    const user = await tryGetUser(req);
     const userId = user ? user.id : 'anonymous';
     const vid = req.params.videoId;
-    let list = readWatchHistory();
+    let list = await loadWatchHistory();
     const before = list.length;
     list = list.filter(e => !(String(e.videoId) === String(vid) && String(e.userId || 'anonymous') === String(userId)));
-    writeWatchHistory(list);
+    await saveWatchHistory(list);
     return res.json({ success: true, removed: before - list.length });
   } catch (err) {
     console.error('DELETE /watch/history/:videoId error', err);
@@ -3334,14 +4345,14 @@ app.delete('/watch/history/:videoId', (req, res) => {
   }
 });
 // Clear all for user
-app.delete('/watch/history', (req, res) => {
+app.delete('/watch/history', async (req, res) => {
   try {
-    const user = tryGetUser(req);
+    const user = await tryGetUser(req);
     const userId = user ? user.id : 'anonymous';
-    let list = readWatchHistory();
+    let list = await loadWatchHistory();
     const before = list.length;
     list = list.filter(e => String(e.userId || 'anonymous') !== String(userId));
-    writeWatchHistory(list);
+    await saveWatchHistory(list);
     return res.json({ success: true, removed: before - list.length });
   } catch (err) {
     console.error('DELETE /watch/history error', err);
@@ -3350,7 +4361,7 @@ app.delete('/watch/history', (req, res) => {
 });
 
 // --- Bookmarks storage (per-user) ---
-const BOOKMARKS_FILE = path.join(PERSIST_DIR, 'bookmarks.json');
+const BOOKMARKS_FILE = path.join(__dirname, 'bookmarks.json');
 function readBookmarks() {
   try { if (!fs.existsSync(BOOKMARKS_FILE)) return { segments: [], videos: [], requests: [] }; const raw = fs.readFileSync(BOOKMARKS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { segments: j.segments || [], videos: j.videos || [], requests: j.requests || [] }; } catch (e) { return { segments: [], videos: [], requests: [] }; }
 }
@@ -3358,88 +4369,157 @@ function writeBookmarks(data) {
   try { const safe = { segments: data.segments || [], videos: data.videos || [], requests: data.requests || [] }; fs.writeFileSync(BOOKMARKS_FILE, JSON.stringify(safe, null, 2), 'utf8'); } catch (e) {}
 }
 
-function getUserIdOrAnon(req) { const u = tryGetUser(req); return u ? u.id : 'anonymous'; }
+const loadVideoBookmarks = async (userId) => {
+  if (!DB_ENABLED) {
+    const all = readBookmarks();
+    return (all.videos || []).filter(b => String(b.userId || 'anonymous') === String(userId));
+  }
+  const { rows } = await dbQuery(
+    'SELECT id, user_id, video_url, title, created_at FROM user_video_bookmarks WHERE user_id = $1 ORDER BY created_at DESC',
+    [String(userId)]
+  );
+  return rows.map(r => ({
+    id: r.id,
+    userId: r.user_id,
+    videoUrl: r.video_url,
+    title: r.title || '',
+    createdAt: r.created_at
+  }));
+};
+
+const loadSegmentBookmarks = async (userId) => {
+  if (!DB_ENABLED) {
+    const all = readBookmarks();
+    return (all.segments || []).filter(b => String(b.userId || 'anonymous') === String(userId));
+  }
+  const { rows } = await dbQuery(
+    'SELECT id, user_id, video_url, label, start_time, end_time, created_at FROM user_segment_bookmarks WHERE user_id = $1 ORDER BY created_at DESC',
+    [String(userId)]
+  );
+  return rows.map(r => ({
+    id: r.id,
+    userId: r.user_id,
+    videoUrl: r.video_url,
+    label: r.label || '',
+    startTime: Number(r.start_time || 0),
+    endTime: Number(r.end_time || 0),
+    createdAt: r.created_at
+  }));
+};
+
+const saveVideoBookmark = async (bookmark) => {
+  if (!DB_ENABLED) {
+    const all = readBookmarks();
+    all.videos.unshift(bookmark);
+    if (all.videos.length > 1000) all.videos.splice(1000);
+    writeBookmarks(all);
+    return;
+  }
+  await dbQuery(
+    `INSERT INTO user_video_bookmarks (id, user_id, video_url, title, created_at)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (id) DO UPDATE SET video_url = EXCLUDED.video_url, title = EXCLUDED.title`,
+    [String(bookmark.id), String(bookmark.userId), String(bookmark.videoUrl), bookmark.title || '', bookmark.createdAt ? new Date(bookmark.createdAt) : new Date()]
+  );
+};
+
+const saveSegmentBookmark = async (bookmark) => {
+  if (!DB_ENABLED) {
+    const all = readBookmarks();
+    all.segments.unshift(bookmark);
+    if (all.segments.length > 1000) all.segments.splice(1000);
+    writeBookmarks(all);
+    return;
+  }
+  await dbQuery(
+    `INSERT INTO user_segment_bookmarks (id, user_id, video_url, label, start_time, end_time, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (id) DO UPDATE SET video_url = EXCLUDED.video_url, label = EXCLUDED.label, start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time`,
+    [String(bookmark.id), String(bookmark.userId), String(bookmark.videoUrl), bookmark.label || '', Number(bookmark.startTime || 0), Number(bookmark.endTime || 0), bookmark.createdAt ? new Date(bookmark.createdAt) : new Date()]
+  );
+};
+
+const deleteVideoBookmark = async ({ userId, videoUrl }) => {
+  if (!DB_ENABLED) {
+    const all = readBookmarks();
+    const before = (all.videos || []).length;
+    all.videos = (all.videos || []).filter(b => !(String(b.userId || 'anonymous') === String(userId) && String(b.videoUrl) === String(videoUrl)));
+    writeBookmarks(all);
+    return Math.max(0, before - (all.videos || []).length);
+  }
+  const { rowCount } = await dbQuery(
+    'DELETE FROM user_video_bookmarks WHERE user_id = $1 AND video_url = $2',
+    [String(userId), String(videoUrl)]
+  );
+  return rowCount || 0;
+};
+
+async function getUserIdOrAnon(req) { const u = await tryGetUser(req); return u ? u.id : 'anonymous'; }
 
 // Aggregate bookmarks for current user
-app.get('/bookmarks', (req, res) => {
+app.get('/bookmarks', async (req, res) => {
   try {
-    const userId = getUserIdOrAnon(req);
+    const user = await getUserFromAuthHeader(req);
+    const userId = user ? user.id : 'anonymous';
     console.log('GET /bookmarks - userId:', userId, 'hasAuth:', !!req.headers.authorization);
-    const all = readBookmarks();
-    console.log('Total bookmarks in file - segments:', all.segments?.length, 'videos:', all.videos?.length, 'requests:', all.requests?.length);
-    const segments = (all.segments || []).filter(b => String(b.userId||'anonymous') === String(userId));
-    const videos = (all.videos || []).filter(b => String(b.userId||'anonymous') === String(userId));
-    const requests = (all.requests || []).filter(b => String(b.userId||'anonymous') === String(userId));
-    console.log('Filtered for user', userId, '- segments:', segments.length, 'videos:', videos.length, 'requests:', requests.length);
-    if (requests.length > 0) {
-      console.log('Returning request bookmarks:', requests.map(r => ({ id: r.id, requestId: r.requestId, userId: r.userId })));
+    const segments = await loadSegmentBookmarks(userId);
+    const videos = await loadVideoBookmarks(userId);
+
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT * FROM request_bookmarks WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
+      const requests = rows.map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        requestId: r.request_id,
+        title: r.title || '',
+        createdAt: r.created_at
+      }));
+      return res.json({ success: true, segments, videos, requests });
     }
+
+    const all = readBookmarks();
+    const requests = (all.requests || []).filter(b => String(b.userId||'anonymous') === String(userId));
     return res.json({ success: true, segments, videos, requests });
   } catch (err) { console.error('GET /bookmarks error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
 // Save a timestamped segment bookmark
-app.post('/bookmarks/segments', (req, res) => {
+app.post('/bookmarks/segments', async (req, res) => {
   try {
-    const userId = getUserIdOrAnon(req);
+    const userId = await getUserIdOrAnon(req);
     const { videoUrl, label, startTime, endTime } = req.body || {};
     if (!videoUrl) return res.status(400).json({ error: 'Missing videoUrl' });
-    const s = readBookmarks();
     const b = { id: `seg_${Date.now()}`, userId, videoUrl, label: label || '', startTime: Math.max(0, Number(startTime||0)), endTime: Math.max(0, Number(endTime||0)), createdAt: new Date().toISOString() };
-    s.segments.unshift(b);
-    // cap to reasonable size
-    if (s.segments.length > 1000) s.segments.splice(1000);
-    writeBookmarks(s);
+    await saveSegmentBookmark(b);
     return res.json({ success: true, segment: b });
   } catch (err) { console.error('POST /bookmarks/segments error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
 // Save a normal video bookmark
-app.post('/bookmarks/videos', (req, res) => {
+app.post('/bookmarks/videos', async (req, res) => {
   try {
-    const userId = getUserIdOrAnon(req);
+    const userId = await getUserIdOrAnon(req);
     const { videoUrl, title, label } = req.body || {};
     if (!videoUrl) return res.status(400).json({ error: 'Missing videoUrl' });
-    const s = readBookmarks();
     const b = { id: `vid_${Date.now()}`, userId, videoUrl, title: title || label || '', createdAt: new Date().toISOString() };
-    s.videos.unshift(b);
-    if (s.videos.length > 1000) s.videos.splice(1000);
-    writeBookmarks(s);
+    await saveVideoBookmark(b);
     return res.json({ success: true, video: b });
   } catch (err) { console.error('POST /bookmarks/videos error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
 // Remove a normal video bookmark for the current user by videoUrl
-app.delete('/bookmarks/videos', (req, res) => {
+app.delete('/bookmarks/videos', async (req, res) => {
   try {
-    const userId = getUserIdOrAnon(req);
+    const userId = await getUserIdOrAnon(req);
     const { videoUrl } = req.body || {};
     if (!videoUrl) return res.status(400).json({ error: 'Missing videoUrl' });
-    const s = readBookmarks();
-    const before = (s.videos || []).length;
-    s.videos = (s.videos || []).filter(b => !(String(b.userId || 'anonymous') === String(userId) && String(b.videoUrl) === String(videoUrl)));
-    writeBookmarks(s);
-    return res.json({ success: true, removed: Math.max(0, before - (s.videos || []).length) });
+    const removed = await deleteVideoBookmark({ userId, videoUrl });
+    return res.json({ success: true, removed });
   } catch (err) { console.error('DELETE /bookmarks/videos error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-// Save a request bookmark
-app.post('/bookmarks/requests', (req, res) => {
-  try {
-    const userId = getUserIdOrAnon(req);
-    const { requestId, title } = req.body || {};
-    if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
-    const s = readBookmarks();
-    const b = { id: `req_${Date.now()}`, userId, requestId, title: title || '', createdAt: new Date().toISOString() };
-    s.requests.unshift(b);
-    if (s.requests.length > 1000) s.requests.splice(1000);
-    writeBookmarks(s);
-    return res.json({ success: true, request: b });
-  } catch (err) { console.error('POST /bookmarks/requests error', err); return res.status(500).json({ error: 'Server error' }); }
-});
-
 // --- Reactions storage (per-user per-request) ---
-const REQUEST_REACTIONS_FILE = path.join(PERSIST_DIR, 'request_reactions.json');
+const REQUEST_REACTIONS_FILE = path.join(__dirname, 'request_reactions.json');
 function readRequestReactions() {
   try { if (!fs.existsSync(REQUEST_REACTIONS_FILE)) return { likes: {}, dislikes: {} }; const raw = fs.readFileSync(REQUEST_REACTIONS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { likes: j.likes || {}, dislikes: j.dislikes || {} }; } catch (e) { return { likes: {}, dislikes: {} }; }
 }
@@ -3448,11 +4528,63 @@ function writeRequestReactions(data) {
 }
 
 // Persist request reactions and aggregate counts
-app.post('/requests/react', (req, res) => {
+app.post('/requests/react', async (req, res) => {
   try {
     const { requestId, action } = req.body || {};
     if (!requestId || !action) return res.status(400).json({ error: 'Missing requestId or action' });
-    const user = tryGetUser(req);
+    if (DB_ENABLED) {
+      return (async () => {
+        const user = await getUserFromAuthHeader(req);
+        const userId = user ? user.id : 'anonymous';
+        const reqRes = await dbQuery('SELECT id, likes FROM requests WHERE id = $1', [requestId]);
+        if (!reqRes.rows[0]) return res.status(404).json({ error: 'Request not found' });
+
+        const currentLikes = Number(reqRes.rows[0].likes || 0);
+        const reactRes = await dbQuery(
+          'SELECT is_liked, is_disliked FROM request_reactions WHERE request_id = $1 AND user_id = $2',
+          [requestId, userId]
+        );
+        const current = reactRes.rows[0] || { is_liked: false, is_disliked: false };
+        let likesCount = currentLikes;
+        let nextLiked = current.is_liked;
+        let nextDisliked = current.is_disliked;
+
+        if (action === 'like') {
+          if (!current.is_liked) likesCount += 1;
+          nextLiked = true;
+          nextDisliked = false;
+        } else if (action === 'unlike') {
+          if (current.is_liked) likesCount = Math.max(0, likesCount - 1);
+          nextLiked = false;
+        } else if (action === 'dislike') {
+          if (current.is_liked) likesCount = Math.max(0, likesCount - 1);
+          nextLiked = false;
+          nextDisliked = true;
+        } else if (action === 'undislike') {
+          nextDisliked = false;
+        } else {
+          return res.status(400).json({ error: 'Invalid action' });
+        }
+
+        await dbQuery('BEGIN');
+        await dbQuery(
+          `INSERT INTO request_reactions (request_id, user_id, is_liked, is_disliked, updated_at)
+           VALUES ($1,$2,$3,$4,now())
+           ON CONFLICT (request_id, user_id)
+           DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
+          [requestId, userId, nextLiked, nextDisliked]
+        );
+        await dbQuery('UPDATE requests SET likes = $1 WHERE id = $2', [likesCount, requestId]);
+        await dbQuery('COMMIT');
+
+        return res.json({ success: true, requestId, action, likes: likesCount });
+      })().catch((err) => {
+        console.error('requests react db error', err);
+        return res.status(500).json({ error: 'Server error' });
+      });
+    }
+
+    const user = await tryGetUser(req);
     const userId = user ? user.id : 'anonymous';
     const reactions = readRequestReactions();
     const requests = readRequests();
@@ -3507,6 +4639,26 @@ app.post('/requests/react', (req, res) => {
 // Get current user's reactions map (requires auth)
 app.get('/requests/react/me', authMiddleware, (req, res) => {
   try {
+    if (DB_ENABLED) {
+      return dbQuery(
+        'SELECT request_id, is_liked, is_disliked FROM request_reactions WHERE user_id = $1',
+        [req.user.id]
+      )
+        .then(({ rows }) => {
+          const map = {};
+          rows.forEach((row) => {
+            map[row.request_id] = map[row.request_id] || {};
+            if (row.is_liked) map[row.request_id].isLiked = true;
+            if (row.is_disliked) map[row.request_id].isDisliked = true;
+          });
+          return res.json({ success: true, reactions: map });
+        })
+        .catch((err) => {
+          console.error('get reactions db error', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
+
     const reactions = readRequestReactions();
     const userId = req.user.id;
     const map = {};
@@ -3539,13 +4691,52 @@ app.post('/pay/create-session', (req, res) => {
     
     // If requestId is present, treat as boost
     if (requestId) {
+      if (DB_ENABLED) {
+        dbQuery('SELECT amount, funding, meta FROM requests WHERE id = $1 LIMIT 1', [String(requestId)])
+          .then(({ rows }) => {
+            const row = rows[0];
+            if (!row) return;
+            const currentMeta = (row.meta && typeof row.meta === 'object') ? row.meta : {};
+            const priorPaid = getPaidAmountFromRequest({ amount: row.amount, funding: row.funding, meta: currentMeta });
+            const nextPaid = toNonNegativeNumber(priorPaid + Number(amount), priorPaid);
+            const nextMeta = {
+              ...currentMeta,
+              paidAmount: nextPaid,
+              lastPaidAmount: toNonNegativeNumber(amount, 0),
+              lastPaidAt: new Date().toISOString()
+            };
+            const currentBoosts = Number(currentMeta.syntheticBoosts || 0);
+            const nextBoosts = toNonNegativeNumber(currentBoosts + Number(amount), currentBoosts);
+            dbQuery(
+              'UPDATE requests SET funding = $1, boosts = $2, meta = $3::jsonb, updated_at = NOW() WHERE id = $4',
+              [nextPaid, nextBoosts, JSON.stringify({ ...nextMeta, syntheticBoosts: nextBoosts }), String(requestId)]
+            ).catch((err) => console.error('create-session db update error', err));
+          })
+          .catch((err) => console.error('create-session db read error', err));
+      } else {
         const requests = readRequests();
         const idx = requests.findIndex(r => String(r.id) === String(requestId));
         if (idx !== -1) {
-            const prev = Number(requests[idx].boosts || 0);
-            requests[idx].boosts = prev + Number(amount);
-            writeRequests(requests);
+          const reqItem = requests[idx] || {};
+          const currentMeta = (reqItem.meta && typeof reqItem.meta === 'object') ? reqItem.meta : {};
+          const priorPaid = getPaidAmountFromRequest(reqItem);
+          const nextPaid = toNonNegativeNumber(priorPaid + Number(amount), priorPaid);
+          const prevBoosts = Number(reqItem.boosts || 0);
+          requests[idx] = {
+            ...reqItem,
+            boosts: toNonNegativeNumber(prevBoosts + Number(amount), prevBoosts),
+            funding: nextPaid,
+            meta: {
+              ...currentMeta,
+              paidAmount: nextPaid,
+              lastPaidAmount: toNonNegativeNumber(amount, 0),
+              lastPaidAt: new Date().toISOString()
+            },
+            updatedAt: new Date().toISOString()
+          };
+          writeRequests(requests);
         }
+      }
     }
     
     // For zero-amount requests, return success without URL
@@ -3581,7 +4772,7 @@ app.post('/pay/create-session', (req, res) => {
 });
 
 // Update request status and notify requester
-app.post('/requests/:id/status', authMiddleware, (req, res) => {
+app.post('/requests/:id/status', authMiddleware, async (req, res) => {
   try {
     const requestId = req.params.id;
     const { step, message } = req.body || {};
@@ -3622,11 +4813,9 @@ app.post('/requests/:id/status', authMiddleware, (req, res) => {
           metadata: { step, message }
         };
         
-        const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-        let arr = [];
-        try { if (fs.existsSync(SUG_FILE)) arr = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); } catch {}
+        const arr = await loadNotifications();
         arr.unshift(suggestion);
-        try { fs.writeFileSync(SUG_FILE, JSON.stringify(arr, null, 2), 'utf8'); } catch {}
+        await saveNotifications(arr);
     }
 
     return res.json({ success: true, currentStep: request.currentStep });
@@ -3637,33 +4826,41 @@ app.post('/requests/:id/status', authMiddleware, (req, res) => {
 });
 
 // Video reactions storage (likes/dislikes per video per user)
-const VIDEO_REACTIONS_FILE = path.join(PERSIST_DIR, 'video_reactions.json');
+const VIDEO_REACTIONS_FILE = path.join(__dirname, 'video_reactions.json');
 function readVideoReactions() { try { if (!fs.existsSync(VIDEO_REACTIONS_FILE)) return { likes: {}, dislikes: {} }; const raw = fs.readFileSync(VIDEO_REACTIONS_FILE, 'utf8'); const j = JSON.parse(raw || '{}'); return { likes: j.likes || {}, dislikes: j.dislikes || {} }; } catch (e) { return { likes: {}, dislikes: {} }; } }
 function writeVideoReactions(data) { try { const safe = { likes: data.likes || {}, dislikes: data.dislikes || {} }; fs.writeFileSync(VIDEO_REACTIONS_FILE, JSON.stringify(safe, null, 2), 'utf8'); } catch (e) {} }
 
 // Helper: find video index by flexible id/url/title matching
-function findVideoIndexById(videoId) {
+function findVideoIndexById(videos, videoId) {
   try {
-    const videos = readVideos();
     return videos.findIndex(v => String(v.id) === String(videoId) || String(v.url) === String(videoId) || String(v.videoUrl) === String(videoId) || String(v.src) === String(videoId) || String(v.title) === String(videoId));
   } catch (e) { return -1; }
 }
 
 // GET like/dislike status for a given video (checks token if provided)
-app.get('/likes/status', (req, res) => {
+app.get('/likes/status', async (req, res) => {
   try {
     const videoId = req.query.videoId || null;
     if (!videoId) return res.json({ liked: false, disliked: false });
-    const reactions = readVideoReactions();
     let liked = false;
     let disliked = false;
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      const token = req.headers.authorization.slice(7).trim();
-      const users = readUsers();
-      const user = users.find(u => u.token === token);
+      const user = await getUserFromAuthHeader(req);
       if (user) {
-        liked = !!(reactions.likes[videoId] && reactions.likes[videoId][user.id]);
-        disliked = !!(reactions.dislikes[videoId] && reactions.dislikes[videoId][user.id]);
+        if (DB_ENABLED) {
+          const { rows } = await dbQuery(
+            'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
+            [String(videoId), String(user.id)]
+          );
+          if (rows[0]) {
+            liked = Boolean(rows[0].is_liked);
+            disliked = Boolean(rows[0].is_disliked);
+          }
+        } else {
+          const reactions = readVideoReactions();
+          liked = !!(reactions.likes[videoId] && reactions.likes[videoId][user.id]);
+          disliked = !!(reactions.dislikes[videoId] && reactions.dislikes[videoId][user.id]);
+        }
       }
     }
     return res.json({ liked, disliked });
@@ -3671,47 +4868,52 @@ app.get('/likes/status', (req, res) => {
 });
 
 // Like/unlike endpoints (require auth)
-
-// GET /likes — Return all video IDs liked by the authenticated user
-app.get('/likes', authMiddleware, (req, res) => {
-  try {
-    const userId = req.user.id;
-    const reactions = readVideoReactions();
-    const videos = readVideos();
-    const likedVideoIds = [];
-
-    // Iterate over all video reaction entries and collect where this user has a like
-    for (const [videoId, likers] of Object.entries(reactions.likes || {})) {
-      if (likers && likers[userId]) {
-        likedVideoIds.push(videoId);
-      }
-    }
-
-    // Enrich with video metadata for the frontend to rebuild its liked videos list
-    const likes = likedVideoIds.map(vid => {
-      const v = videos.find(x => String(x.id) === String(vid));
-      return {
-        videoId: vid,
-        url: v ? (v.videoUrl || v.url || null) : null,
-        title: v ? (v.title || null) : null,
-        creatorName: v ? (v.author || v.creatorName || null) : null,
-        imageUrl: v ? (v.thumbnail || v.imageUrl || null) : null,
-        likedAt: new Date().toISOString()
-      };
-    });
-
-    return res.json({ success: true, likes });
-  } catch (err) { console.error('GET /likes error', err); return res.status(500).json({ error: 'Server error' }); }
-});
-
-app.post('/likes', authMiddleware, (req, res) => {
+app.post('/likes', authMiddleware, async (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
+    const videos = await loadVideos();
+    const vidx = findVideoIndexById(videos, videoId);
+    if (DB_ENABLED) {
+      let likesCount = Number((vidx !== -1 ? (videos[vidx].likes || 0) : 0)) || 0;
+      let dislikesCount = Number((vidx !== -1 ? (videos[vidx].dislikes || 0) : 0)) || 0;
+      const { rows } = await dbQuery(
+        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
+        [String(videoId), String(userId)]
+      );
+      const prevLiked = Boolean(rows[0]?.is_liked);
+      const prevDisliked = Boolean(rows[0]?.is_disliked);
+      let nextLiked = prevLiked;
+      let nextDisliked = prevDisliked;
+
+      if (!prevLiked) {
+        nextLiked = true;
+        likesCount += 1;
+      }
+      if (prevDisliked) {
+        nextDisliked = false;
+        dislikesCount = Math.max(0, dislikesCount - 1);
+      }
+
+      await dbQuery(
+        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
+         VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (video_id, user_id)
+         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
+        [String(videoId), String(userId), nextLiked, nextDisliked]
+      );
+
+      if (vidx !== -1) {
+        videos[vidx].likes = String(likesCount);
+        videos[vidx].dislikes = String(dislikesCount);
+        await saveVideos(videos);
+      }
+
+      return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
+    }
+
     const reactions = readVideoReactions();
-    const videos = readVideos();
-    const vidx = findVideoIndexById(videoId);
 
     reactions.likes[videoId] = reactions.likes[videoId] || {};
     reactions.dislikes[videoId] = reactions.dislikes[videoId] || {};
@@ -3732,21 +4934,52 @@ app.post('/likes', authMiddleware, (req, res) => {
     if (vidx !== -1) {
       videos[vidx].likes = String(likesCount);
       videos[vidx].dislikes = String(dislikesCount);
-      writeVideos(videos);
+      await saveVideos(videos);
     }
 
     return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
   } catch (err) { console.error('POST /likes error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.delete('/likes', authMiddleware, (req, res) => {
+app.delete('/likes', authMiddleware, async (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
+    const videos = await loadVideos();
+    const vidx = findVideoIndexById(videos, videoId);
+    if (DB_ENABLED) {
+      let likesCount = Number((vidx !== -1 ? (videos[vidx].likes || 0) : 0)) || 0;
+      const { rows } = await dbQuery(
+        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
+        [String(videoId), String(userId)]
+      );
+      const prevLiked = Boolean(rows[0]?.is_liked);
+      const prevDisliked = Boolean(rows[0]?.is_disliked);
+      let nextLiked = prevLiked;
+
+      if (prevLiked) {
+        nextLiked = false;
+        likesCount = Math.max(0, likesCount - 1);
+      }
+
+      await dbQuery(
+        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
+         VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (video_id, user_id)
+         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
+        [String(videoId), String(userId), nextLiked, prevDisliked]
+      );
+
+      if (vidx !== -1) {
+        videos[vidx].likes = String(likesCount);
+        await saveVideos(videos);
+      }
+
+      return res.json({ success: true, likes: likesCount });
+    }
+
     const reactions = readVideoReactions();
-    const videos = readVideos();
-    const vidx = findVideoIndexById(videoId);
 
     reactions.likes[videoId] = reactions.likes[videoId] || {};
 
@@ -3760,7 +4993,7 @@ app.delete('/likes', authMiddleware, (req, res) => {
     writeVideoReactions(reactions);
     if (vidx !== -1) {
       videos[vidx].likes = String(likesCount);
-      writeVideos(videos);
+      await saveVideos(videos);
     }
 
     return res.json({ success: true, likes: likesCount });
@@ -3768,14 +5001,52 @@ app.delete('/likes', authMiddleware, (req, res) => {
 });
 
 // Dislike/un-dislike endpoints (require auth)
-app.post('/dislikes', authMiddleware, (req, res) => {
+app.post('/dislikes', authMiddleware, async (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
+    const videos = await loadVideos();
+    const vidx = findVideoIndexById(videos, videoId);
+    if (DB_ENABLED) {
+      let likesCount = Number((vidx !== -1 ? (videos[vidx].likes || 0) : 0)) || 0;
+      let dislikesCount = Number((vidx !== -1 ? (videos[vidx].dislikes || 0) : 0)) || 0;
+      const { rows } = await dbQuery(
+        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
+        [String(videoId), String(userId)]
+      );
+      const prevLiked = Boolean(rows[0]?.is_liked);
+      const prevDisliked = Boolean(rows[0]?.is_disliked);
+      let nextLiked = prevLiked;
+      let nextDisliked = prevDisliked;
+
+      if (!prevDisliked) {
+        nextDisliked = true;
+        dislikesCount += 1;
+      }
+      if (prevLiked) {
+        nextLiked = false;
+        likesCount = Math.max(0, likesCount - 1);
+      }
+
+      await dbQuery(
+        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
+         VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (video_id, user_id)
+         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
+        [String(videoId), String(userId), nextLiked, nextDisliked]
+      );
+
+      if (vidx !== -1) {
+        videos[vidx].likes = String(likesCount);
+        videos[vidx].dislikes = String(dislikesCount);
+        await saveVideos(videos);
+      }
+
+      return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
+    }
+
     const reactions = readVideoReactions();
-    const videos = readVideos();
-    const vidx = findVideoIndexById(videoId);
 
     reactions.likes[videoId] = reactions.likes[videoId] || {};
     reactions.dislikes[videoId] = reactions.dislikes[videoId] || {};
@@ -3796,21 +5067,52 @@ app.post('/dislikes', authMiddleware, (req, res) => {
     if (vidx !== -1) {
       videos[vidx].likes = String(likesCount);
       videos[vidx].dislikes = String(dislikesCount);
-      writeVideos(videos);
+      await saveVideos(videos);
     }
 
     return res.json({ success: true, likes: likesCount, dislikes: dislikesCount });
   } catch (err) { console.error('POST /dislikes error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
-app.delete('/dislikes', authMiddleware, (req, res) => {
+app.delete('/dislikes', authMiddleware, async (req, res) => {
   try {
     const { videoId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     const userId = req.user.id;
+    const videos = await loadVideos();
+    const vidx = findVideoIndexById(videos, videoId);
+    if (DB_ENABLED) {
+      let dislikesCount = Number((vidx !== -1 ? (videos[vidx].dislikes || 0) : 0)) || 0;
+      const { rows } = await dbQuery(
+        'SELECT is_liked, is_disliked FROM video_reactions WHERE video_id = $1 AND user_id = $2',
+        [String(videoId), String(userId)]
+      );
+      const prevLiked = Boolean(rows[0]?.is_liked);
+      const prevDisliked = Boolean(rows[0]?.is_disliked);
+      let nextDisliked = prevDisliked;
+
+      if (prevDisliked) {
+        nextDisliked = false;
+        dislikesCount = Math.max(0, dislikesCount - 1);
+      }
+
+      await dbQuery(
+        `INSERT INTO video_reactions (video_id, user_id, is_liked, is_disliked, updated_at)
+         VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (video_id, user_id)
+         DO UPDATE SET is_liked = EXCLUDED.is_liked, is_disliked = EXCLUDED.is_disliked, updated_at = now()`,
+        [String(videoId), String(userId), prevLiked, nextDisliked]
+      );
+
+      if (vidx !== -1) {
+        videos[vidx].dislikes = String(dislikesCount);
+        await saveVideos(videos);
+      }
+
+      return res.json({ success: true, dislikes: dislikesCount });
+    }
+
     const reactions = readVideoReactions();
-    const videos = readVideos();
-    const vidx = findVideoIndexById(videoId);
 
     reactions.dislikes[videoId] = reactions.dislikes[videoId] || {};
 
@@ -3824,7 +5126,7 @@ app.delete('/dislikes', authMiddleware, (req, res) => {
     writeVideoReactions(reactions);
     if (vidx !== -1) {
       videos[vidx].dislikes = String(dislikesCount);
-      writeVideos(videos);
+      await saveVideos(videos);
     }
 
     return res.json({ success: true, dislikes: dislikesCount });
@@ -3882,20 +5184,38 @@ app.delete('/claims', authMiddleware, (req, res) => {
 });
 
 // ===== STAFF ADMIN ENDPOINTS =====
-const STAFF_FILE = path.join(PERSIST_DIR, 'staff.json');
+const STAFF_FILE = path.join(__dirname, 'staff.json');
 
 const readStaff = () => {
   try {
+    if (DB_ENABLED) {
+      if (staffCache) return staffCache;
+      if (fs.existsSync(STAFF_FILE)) {
+        const data = fs.readFileSync(STAFF_FILE, 'utf8');
+        staffCache = JSON.parse(data);
+        return staffCache;
+      }
+      return DEFAULT_STAFF_STATE;
+    }
     const data = fs.readFileSync(STAFF_FILE, 'utf8');
     return JSON.parse(data);
   } catch (err) {
     console.error('Error reading staff.json:', err);
-    return { employees: [], pendingAccounts: [], reports: [], shadowDeleted: [], notifications: [] };
+    return DEFAULT_STAFF_STATE;
   }
 };
 
 const writeStaff = (data) => {
   try {
+    if (DB_ENABLED) {
+      staffCache = data;
+      dbQuery(
+        `INSERT INTO staff_state (id, payload, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+        ['staff_state', data]
+      ).catch((err) => console.error('write staff state db error', err));
+    }
     fs.writeFileSync(STAFF_FILE, JSON.stringify(data, null, 2));
   } catch (err) {
     console.error('Error writing staff.json:', err);
@@ -4511,7 +5831,7 @@ app.post('/videos/:id/report', (req, res) => {
 });
 
 // Shadow delete video (hides without permanent deletion)
-app.post('/staff/shadow-delete/:videoId', (req, res) => {
+app.post('/staff/shadow-delete/:videoId', async (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -4520,7 +5840,7 @@ app.post('/staff/shadow-delete/:videoId', (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    const videos = await loadVideos();
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -4533,7 +5853,7 @@ app.post('/staff/shadow-delete/:videoId', (req, res) => {
     video.shadowDeletedAt = new Date().toISOString();
     video.shadowDeleteReason = reason;
 
-    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
+    await saveVideos(videos);
 
     // Track in staff file
     const staff = readStaff();
@@ -4580,7 +5900,7 @@ app.get('/staff/user-history/:userId', (req, res) => {
 });
 
 // Get all videos (admin)
-app.get('/staff/videos', (req, res) => {
+app.get('/staff/videos', async (req, res) => {
   try {
     const { employeeId } = req.query;
 
@@ -4588,7 +5908,7 @@ app.get('/staff/videos', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    const videos = await loadVideos();
     const staff = readStaff();
 
     // Attach report counts to each video
@@ -4616,6 +5936,14 @@ app.get('/staff/users', (req, res) => {
     if (parseInt(employeeId) !== 1000) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
+    if (DB_ENABLED) {
+      return dbQuery('SELECT * FROM users ORDER BY created_at DESC')
+        .then(({ rows }) => res.json({ users: rows.map(mapUserRow) }))
+        .catch((err) => {
+          console.error('Get users db error:', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
 
     const users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     return res.json({ users });
@@ -4626,7 +5954,7 @@ app.get('/staff/users', (req, res) => {
 });
 
 // Delete video (admin)
-app.delete('/staff/delete-video/:videoId', (req, res) => {
+app.delete('/staff/delete-video/:videoId', async (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -4635,7 +5963,7 @@ app.delete('/staff/delete-video/:videoId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    let videos = await loadVideos();
     const videoIndex = videos.findIndex(v => v.id === videoId);
 
     if (videoIndex === -1) {
@@ -4643,7 +5971,7 @@ app.delete('/staff/delete-video/:videoId', (req, res) => {
     }
 
     const deletedVideo = videos.splice(videoIndex, 1)[0];
-    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
+    await saveVideos(videos);
 
     // Log deletion
     const staff = readStaff();
@@ -4665,7 +5993,7 @@ app.delete('/staff/delete-video/:videoId', (req, res) => {
 });
 
 // Hide video (admin)
-app.post('/staff/hide-video/:videoId', (req, res) => {
+app.post('/staff/hide-video/:videoId', async (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -4674,7 +6002,7 @@ app.post('/staff/hide-video/:videoId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    let videos = await loadVideos();
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -4685,7 +6013,7 @@ app.post('/staff/hide-video/:videoId', (req, res) => {
     video.hiddenReason = reason;
     video.hiddenBy = parseInt(employeeId);
     video.hiddenAt = new Date().toISOString();
-    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
+    await saveVideos(videos);
 
     // Log hiding
     const staff = readStaff();
@@ -4714,11 +6042,278 @@ app.get('/staff/requests', (req, res) => {
     if (parseInt(employeeId) !== 1000) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
+    if (DB_ENABLED) {
+      return dbQuery('SELECT * FROM requests ORDER BY created_at DESC')
+        .then(({ rows }) => {
+          const requests = rows.map((row) => applyRequestAmountPresentation({
+            id: row.id,
+            title: row.title,
+            description: row.description,
+            likes: Number(row.likes || 0),
+            comments: Number(row.comments || 0),
+            boosts: Number(row.boosts || 0),
+            amount: row.amount != null ? Number(row.amount) : 0,
+            funding: row.funding != null ? Number(row.funding) : 0,
+            isTrending: Boolean(row.is_trending),
+            isSponsored: Boolean(row.is_sponsored),
+            company: row.company,
+            companyInitial: row.company_initial,
+            companyColor: row.company_color,
+            imageUrl: row.image_url,
+            creatorId: row.creator_id,
+            creatorName: row.creator_name,
+            creatorEmail: row.creator_email,
+            createdBy: row.created_by,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            currentStep: row.current_step,
+            claimed: row.claimed,
+            claimedBy: row.claimed_by,
+            claimedAt: row.claimed_at,
+            meta: row.meta
+          }));
+          return res.json({ requests });
+        })
+        .catch((err) => {
+          console.error('Get requests db error:', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
 
-    const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
+    const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8')).map((request) => applyRequestAmountPresentation(request));
     return res.json({ requests });
   } catch (err) {
     console.error('Get requests error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Override request amount (admin)
+app.post('/staff/requests/:requestId/override-amount', (req, res) => {
+  try {
+    const { employeeId, amount, reason, actorId } = req.body || {};
+    const requestId = req.params.requestId;
+
+    const numericEmployeeId = parseInt(employeeId ?? req.query?.employeeId, 10);
+    if (!Number.isFinite(numericEmployeeId)) {
+      console.error('Override amount: invalid employeeId', employeeId);
+      return res.status(400).json({ error: 'Missing or invalid employeeId' });
+    }
+
+    const staff = readStaff();
+    // Use loose comparison (==) so numeric vs string IDs both match
+    const employee = staff.employees.find(e => Number(e.id) === numericEmployeeId);
+    const normalizedRole = String(employee?.role || '').trim().toLowerCase();
+    const isAuthorized =
+      numericEmployeeId === 1000 ||
+      !!employee?.approvalAuthority ||
+      normalizedRole === 'administrator' ||
+      normalizedRole === 'admin' ||
+      normalizedRole === 'staff';
+
+    if (!isAuthorized) {
+      console.error('Override amount: unauthorized employee', numericEmployeeId, 'role:', normalizedRole, 'found:', !!employee);
+      return res.status(403).json({ error: 'Unauthorized - employee not found or lacks permission' });
+    }
+
+    // Use actorId for audit trail if provided (actual staff who made the change)
+    const auditEmployeeId = (actorId && Number.isFinite(parseInt(actorId, 10))) ? parseInt(actorId, 10) : numericEmployeeId;
+
+    const nextAmount = Number(amount);
+    if (!Number.isFinite(nextAmount) || nextAmount < 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
+
+    if (DB_ENABLED) {
+      return dbQuery('SELECT amount, funding, meta FROM requests WHERE id = $1 LIMIT 1', [requestId])
+        .then(({ rows }) => {
+          const row = rows[0];
+          if (!row) return res.status(404).json({ error: 'Request not found' });
+
+          const currentMeta = row.meta || {};
+          const paidAmount = getPaidAmountFromRequest({ amount: row.amount, funding: row.funding, meta: currentMeta });
+          const originalAmount = Number(currentMeta.staffAmountOverrideOriginal ?? paidAmount) || 0;
+
+          const nextMeta = {
+            ...currentMeta,
+            paidAmount,
+            staffAmountOverrideOriginal: originalAmount,
+            staffAmountOverride: {
+              active: true,
+              amount: nextAmount,
+              reason: reason || '',
+              overriddenBy: auditEmployeeId,
+              overriddenAt: new Date().toISOString(),
+              originalAmount
+            }
+          };
+
+          return dbQuery(
+            'UPDATE requests SET meta = $1::jsonb, updated_at = NOW() WHERE id = $2',
+            [JSON.stringify(nextMeta), requestId]
+          ).then(() => {
+            return res.json({
+              success: true,
+              message: 'Request amount overridden',
+              request: applyRequestAmountPresentation({
+                id: requestId,
+                amount: row.amount,
+                funding: row.funding,
+                meta: nextMeta
+              })
+            });
+          });
+        })
+        .catch((err) => {
+          console.error('Override request amount db error:', err);
+          return res.status(500).json({ error: 'Database error: ' + (err.message || 'unknown') });
+        });
+    }
+
+    const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
+    const request = requests.find(r => String(r.id) === String(requestId));
+    if (!request) return res.status(404).json({ error: 'Request not found' });
+
+    const currentMeta = request.meta || {};
+    const previousAmount = getPaidAmountFromRequest(request);
+    const originalAmount = Number(currentMeta.staffAmountOverrideOriginal ?? previousAmount) || 0;
+    const nextMeta = {
+      ...currentMeta,
+      paidAmount: previousAmount,
+      staffAmountOverrideOriginal: originalAmount,
+      staffAmountOverride: {
+        active: true,
+        amount: nextAmount,
+        reason: reason || '',
+        overriddenBy: auditEmployeeId,
+        overriddenAt: new Date().toISOString(),
+        originalAmount
+      }
+    };
+
+    request.meta = nextMeta;
+    request.updatedAt = new Date().toISOString();
+
+    fs.writeFileSync(REQUESTS_FILE, JSON.stringify(requests, null, 2));
+
+    return res.json({
+      success: true,
+      message: 'Request amount overridden',
+      request: applyRequestAmountPresentation(request)
+    });
+  } catch (err) {
+    console.error('Override request amount error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Revert request amount override (admin)
+app.post('/staff/requests/:requestId/revert-amount', (req, res) => {
+  try {
+    const { employeeId, reason, actorId } = req.body || {};
+    const requestId = req.params.requestId;
+
+    const numericEmployeeId = parseInt(employeeId ?? req.query?.employeeId, 10);
+    if (!Number.isFinite(numericEmployeeId)) {
+      return res.status(400).json({ error: 'Missing or invalid employeeId' });
+    }
+
+    const staff = readStaff();
+    const employee = staff.employees.find(e => Number(e.id) === numericEmployeeId);
+    const normalizedRole = String(employee?.role || '').trim().toLowerCase();
+    const isAuthorized =
+      numericEmployeeId === 1000 ||
+      !!employee?.approvalAuthority ||
+      normalizedRole === 'administrator' ||
+      normalizedRole === 'admin' ||
+      normalizedRole === 'staff';
+
+    if (!isAuthorized) {
+      console.error('Revert amount: unauthorized employee', numericEmployeeId, 'role:', normalizedRole);
+      return res.status(403).json({ error: 'Unauthorized - employee not found or lacks permission' });
+    }
+
+    // Use actorId for audit trail if provided
+    const auditEmployeeId = (actorId && Number.isFinite(parseInt(actorId, 10))) ? parseInt(actorId, 10) : numericEmployeeId;
+
+    if (DB_ENABLED) {
+      return dbQuery('SELECT amount, funding, meta FROM requests WHERE id = $1 LIMIT 1', [requestId])
+        .then(({ rows }) => {
+          const row = rows[0];
+          if (!row) return res.status(404).json({ error: 'Request not found' });
+
+          const currentMeta = row.meta || {};
+          const overrideMeta = currentMeta.staffAmountOverride || {};
+          const paidAmount = getPaidAmountFromRequest({ amount: row.amount, funding: row.funding, meta: currentMeta });
+          const originalAmount = Number(currentMeta.staffAmountOverrideOriginal ?? overrideMeta.originalAmount ?? paidAmount);
+          const safeOriginalAmount = Number.isFinite(originalAmount) && originalAmount >= 0 ? originalAmount : 0;
+
+          const nextMeta = {
+            ...currentMeta,
+            paidAmount,
+            staffAmountOverride: {
+              ...overrideMeta,
+              active: false,
+              revertedBy: auditEmployeeId,
+              revertedAt: new Date().toISOString(),
+              revertReason: reason || ''
+            }
+          };
+
+          return dbQuery(
+            'UPDATE requests SET meta = $1::jsonb, updated_at = NOW() WHERE id = $2',
+            [JSON.stringify(nextMeta), requestId]
+          ).then(() => {
+            return res.json({
+              success: true,
+              message: 'Request amount reverted',
+              request: applyRequestAmountPresentation({
+                id: requestId,
+                amount: row.amount,
+                funding: row.funding,
+                meta: nextMeta
+              })
+            });
+          });
+        })
+        .catch((err) => {
+          console.error('Revert request amount db error:', err);
+          return res.status(500).json({ error: 'Database error: ' + (err.message || 'unknown') });
+        });
+    }
+
+    const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
+    const request = requests.find(r => String(r.id) === String(requestId));
+    if (!request) return res.status(404).json({ error: 'Request not found' });
+
+    const currentMeta = request.meta || {};
+    const overrideMeta = currentMeta.staffAmountOverride || {};
+    const paidAmount = getPaidAmountFromRequest(request);
+    const originalAmount = Number(currentMeta.staffAmountOverrideOriginal ?? overrideMeta.originalAmount ?? paidAmount);
+    const safeOriginalAmount = Number.isFinite(originalAmount) && originalAmount >= 0 ? originalAmount : 0;
+
+    request.meta = {
+      ...currentMeta,
+      paidAmount,
+      staffAmountOverride: {
+        ...overrideMeta,
+        active: false,
+        revertedBy: auditEmployeeId,
+        revertedAt: new Date().toISOString(),
+        revertReason: reason || ''
+      }
+    };
+    request.updatedAt = new Date().toISOString();
+
+    fs.writeFileSync(REQUESTS_FILE, JSON.stringify(requests, null, 2));
+
+    return res.json({
+      success: true,
+      message: 'Request amount reverted',
+      request: applyRequestAmountPresentation(request)
+    });
+  } catch (err) {
+    console.error('Revert request amount error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4731,6 +6326,30 @@ app.delete('/staff/delete-request/:requestId', (req, res) => {
 
     if (parseInt(employeeId) !== 1000) {
       return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (DB_ENABLED) {
+      return dbQuery('DELETE FROM requests WHERE id = $1', [requestId])
+        .then(({ rowCount }) => {
+          if (!rowCount) return res.status(404).json({ error: 'Request not found' });
+
+          const staff = readStaff();
+          if (!staff.deletionLog) staff.deletionLog = [];
+          staff.deletionLog.push({
+            type: 'request',
+            id: requestId,
+            reason,
+            deletedBy: parseInt(employeeId),
+            createdAt: new Date().toISOString()
+          });
+          writeStaff(staff);
+
+          return res.json({ success: true, message: 'Request deleted' });
+        })
+        .catch((err) => {
+          console.error('Delete request db error:', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
     }
 
     let requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
@@ -4772,6 +6391,40 @@ app.post('/staff/hide-request/:requestId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
+    if (DB_ENABLED) {
+      return dbQuery('SELECT meta FROM requests WHERE id = $1', [requestId])
+        .then(({ rows }) => {
+          if (!rows[0]) return res.status(404).json({ error: 'Request not found' });
+          const meta = rows[0].meta || {};
+          const hiddenInfo = {
+            hidden: true,
+            hiddenReason: reason,
+            hiddenBy: parseInt(employeeId),
+            hiddenAt: new Date().toISOString()
+          };
+          return dbQuery(
+            'UPDATE requests SET meta = $1 WHERE id = $2',
+            [{ ...meta, ...hiddenInfo }, requestId]
+          ).then(() => {
+            const staff = readStaff();
+            if (!staff.hiddenLog) staff.hiddenLog = [];
+            staff.hiddenLog.push({
+              type: 'request',
+              id: requestId,
+              reason,
+              hiddenBy: parseInt(employeeId),
+              createdAt: new Date().toISOString()
+            });
+            writeStaff(staff);
+            return res.json({ success: true, message: 'Request hidden' });
+          });
+        })
+        .catch((err) => {
+          console.error('Hide request db error:', err);
+          return res.status(500).json({ error: 'Server error' });
+        });
+    }
+
     let requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
     const request = requests.find(r => r.id === requestId);
 
@@ -4805,7 +6458,7 @@ app.post('/staff/hide-request/:requestId', (req, res) => {
 });
 
 // Get all comments (admin)
-app.get('/staff/comments', (req, res) => {
+app.get('/staff/comments', async (req, res) => {
   try {
     const { employeeId } = req.query;
 
@@ -4813,7 +6466,7 @@ app.get('/staff/comments', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    const comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
+    const comments = await loadComments();
     return res.json({ comments });
   } catch (err) {
     console.error('Get comments error:', err);
@@ -4822,7 +6475,7 @@ app.get('/staff/comments', (req, res) => {
 });
 
 // Delete comment (admin)
-app.delete('/staff/delete-comment/:commentId', (req, res) => {
+app.delete('/staff/delete-comment/:commentId', async (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const commentId = req.params.commentId;
@@ -4831,7 +6484,7 @@ app.delete('/staff/delete-comment/:commentId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
+    let comments = await loadComments();
     const commentIndex = comments.findIndex(c => c.id === commentId);
 
     if (commentIndex === -1) {
@@ -4839,7 +6492,7 @@ app.delete('/staff/delete-comment/:commentId', (req, res) => {
     }
 
     const deletedComment = comments.splice(commentIndex, 1)[0];
-    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
+    await saveComments(comments);
 
     // Log deletion
     const staff = readStaff();
@@ -4861,7 +6514,7 @@ app.delete('/staff/delete-comment/:commentId', (req, res) => {
 });
 
 // Hide comment (admin)
-app.post('/staff/hide-comment/:commentId', (req, res) => {
+app.post('/staff/hide-comment/:commentId', async (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const commentId = req.params.commentId;
@@ -4870,7 +6523,7 @@ app.post('/staff/hide-comment/:commentId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
+    let comments = await loadComments();
     const comment = comments.find(c => c.id === commentId);
 
     if (!comment) {
@@ -4881,7 +6534,7 @@ app.post('/staff/hide-comment/:commentId', (req, res) => {
     comment.hiddenReason = reason;
     comment.hiddenBy = parseInt(employeeId);
     comment.hiddenAt = new Date().toISOString();
-    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
+    await saveComments(comments);
 
     // Log hiding
     const staff = readStaff();
@@ -4903,7 +6556,7 @@ app.post('/staff/hide-comment/:commentId', (req, res) => {
 });
 
 // Update video metadata (admin only)
-app.put('/staff/videos/:videoId', (req, res) => {
+app.put('/staff/videos/:videoId', async (req, res) => {
   try {
     const { employeeId, title, description, tags, overlays } = req.body;
     
@@ -4911,7 +6564,7 @@ app.put('/staff/videos/:videoId', (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    const videos = await loadVideos();
     const video = videos.find(v => v.id === req.params.videoId);
 
     if (!video) {
@@ -4925,7 +6578,7 @@ app.put('/staff/videos/:videoId', (req, res) => {
     video.modifiedBy = parseInt(employeeId);
     video.modifiedAt = new Date().toISOString();
 
-    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
+    await saveVideos(videos);
 
     return res.json({ success: true, video });
   } catch (err) {
@@ -4935,7 +6588,7 @@ app.put('/staff/videos/:videoId', (req, res) => {
 });
 
 // Apply user action (warn, ban, shadow ban, delete) - admin only
-app.post('/staff/user-action/:userId', (req, res) => {
+app.post('/staff/user-action/:userId', async (req, res) => {
   try {
     const { employeeId, action, reason } = req.body;
     const userId = req.params.userId;
@@ -5000,15 +6653,7 @@ app.post('/staff/user-action/:userId', (req, res) => {
     writeStaff(staff);
 
     // Create a notification for the user who received the action
-    const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-    let notifications = [];
-    try { 
-      if (fs.existsSync(SUG_FILE)) {
-        notifications = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); 
-      }
-    } catch (e) { 
-      console.error('Error reading notifications:', e);
-    }
+    let notifications = await loadNotifications();
 
     // Build notification message based on action type
     let notificationMessage = '';
@@ -5054,7 +6699,7 @@ app.post('/staff/user-action/:userId', (req, res) => {
       requiresAcknowledgment: true
     });
 
-    fs.writeFileSync(SUG_FILE, JSON.stringify(notifications, null, 2));
+    await saveNotifications(notifications);
 
     console.log(`User action applied: ${action} on user ${userId}`);
     return res.json({ success: true, message: `User ${action} applied`, user });
@@ -5065,7 +6710,7 @@ app.post('/staff/user-action/:userId', (req, res) => {
 });
 
 // POST /staff/undo-user-action/:userId - Undo a user action
-app.post('/staff/undo-user-action/:userId', (req, res) => {
+app.post('/staff/undo-user-action/:userId', async (req, res) => {
   try {
     const { employeeId, action } = req.body;
     const userId = req.params.userId;
@@ -5124,22 +6769,14 @@ app.post('/staff/undo-user-action/:userId', (req, res) => {
     writeStaff(staff);
 
     // Remove the notification for the user
-    const SUG_FILE = path.join(PERSIST_DIR, 'suggestions.json');
-    let notifications = [];
-    try { 
-      if (fs.existsSync(SUG_FILE)) {
-        notifications = JSON.parse(fs.readFileSync(SUG_FILE, 'utf8') || '[]'); 
-      }
-    } catch (e) { 
-      console.error('Error reading notifications:', e);
-    }
+    let notifications = await loadNotifications();
 
     // Remove notifications for this user action
     notifications = notifications.filter(n => 
       !(n.to && n.to.id === userId && n.action === action && n.type === 'staff_action')
     );
 
-    fs.writeFileSync(SUG_FILE, JSON.stringify(notifications, null, 2));
+    await saveNotifications(notifications);
 
     return res.json({ success: true, message: `User ${action} undone`, user });
   } catch (err) {
@@ -5167,7 +6804,7 @@ app.post('/reports', (req, res) => {
     }
 
     // Handle file upload
-    upload.array('evidenceFiles', 5)(req, res, (err) => {
+    upload.array('evidenceFiles', 5)(req, res, async (err) => {
       if (err) {
         return res.status(400).json({ error: 'File upload failed: ' + err.message });
       }
@@ -5184,6 +6821,17 @@ app.post('/reports', (req, res) => {
         if (!staff.reports) staff.reports = [];
 
         // Create report entry with evidence files
+        const evidenceFiles = await Promise.all((req.files || []).map(async (file) => {
+          const url = await persistUploadedFile(req, file, 'evidence');
+          return {
+            filename: file.filename,
+            originalName: file.originalname,
+            size: file.size,
+            path: url,
+            uploadedAt: new Date().toISOString()
+          };
+        }));
+
         const report = {
           id: `report_${Date.now()}`,
           videoId: videoId,
@@ -5193,13 +6841,7 @@ app.post('/reports', (req, res) => {
           reporterEmail: reporterEmail || null,
           createdAt: new Date().toISOString(),
           status: 'pending',
-          evidenceFiles: (req.files || []).map(file => ({
-            filename: file.filename,
-            originalName: file.originalname,
-            size: file.size,
-            path: file.path,
-            uploadedAt: new Date().toISOString()
-          }))
+          evidenceFiles
         };
 
         staff.reports.push(report);
@@ -5218,7 +6860,7 @@ app.post('/reports', (req, res) => {
 });
 
 // Undo hide video
-app.post('/staff/undo-hide-video/:videoId', (req, res) => {
+app.post('/staff/undo-hide-video/:videoId', async (req, res) => {
   try {
     const { employeeId } = req.body;
     const videoId = req.params.videoId;
@@ -5227,7 +6869,7 @@ app.post('/staff/undo-hide-video/:videoId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    let videos = await loadVideos();
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5238,7 +6880,7 @@ app.post('/staff/undo-hide-video/:videoId', (req, res) => {
     video.hiddenReason = null;
     video.hiddenBy = null;
     video.hiddenAt = null;
-    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
+    await saveVideos(videos);
 
     // Log undo
     const staff = readStaff();
@@ -5259,7 +6901,7 @@ app.post('/staff/undo-hide-video/:videoId', (req, res) => {
 });
 
 // Delete video permanently
-app.post('/staff/delete-video/:videoId', (req, res) => {
+app.post('/staff/delete-video/:videoId', async (req, res) => {
   try {
     const { employeeId, reason } = req.body;
     const videoId = req.params.videoId;
@@ -5268,7 +6910,7 @@ app.post('/staff/delete-video/:videoId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    let videos = await loadVideos();
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5279,7 +6921,7 @@ app.post('/staff/delete-video/:videoId', (req, res) => {
     video.deletedReason = reason;
     video.deletedBy = parseInt(employeeId);
     video.deletedAt = new Date().toISOString();
-    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
+    await saveVideos(videos);
 
     // Log deletion
     const staff = readStaff();
@@ -5301,7 +6943,7 @@ app.post('/staff/delete-video/:videoId', (req, res) => {
 });
 
 // Undo delete video
-app.post('/staff/undo-delete-video/:videoId', (req, res) => {
+app.post('/staff/undo-delete-video/:videoId', async (req, res) => {
   try {
     const { employeeId } = req.body;
     const videoId = req.params.videoId;
@@ -5310,7 +6952,7 @@ app.post('/staff/undo-delete-video/:videoId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    let videos = await loadVideos();
     const video = videos.find(v => v.id === videoId);
 
     if (!video) {
@@ -5321,7 +6963,7 @@ app.post('/staff/undo-delete-video/:videoId', (req, res) => {
     video.deletedReason = null;
     video.deletedBy = null;
     video.deletedAt = null;
-    fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videos, null, 2));
+    await saveVideos(videos);
 
     // Log undo
     const staff = readStaff();
@@ -5424,7 +7066,7 @@ app.post('/staff/undo-delete-request/:requestId', (req, res) => {
 });
 
 // Undo hide comment
-app.post('/staff/undo-hide-comment/:commentId', (req, res) => {
+app.post('/staff/undo-hide-comment/:commentId', async (req, res) => {
   try {
     const { employeeId } = req.body;
     const commentId = req.params.commentId;
@@ -5433,7 +7075,7 @@ app.post('/staff/undo-hide-comment/:commentId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
+    let comments = await loadComments();
     const comment = comments.find(c => c.id === commentId);
 
     if (!comment) {
@@ -5444,7 +7086,7 @@ app.post('/staff/undo-hide-comment/:commentId', (req, res) => {
     comment.hiddenReason = null;
     comment.hiddenBy = null;
     comment.hiddenAt = null;
-    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
+    await saveComments(comments);
 
     // Log undo
     const staff = readStaff();
@@ -5465,7 +7107,7 @@ app.post('/staff/undo-hide-comment/:commentId', (req, res) => {
 });
 
 // Undo delete comment
-app.post('/staff/undo-delete-comment/:commentId', (req, res) => {
+app.post('/staff/undo-delete-comment/:commentId', async (req, res) => {
   try {
     const { employeeId } = req.body;
     const commentId = req.params.commentId;
@@ -5474,7 +7116,7 @@ app.post('/staff/undo-delete-comment/:commentId', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let comments = JSON.parse(fs.readFileSync(COMMENTS_FILE, 'utf8'));
+    let comments = await loadComments();
     const comment = comments.find(c => c.id === commentId);
 
     if (!comment) {
@@ -5485,7 +7127,7 @@ app.post('/staff/undo-delete-comment/:commentId', (req, res) => {
     comment.deletedReason = null;
     comment.deletedBy = null;
     comment.deletedAt = null;
-    fs.writeFileSync(COMMENTS_FILE, JSON.stringify(comments, null, 2));
+    await saveComments(comments);
 
     // Log undo
     const staff = readStaff();
@@ -5506,7 +7148,7 @@ app.post('/staff/undo-delete-comment/:commentId', (req, res) => {
 });
 
 // Get user activity metrics for staff (for filtering and insights)
-app.get('/staff/user-metrics', (req, res) => {
+app.get('/staff/user-metrics', async (req, res) => {
   try {
     const { employeeId } = req.query;
 
@@ -5516,7 +7158,7 @@ app.get('/staff/user-metrics', (req, res) => {
 
     const users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
-    const videos = JSON.parse(fs.readFileSync(VIDEOS_FILE, 'utf8'));
+    const videos = await loadVideos();
 
     const userMetrics = users.map(user => {
       // Count requests created by user
@@ -5926,7 +7568,7 @@ function getSubscriptionBenefits(tier) {
 
 // ========== SUPPORT TICKETS SYSTEM ==========
 
-const SUPPORT_TICKETS_FILE = path.join(PERSIST_DIR, 'support_tickets.json');
+const SUPPORT_TICKETS_FILE = path.join(__dirname, 'support_tickets.json');
 
 // Helper function to check if user is staff
 function isUserStaff(userId) {
@@ -5958,8 +7600,46 @@ function writeSupportTickets(tickets) {
   }
 }
 
+const loadSupportTickets = async () => {
+  if (!DB_ENABLED) return readSupportTickets();
+  const { rows } = await dbQuery('SELECT payload FROM support_tickets ORDER BY created_at DESC');
+  return rows.map(row => row.payload);
+};
+
+const saveSupportTickets = async (tickets) => {
+  if (!DB_ENABLED) {
+    writeSupportTickets(tickets);
+    return;
+  }
+  const client = await dbPool.connect();
+  const ids = tickets.map(t => String(t.id));
+  try {
+    await client.query('BEGIN');
+    for (const ticket of tickets) {
+      const createdAt = ticket.createdAt ? new Date(ticket.createdAt) : new Date();
+      await client.query(
+        `INSERT INTO support_tickets (id, payload, created_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`,
+        [String(ticket.id), ticket, createdAt]
+      );
+    }
+    if (ids.length > 0) {
+      await client.query('DELETE FROM support_tickets WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+    } else {
+      await client.query('DELETE FROM support_tickets');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 // Submit a new support ticket (no auth required - customers can submit without logging in)
-app.post('/support/ticket', upload.array('file_', 5), (req, res) => {
+app.post('/support/ticket', upload.array('file_', 5), async (req, res) => {
   try {
     const { title, description, userId, userEmail } = req.body;
 
@@ -5985,7 +7665,7 @@ app.post('/support/ticket', upload.array('file_', 5), (req, res) => {
     }
 
     // Limit check: Check how many open tickets this user already has
-    const tickets = readSupportTickets();
+    const tickets = await loadSupportTickets();
     const existingOpenTickets = tickets.filter(t => 
       t.userEmail === userInfo.email && 
       ['open', 'in-progress'].includes(t.status)
@@ -6003,6 +7683,16 @@ app.post('/support/ticket', upload.array('file_', 5), (req, res) => {
 
     const users_list = readUsers();
     const user = users_list.find(u => u.id === userInfo.id);
+    const attachments = await Promise.all((req.files || []).map(async (f) => {
+      const url = await persistUploadedFile(req, f, 'support');
+      return {
+        filename: f.filename,
+        originalName: f.originalname,
+        size: f.size,
+        path: url
+      };
+    }));
+
     const ticket = {
       id: uniqueId,
       userId: userInfo.id,
@@ -6012,21 +7702,16 @@ app.post('/support/ticket', upload.array('file_', 5), (req, res) => {
       description: description.trim(),
       status: 'open', // open, in-progress, resolved, closed
       priority: 'normal',
-      attachments: (req.files || []).map(f => ({
-        filename: f.filename,
-        originalName: f.originalname,
-        size: f.size,
-        path: `/uploads/${f.filename}`
-      })),
+      attachments,
       responses: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
     // Save to file
-    const allTickets = readSupportTickets();
+    const allTickets = await loadSupportTickets();
     allTickets.push(ticket);
-    writeSupportTickets(allTickets);
+    await saveSupportTickets(allTickets);
 
     console.log(`Support ticket created: ${ticket.id} by ${userInfo.email}`);
 
@@ -6042,7 +7727,7 @@ app.post('/support/ticket', upload.array('file_', 5), (req, res) => {
 });
 
 // Get all support tickets (staff only - uses employeeId query param)
-app.get('/support/tickets', (req, res) => {
+app.get('/support/tickets', async (req, res) => {
   try {
     const employeeId = req.query.employeeId;
     const userEmail = req.query.userEmail;
@@ -6060,7 +7745,7 @@ app.get('/support/tickets', (req, res) => {
         return res.status(403).json({ error: 'Unauthorized - staff access required' });
       }
 
-      const tickets = readSupportTickets();
+      const tickets = await loadSupportTickets();
       console.log('Returning', tickets.length, 'support tickets');
       const sortedTickets = tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
@@ -6073,7 +7758,7 @@ app.get('/support/tickets', (req, res) => {
     
     // If userEmail is provided, serve customer view
     if (userEmail) {
-      const tickets = readSupportTickets();
+      const tickets = await loadSupportTickets();
       const userTickets = tickets.filter(t => t.userEmail === userEmail).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       
       return res.json({
@@ -6091,11 +7776,11 @@ app.get('/support/tickets', (req, res) => {
 });
 
 // Get single support ticket
-app.get('/support/ticket/:id', (req, res) => {
+app.get('/support/ticket/:id', async (req, res) => {
   try {
     const ticketId = req.params.id;
     const employeeId = req.query.employeeId;
-    const tickets = readSupportTickets();
+    const tickets = await loadSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6118,7 +7803,7 @@ app.get('/support/ticket/:id', (req, res) => {
 });
 
 // Update ticket status (staff only)
-app.put('/support/ticket/:id/status', (req, res) => {
+app.put('/support/ticket/:id/status', async (req, res) => {
   try {
     const ticketId = req.params.id;
     const { status, priority, employeeId } = req.body;
@@ -6128,7 +7813,7 @@ app.put('/support/ticket/:id/status', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = readSupportTickets();
+    const tickets = await loadSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6144,7 +7829,7 @@ app.put('/support/ticket/:id/status', (req, res) => {
     }
 
     ticket.updatedAt = new Date().toISOString();
-    writeSupportTickets(tickets);
+    await saveSupportTickets(tickets);
 
     return res.json({ success: true, ticket });
   } catch (err) {
@@ -6154,7 +7839,7 @@ app.put('/support/ticket/:id/status', (req, res) => {
 });
 
 // Add response to ticket (staff only)
-app.post('/support/ticket/:id/response', (req, res) => {
+app.post('/support/ticket/:id/response', async (req, res) => {
   try {
     const ticketId = req.params.id;
     const { message, employeeId } = req.body;
@@ -6168,7 +7853,7 @@ app.post('/support/ticket/:id/response', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = readSupportTickets();
+    const tickets = await loadSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6195,11 +7880,11 @@ app.post('/support/ticket/:id/response', (req, res) => {
     ticket.responses.push(response);
     ticket.updatedAt = new Date().toISOString();
 
-    writeSupportTickets(tickets);
+    await saveSupportTickets(tickets);
 
     // Create notification for customer
     try {
-      const notifFile = path.join(PERSIST_DIR, 'notifications.json');
+      const notifFile = path.join(__dirname, 'notifications.json');
       let notifications = [];
       if (fs.existsSync(notifFile)) {
         const data = fs.readFileSync(notifFile, 'utf-8');
@@ -6235,7 +7920,7 @@ app.post('/support/ticket/:id/response', (req, res) => {
 });
 
 // Add customer response to ticket
-app.post('/support/ticket/:id/customer-response', (req, res) => {
+app.post('/support/ticket/:id/customer-response', async (req, res) => {
   try {
     const ticketId = req.params.id;
     const { message, userEmail } = req.body;
@@ -6244,7 +7929,7 @@ app.post('/support/ticket/:id/customer-response', (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    const tickets = readSupportTickets();
+    const tickets = await loadSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6269,7 +7954,7 @@ app.post('/support/ticket/:id/customer-response', (req, res) => {
     ticket.customerResponses.push(customerResponse);
     ticket.updatedAt = new Date().toISOString();
 
-    writeSupportTickets(tickets);
+    await saveSupportTickets(tickets);
 
     console.log(`Customer response added to ticket ${ticketId}`);
 
@@ -6281,7 +7966,7 @@ app.post('/support/ticket/:id/customer-response', (req, res) => {
 });
 
 // Close ticket (staff only)
-app.post('/support/ticket/:id/close', (req, res) => {
+app.post('/support/ticket/:id/close', async (req, res) => {
   try {
     const ticketId = req.params.id;
     const { resolution, employeeId } = req.body;
@@ -6291,7 +7976,7 @@ app.post('/support/ticket/:id/close', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = readSupportTickets();
+    const tickets = await loadSupportTickets();
     const ticket = tickets.find(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (!ticket) {
@@ -6309,7 +7994,7 @@ app.post('/support/ticket/:id/close', (req, res) => {
     ticket.closedAt = new Date().toISOString();
     ticket.updatedAt = new Date().toISOString();
 
-    writeSupportTickets(tickets);
+    await saveSupportTickets(tickets);
 
     return res.json({ success: true, ticket });
   } catch (err) {
@@ -6319,7 +8004,7 @@ app.post('/support/ticket/:id/close', (req, res) => {
 });
 
 // Delete ticket (staff only)
-app.delete('/support/ticket/:id', (req, res) => {
+app.delete('/support/ticket/:id', async (req, res) => {
   try {
     const ticketId = req.params.id;
     const employeeId = req.query.employeeId;
@@ -6329,7 +8014,7 @@ app.delete('/support/ticket/:id', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized - staff access required' });
     }
 
-    const tickets = readSupportTickets();
+    const tickets = await loadSupportTickets();
     const ticketIdx = tickets.findIndex(t => t.id === ticketId || t.id === parseInt(ticketId));
 
     if (ticketIdx === -1) {
@@ -6338,7 +8023,7 @@ app.delete('/support/ticket/:id', (req, res) => {
 
     // Remove ticket
     const deletedTicket = tickets.splice(ticketIdx, 1)[0];
-    writeSupportTickets(tickets);
+    await saveSupportTickets(tickets);
 
     console.log(`Support ticket ${ticketId} deleted by employee ${employeeId}`);
 
@@ -6350,8 +8035,12 @@ app.delete('/support/ticket/:id', (req, res) => {
 });
 
 // Helper to read onboarding data
-const readOnboardingData = () => {
+const readOnboardingData = async () => {
   try {
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT payload FROM onboarding_info ORDER BY updated_at DESC');
+      return rows.map(r => r.payload);
+    }
     if (!fs.existsSync(ONBOARDING_FILE)) return [];
     return JSON.parse(fs.readFileSync(ONBOARDING_FILE, 'utf8'));
   } catch (err) {
@@ -6361,8 +8050,35 @@ const readOnboardingData = () => {
 };
 
 // Helper to write onboarding data
-const writeOnboardingData = (data) => {
+const writeOnboardingData = async (data) => {
   try {
+    if (DB_ENABLED) {
+      const client = await dbPool.connect();
+      const ids = data.map(d => String(d.id));
+      try {
+        await client.query('BEGIN');
+        for (const record of data) {
+          await client.query(
+            `INSERT INTO onboarding_info (id, user_id, payload, updated_at)
+             VALUES ($1, $2, $3, now())
+             ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+            [String(record.id), String(record.userId), record]
+          );
+        }
+        if (ids.length > 0) {
+          await client.query('DELETE FROM onboarding_info WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
+        } else {
+          await client.query('DELETE FROM onboarding_info');
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+      return;
+    }
     fs.writeFileSync(ONBOARDING_FILE, JSON.stringify(data, null, 2));
   } catch (err) {
     console.error('Error writing onboarding data:', err);
@@ -6370,7 +8086,7 @@ const writeOnboardingData = (data) => {
 };
 
 // POST: Save creator onboarding info
-app.post('/staff/onboarding-info', (req, res) => {
+app.post('/staff/onboarding-info', async (req, res) => {
   try {
     const { userId, userName, userEmail, creatorName, bio, introVideoUrl, socialMediaHandle, socialFollowers, completedAt, agreedTOS, agreedPrivacy } = req.body;
 
@@ -6378,7 +8094,7 @@ app.post('/staff/onboarding-info', (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const onboardingData = readOnboardingData();
+    const onboardingData = await readOnboardingData();
     
     // Check if this user already has an onboarding record
     const existingIndex = onboardingData.findIndex(o => o.userId === userId);
@@ -6407,7 +8123,7 @@ app.post('/staff/onboarding-info', (req, res) => {
       onboardingData.push(newRecord);
     }
 
-    writeOnboardingData(onboardingData);
+    await writeOnboardingData(onboardingData);
     console.log(`Onboarding info saved for user ${userId} (${creatorName})`);
 
     return res.json({ success: true, message: 'Onboarding info saved', record: newRecord });
@@ -6418,7 +8134,7 @@ app.post('/staff/onboarding-info', (req, res) => {
 });
 
 // GET: Retrieve all creator onboarding info (staff only)
-app.get('/staff/onboarding-info', (req, res) => {
+app.get('/staff/onboarding-info', async (req, res) => {
   try {
     const { employeeId } = req.query;
 
@@ -6426,7 +8142,7 @@ app.get('/staff/onboarding-info', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    const onboardingData = readOnboardingData();
+    const onboardingData = await readOnboardingData();
     const sortedData = onboardingData.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
 
     return res.json({ 

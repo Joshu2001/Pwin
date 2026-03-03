@@ -241,19 +241,18 @@ const RequestDetailsModal = ({ isOpen, onClose, requestData = {}, selectedLangua
         <>
             {/* Backdrop */}
             <div 
-                className="fixed inset-0 bg-black/40 z-[60]"
+                className="fixed inset-0 bg-black/40 z-40"
                 onClick={onClose}
                 style={{ animation: 'fadeIn 280ms ease-out' }}
             />
             {/* Modal */}
             <div 
-                className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center"
-                style={{ padding: '16px', paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
+                className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
                 onClick={(e) => e.target === e.currentTarget && onClose()}
             >
                 <div 
-                    className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-y-auto"
-                    style={{ animation: 'slideUp 300ms cubic-bezier(0.16, 1, 0.3, 1)', maxHeight: 'calc(90vh - env(safe-area-inset-bottom, 0px))' }}
+                    className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+                    style={{ animation: 'slideUp 300ms cubic-bezier(0.16, 1, 0.3, 1)' }}
                 >
                     <style>{`
                         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
@@ -406,7 +405,6 @@ const ClaimStatusPanel = ({
     onUnclaim = () => { },
     pendingReuploadItem = null,
     clearPendingReupload = () => { },
-    isProCreator = false,
 }) => {
     const [showModal, setShowModal] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -423,8 +421,12 @@ const ClaimStatusPanel = ({
     const [message, setMessage] = useState('');
     const [videoFile, setVideoFile] = useState(null);
     const [videoPreview, setVideoPreview] = useState(null);
+    const [videoInputMode, setVideoInputMode] = useState('link');
+    const [videoLinkInput, setVideoLinkInput] = useState('');
     const [thumbnailFile, setThumbnailFile] = useState(null);
     const [thumbnailPreview, setThumbnailPreview] = useState(null);
+    const [thumbnailInputMode, setThumbnailInputMode] = useState('file');
+    const [thumbnailLinkInput, setThumbnailLinkInput] = useState('');
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [validationError, setValidationError] = useState('');
@@ -441,6 +443,20 @@ const ClaimStatusPanel = ({
         window.addEventListener('storage', handleStorage);
         return () => window.removeEventListener('storage', handleStorage);
     }, []);
+
+    const normalizeInputVideoUrl = (raw) => {
+        if (!raw || typeof raw !== 'string') return '';
+        const trimmed = raw.trim();
+        if (!trimmed) return '';
+        const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+        try {
+            const parsed = new URL(withProtocol);
+            if (!/^https?:$/i.test(parsed.protocol)) return '';
+            return parsed.toString();
+        } catch {
+            return '';
+        }
+    };
 
     // Initialize Details button hint visibility (show only for first 2 views)
     useEffect(() => {
@@ -563,14 +579,6 @@ const ClaimStatusPanel = ({
     const [isReuploading, setIsReuploading] = useState(false);
     const [publishStep, setPublishStep] = useState('form');
     const [previewData, setPreviewData] = useState(null);
-
-    // YouTube link states for video and thumbnail
-    const [videoLinkMode, setVideoLinkMode] = useState(!isProCreator); // Default starter creators to link mode
-    const [videoLinkUrl, setVideoLinkUrl] = useState('');
-    const [thumbnailLinkMode, setThumbnailLinkMode] = useState(false);
-    const [thumbnailLinkUrl, setThumbnailLinkUrl] = useState('');
-    const [videoLinkDuration, setVideoLinkDuration] = useState('');
-    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
     // Status steps for the claim workflow (used to render the tracker and labels)
     const steps = [
@@ -895,6 +903,11 @@ const ClaimStatusPanel = ({
             setThumbnailPreview(item.thumbnail || null);
             setCategory(item.category || category || '');
             setScriptType(item.scriptType || scriptType || '');
+            const existingVideoUrl = item.videoUrl || item.url || item.src || item.videoLink || item.youtubeUrl || '';
+            if (existingVideoUrl) {
+                setVideoInputMode('link');
+                setVideoLinkInput(existingVideoUrl);
+            }
 
             if (item.openInForm) {
                 // Open the publish modal on the form step so the user can upload
@@ -1395,75 +1408,72 @@ const ClaimStatusPanel = ({
                                             <div className="mb-6">
                                                 <div className="flex items-center justify-between mb-2">
                                                     <div className="text-sm font-medium text-gray-700">{getTranslation('Upload Video', selectedLanguage)} <span className="text-red-500">*</span></div>
-                                                    <button type="button" onClick={() => {
-                                                        if (!videoLinkMode) {
-                                                            // Switching to link mode — always allowed
-                                                            setVideoLinkMode(true); setVideoFile(null); setVideoPreview(null);
-                                                        } else if (!isProCreator) {
-                                                            // Starter creator trying to upload from device — show upgrade modal
-                                                            setShowUpgradeModal(true);
-                                                        } else {
-                                                            // Pro creator switching to file upload
-                                                            setVideoLinkMode(false); setVideoLinkUrl('');
-                                                        }
-                                                    }} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
-                                                        <Link2 size={12} />
-                                                        {videoLinkMode ? (isProCreator ? getTranslation('Upload file instead', selectedLanguage) : getTranslation('Upload file instead', selectedLanguage)) : getTranslation('Add video link', selectedLanguage)}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setValidationError('');
+                                                            if (videoInputMode === 'link') {
+                                                                setVideoInputMode('file');
+                                                                setVideoLinkInput('');
+                                                            } else {
+                                                                setVideoInputMode('link');
+                                                                setVideoFile(null);
+                                                                if (videoPreview && videoPreview.startsWith('blob:')) {
+                                                                    try { URL.revokeObjectURL(videoPreview); } catch { }
+                                                                }
+                                                                setVideoPreview(null);
+                                                            }
+                                                        }}
+                                                        className="text-sm text-blue-600 hover:text-blue-700"
+                                                    >
+                                                        {videoInputMode === 'link' ? getTranslation('Upload file instead', selectedLanguage) : getTranslation('Add link instead', selectedLanguage)}
                                                     </button>
                                                 </div>
-                                                {videoLinkMode ? (
+                                                <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={(e) => {
+                                                    const file = e.target.files && e.target.files[0];
+                                                    if (file) {
+                                                        setVideoFile(file);
+                                                        const url = URL.createObjectURL(file);
+                                                        setVideoPreview(url);
+                                                    }
+                                                }} />
+
+                                                {videoInputMode === 'link' ? (
                                                     <>
                                                         <input
-                                                            type="url"
-                                                            value={videoLinkUrl}
-                                                            onChange={(e) => setVideoLinkUrl(e.target.value)}
-                                                            placeholder="https://example.com/video-url"
-                                                            className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm mb-1"
+                                                            value={videoLinkInput}
+                                                            onChange={(e) => setVideoLinkInput(e.target.value)}
+                                                            placeholder="https://youtube.com/watch?v=... or video URL"
+                                                            className="w-full rounded-lg px-4 py-3 text-sm"
+                                                            style={{ border: '2px solid #f97316' }}
+                                                            autoCapitalize="none"
+                                                            autoCorrect="off"
+                                                            spellCheck={false}
                                                         />
-                                                        <p className="text-xs mb-2 flex items-start gap-1" style={{ color: '#dc2626' }}>
-                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                                            <span>Privacy Requirement: If using YouTube, the video must be set to <strong>Unlisted</strong>. Do not set it to Public for privacy reasons, and do not set it to Private, as our servers will be unable to access and download it.</span>
-                                                        </p>
-                                                        {videoLinkUrl && (videoLinkUrl.includes('youtube.com') || videoLinkUrl.includes('youtu.be')) && (() => {
-                                                            let ytId = '';
-                                                            if (videoLinkUrl.includes('youtu.be/')) ytId = videoLinkUrl.split('youtu.be/')[1].split('?')[0];
-                                                            else { try { ytId = new URL(videoLinkUrl).searchParams.get('v') || ''; } catch {} }
-                                                            if (!ytId) return null;
-                                                            return (
-                                                                <div className="w-full rounded-lg overflow-hidden border border-gray-200 h-44 relative bg-black" style={{ borderRadius: 8 }}>
-                                                                    {/* Use YouTube thumbnail image instead of iframe to avoid all branding */}
-                                                                    <img
-                                                                        src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`}
-                                                                        alt="Video preview"
-                                                                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                                                                        onError={(e) => { e.target.src = `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`; }}
-                                                                    />
-                                                                    {/* Subtle dark overlay for contrast */}
-                                                                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.15)', zIndex: 2 }} />
-                                                                    {/* Play icon in center */}
-                                                                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 3, width: 48, height: 48, borderRadius: '50%', background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="6,3 20,12 6,21" /></svg>
+                                                        {/* YouTube embed preview */}
+                                                        {(() => {
+                                                            const ytMatch = videoLinkInput.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+                                                            if (ytMatch && ytMatch[1]) {
+                                                                return (
+                                                                    <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '2px solid #f97316', aspectRatio: '16/9' }}>
+                                                                        <iframe
+                                                                            src={`https://www.youtube-nocookie.com/embed/${ytMatch[1]}`}
+                                                                            className="w-full h-full border-0"
+                                                                            allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
+                                                                            allowFullScreen
+                                                                            title="YouTube preview"
+                                                                        />
                                                                     </div>
-                                                                    {/* YouTube link badge */}
-                                                                    <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 3, background: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 4, letterSpacing: '0.3px' }}>
-                                                                        YouTube Link
-                                                                    </div>
-                                                                </div>
-                                                            );
+                                                                );
+                                                            }
+                                                            return null;
                                                         })()}
-
+                                                        <div className="text-sm text-red-600 mt-2">
+                                                            {getTranslation('Privacy Requirement: If using YouTube, the video must be set to Unlisted. Do not set it to Public for privacy reasons, and do not set it to Private, as our servers will be unable to access and download it.', selectedLanguage)}
+                                                        </div>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={(e) => {
-                                                            const file = e.target.files && e.target.files[0];
-                                                            if (file) {
-                                                                setVideoFile(file);
-                                                                const url = URL.createObjectURL(file);
-                                                                setVideoPreview(url);
-                                                            }
-                                                        }} />
-
                                                         <div onClick={() => videoInputRef.current && videoInputRef.current.click()} className="w-full rounded-lg border-2 border-dashed border-gray-200 h-44 flex items-center justify-center cursor-pointer">
                                                             {videoPreview ? (
                                                                 <video src={videoPreview} className="max-h-[160px] max-w-full" controls />
@@ -1483,53 +1493,56 @@ const ClaimStatusPanel = ({
                                             </div>
 
                                             <div className="mb-6">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-sm font-medium text-gray-700">{getTranslation('Video Thumbnail', selectedLanguage)} <span className="text-red-500">*</span></div>
-                                                    <button type="button" onClick={() => { setThumbnailLinkMode(!thumbnailLinkMode); if (!thumbnailLinkMode) { setThumbnailFile(null); setThumbnailPreview(null); } else { setThumbnailLinkUrl(''); } }} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
-                                                        <Link2 size={12} />
-                                                        {thumbnailLinkMode ? getTranslation('Upload file instead', selectedLanguage) : getTranslation('Add link instead', selectedLanguage)}
-                                                    </button>
+                                                <div className="text-sm font-medium text-gray-700 mb-2">{getTranslation('Video Thumbnail', selectedLanguage)} <span className="text-red-500">*</span></div>
+                                                <div className="flex gap-2 mb-3">
+                                                    <button type="button" onClick={() => setThumbnailInputMode('file')} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${thumbnailInputMode === 'file' ? 'bg-[var(--color-gold)] text-white border-[var(--color-gold)]' : 'bg-white text-gray-500 border-gray-200'}`}>{getTranslation('Upload File', selectedLanguage)}</button>
+                                                    <button type="button" onClick={() => setThumbnailInputMode('link')} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${thumbnailInputMode === 'link' ? 'bg-[var(--color-gold)] text-white border-[var(--color-gold)]' : 'bg-white text-gray-500 border-gray-200'}`}>{getTranslation('Paste Link', selectedLanguage)}</button>
                                                 </div>
-                                                {thumbnailLinkMode ? (
+                                                <input ref={thumbInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                                    const file = e.target.files && e.target.files[0];
+                                                    if (file) {
+                                                        setThumbnailFile(file);
+                                                        const url = URL.createObjectURL(file);
+                                                        setThumbnailPreview(url);
+                                                    }
+                                                }} />
+
+                                                {thumbnailInputMode === 'link' ? (
                                                     <>
                                                         <input
-                                                            type="url"
-                                                            value={thumbnailLinkUrl}
-                                                            onChange={(e) => { setThumbnailLinkUrl(e.target.value); if (e.target.value) { setThumbnailPreview(e.target.value); } }}
+                                                            value={thumbnailLinkInput}
+                                                            onChange={(e) => {
+                                                                setThumbnailLinkInput(e.target.value);
+                                                                const url = e.target.value.trim();
+                                                                if (url && /^https?:\/\/.+/i.test(url)) setThumbnailPreview(url);
+                                                                else setThumbnailPreview(null);
+                                                            }}
                                                             placeholder="https://example.com/thumbnail.jpg"
-                                                            className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm mb-2"
+                                                            className="w-full rounded-lg px-4 py-3 text-sm"
+                                                            style={{ border: '2px solid #f97316' }}
+                                                            autoCapitalize="none"
+                                                            autoCorrect="off"
+                                                            spellCheck={false}
                                                         />
-                                                        {thumbnailLinkUrl && (
-                                                            <div className="w-full rounded-lg overflow-hidden border border-gray-200 h-32 bg-gray-50">
-                                                                <img src={thumbnailLinkUrl} alt="Thumbnail preview" className="object-cover w-full h-full" onError={(e) => { e.target.style.display = 'none'; }} />
+                                                        {thumbnailPreview && (
+                                                            <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '2px solid #f97316', maxHeight: 180 }}>
+                                                                <img src={thumbnailPreview} alt="Thumbnail preview" className="object-cover w-full h-full" style={{ maxHeight: 180 }} />
                                                             </div>
                                                         )}
                                                     </>
                                                 ) : (
                                                     <>
-                                                <input ref={thumbInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
-                                                    const file = e.target.files && e.target.files[0];
-                                                    if (file) {
-                                                        setThumbnailFile(file);
-                                                        // Use FileReader data URL for reliable preview (blob URLs break across sessions)
-                                                        const reader = new FileReader();
-                                                        reader.onloadend = () => setThumbnailPreview(reader.result);
-                                                        reader.readAsDataURL(file);
-                                                    }
-                                                }} />
-
-                                                <div onClick={() => thumbInputRef.current && thumbInputRef.current.click()} className="w-full rounded-lg border-2 border-dashed border-gray-200 h-32 flex items-center justify-center cursor-pointer overflow-hidden bg-white">
-                                                    {thumbnailPreview ? (
-                                                        <img src={thumbnailPreview} alt="Video thumbnail preview" className="object-cover w-full h-full" loading="lazy" />
-                                                    ) : (
-                                                        <div className="text-gray-400 flex flex-col items-center justify-center">
-                                                            <Image size={36} className="text-gray-300 mb-2" />
-                                                            <div>{getTranslation('Click to upload thumbnail', selectedLanguage)}</div>
+                                                        <div onClick={() => thumbInputRef.current && thumbInputRef.current.click()} className="w-full rounded-lg border-2 border-dashed border-gray-200 h-32 flex items-center justify-center cursor-pointer overflow-hidden bg-white">
+                                                            {thumbnailPreview ? (
+                                                                <img src={thumbnailPreview} alt="Video thumbnail preview" className="object-cover w-full h-full" loading="lazy" />
+                                                            ) : (
+                                                                <div className="text-gray-400 flex flex-col items-center justify-center">
+                                                                    <Image size={36} className="text-gray-300 mb-2" />
+                                                                    <div>{getTranslation('Click to upload thumbnail', selectedLanguage)}</div>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    )}
-                                                </div>
-
-                                                {thumbnailFile && <div className="text-xs text-gray-500 mt-2">{getTranslation('Selected:', selectedLanguage)} {thumbnailFile.name} ({Math.round(thumbnailFile.size / 1024)} KB)</div>}
+                                                        {thumbnailFile && <div className="text-xs text-gray-500 mt-2">{getTranslation('Selected:', selectedLanguage)} {thumbnailFile.name} ({Math.round(thumbnailFile.size / 1024)} KB)</div>}
                                                     </>
                                                 )}
 
@@ -1974,8 +1987,13 @@ const ClaimStatusPanel = ({
                                             onClick={async () => {
                                                 setValidationError('');
                                                 // basic validation (same as before)
-                                                if (!videoFile && !videoLinkUrl) { setValidationError('Please upload a video or add a video link before continuing.'); return; }
-                                                if (!thumbnailFile && !thumbnailLinkUrl) { setValidationError('Please upload a thumbnail or add a link before continuing.'); return; }
+                                                const normalizedVideoLink = normalizeInputVideoUrl(videoLinkInput);
+                                                if (videoInputMode === 'link') {
+                                                    if (!normalizedVideoLink) { setValidationError('Please enter a valid video link before continuing.'); return; }
+                                                } else {
+                                                    if (!videoFile) { setValidationError('Please upload a video before continuing.'); return; }
+                                                }
+                                                if (!thumbnailFile && !thumbnailPreview) { setValidationError('Please upload a thumbnail before continuing.'); return; }
                                                 if (!videoTitle || videoTitle.trim().length === 0) { setValidationError(getTranslation('Please add a video title before continuing.', selectedLanguage)); return; }
                                                 if (!category) { setValidationError(getTranslation('Please select a category for your video.', selectedLanguage)); return; }
                                                 // Script type and script file are now optional - no validation needed
@@ -2000,6 +2018,8 @@ const ClaimStatusPanel = ({
                                                 setPreviewData({
                                                     title: videoTitle,
                                                     file: videoFile,
+                                                    videoLink: normalizedVideoLink || null,
+                                                    inputMode: videoInputMode,
                                                     thumbnail: thumbnailPreview || (thumbnailFile ? (typeof thumbnailFile === 'string' ? thumbnailFile : thumbnailFile.name) : null),
                                                     time: 'Just now',
                                                     format: videoFormat,
@@ -2069,7 +2089,11 @@ const ClaimStatusPanel = ({
                                                     return;
                                                 }
 
-                                                // Re-upload: no change note required (no input field exists for it)
+                                                // If this is a re-upload, require a change note describing edits
+                                                if (isReuploading && (!changeNote || changeNote.trim().length === 0)) {
+                                                    setValidationError(getTranslation('Please provide a short change note describing the re-upload.', selectedLanguage));
+                                                    return;
+                                                }
                                                 setUploading(true);
                                                 setUploadProgress(0);
                                                 try {
@@ -2083,6 +2107,9 @@ const ClaimStatusPanel = ({
                                                         id: Date.now().toString() + '-' + Math.random().toString(36).slice(2),
                                                         title: titleStr || videoTitle,
                                                         titleNormalized,
+                                                        videoUrl: normalizeInputVideoUrl(pd.videoLink || videoLinkInput) || videoPreview || null,
+                                                        videoLink: normalizeInputVideoUrl(pd.videoLink || videoLinkInput) || null,
+                                                        youtubeUrl: normalizeInputVideoUrl(pd.videoLink || videoLinkInput) || null,
                                                         fileName,
                                                         fileSize,
                                                         fileType,
@@ -2104,13 +2131,13 @@ const ClaimStatusPanel = ({
                                                         console.log('Uploading files to backend:', {
                                                             backend: BACKEND,
                                                             hasToken: !!token,
-                                                            hasVideo: !!videoFile,
+                                                            hasVideo: !!videoFile || !!normalizeInputVideoUrl(pd.videoLink || videoLinkInput),
                                                             hasThumbnail: !!thumbnailFile
                                                         });
 
-                                                        // Upload thumbnail (or use link URL)
-                                                        let thumbnailUrl = thumbnailLinkUrl || '';
-                                                        if (!thumbnailLinkUrl && thumbnailFile && thumbnailFile instanceof File) {
+                                                        // Upload thumbnail
+                                                        let thumbnailUrl = thumbnailPreview;
+                                                        if (thumbnailFile && thumbnailFile instanceof File) {
                                                             const thumbFormData = new FormData();
                                                             thumbFormData.append('photo', thumbnailFile);
 
@@ -2125,70 +2152,44 @@ const ClaimStatusPanel = ({
                                                                 thumbnailUrl = thumbData.url;
                                                                 console.log('Thumbnail uploaded:', thumbnailUrl);
                                                             } else {
-                                                                console.warn('Thumbnail upload failed, status:', thumbResponse.status);
-                                                                // Don't use blob/data URL fallback — let backend use placeholder
-                                                                thumbnailUrl = '';
+                                                                console.warn('Thumbnail upload failed, using preview');
                                                             }
                                                         }
 
-                                                        // Upload video (or use YouTube link URL)
-                                                        let videoUrl = videoLinkUrl || videoPreview;
-                                                        if (!videoLinkUrl && videoFile && videoFile instanceof File) {
-                                                            const videoFormData = new FormData();
-                                                            videoFormData.append('video', videoFile);
+                                                        // Resolve video source: direct link mode OR uploaded file mode
+                                                        let videoUrl = normalizeInputVideoUrl(pd.videoLink || videoLinkInput) || null;
+                                                        if (!videoUrl) {
+                                                            videoUrl = videoPreview;
+                                                            if (videoFile && videoFile instanceof File) {
+                                                                const videoFormData = new FormData();
+                                                                videoFormData.append('video', videoFile);
 
-                                                            const videoResponse = await fetch(`${BACKEND}/creator/intro-video`, {
-                                                                method: 'POST',
-                                                                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-                                                                body: videoFormData
-                                                            });
+                                                                const videoResponse = await fetch(`${BACKEND}/creator/intro-video`, {
+                                                                    method: 'POST',
+                                                                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                                                                    body: videoFormData
+                                                                });
 
-                                                            if (videoResponse.ok) {
-                                                                const videoData = await videoResponse.json();
-                                                                videoUrl = videoData.url;
-                                                                console.log('Video uploaded:', videoUrl);
-                                                            } else {
-                                                                console.warn('Video upload failed, using preview');
-                                                            }
-                                                        }
-
-                                                        // Update publishedMeta with actual server URLs (so Published tab shows correct thumbnail/link)
-                                                        publishedMeta.thumbnail = thumbnailUrl || publishedMeta.thumbnail;
-                                                        publishedMeta.videoUrl = videoUrl || null;
-
-                                                        // Calculate video duration from the video file or auto-detect
-                                                        let videoDuration = '0:00';
-                                                        if (videoLinkUrl) {
-                                                            // For YouTube/link videos, try to fetch duration automatically
-                                                            try {
-                                                                const isYT = videoLinkUrl.includes('youtube.com') || videoLinkUrl.includes('youtu.be');
-                                                                if (isYT) {
-                                                                    let ytId = '';
-                                                                    if (videoLinkUrl.includes('youtu.be/')) ytId = videoLinkUrl.split('youtu.be/')[1].split(/[?&#]/)[0];
-                                                                    else if (videoLinkUrl.includes('youtube.com')) { try { ytId = new URL(videoLinkUrl).searchParams.get('v') || ''; } catch {} }
-                                                                    if (ytId) {
-                                                                        // Check localStorage cache first
-                                                                        const cached = localStorage.getItem(`yt_dur_${ytId}`);
-                                                                        if (cached && parseInt(cached) > 0) {
-                                                                            const dur = parseInt(cached);
-                                                                            videoDuration = `${Math.floor(dur / 60)}:${(dur % 60).toString().padStart(2, '0')}`;
-                                                                        } else {
-                                                                            // Try noembed API
-                                                                            try {
-                                                                                const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${ytId}`);
-                                                                                if (res.ok) {
-                                                                                    const data = await res.json();
-                                                                                    if (data.duration) {
-                                                                                        const parts = String(data.duration).split(':');
-                                                                                        if (parts.length === 2) videoDuration = data.duration;
-                                                                                    }
-                                                                                }
-                                                                            } catch {}
-                                                                        }
-                                                                    }
+                                                                if (videoResponse.ok) {
+                                                                    const videoData = await videoResponse.json();
+                                                                    videoUrl = videoData.url;
+                                                                    console.log('Video uploaded:', videoUrl);
+                                                                } else {
+                                                                    console.warn('Video upload failed, using preview');
                                                                 }
-                                                            } catch {}
-                                                        } else if (videoFile) {
+                                                            }
+                                                        }
+
+                                                        // Keep local published metadata aligned with final playable URL
+                                                        publishedMeta.videoUrl = videoUrl || null;
+                                                        if (/(?:youtube\.com|youtu\.be)/i.test(String(videoUrl || ''))) {
+                                                            publishedMeta.youtubeUrl = videoUrl;
+                                                            publishedMeta.videoLink = videoUrl;
+                                                        }
+
+                                                        // Calculate video duration from the video file
+                                                        let videoDuration = /(?:youtube\.com|youtu\.be)/i.test(String(videoUrl || '')) ? '--:--' : '0:00';
+                                                        if (videoFile) {
                                                             try {
                                                                 const videoElement = document.createElement('video');
                                                                 videoElement.preload = 'metadata';
@@ -2279,6 +2280,10 @@ const ClaimStatusPanel = ({
                                                         if (videoPreview) { URL.revokeObjectURL(videoPreview); setVideoPreview(null); }
                                                         setThumbnailPreview(null);
                                                         setThumbnailFile(null);
+                                                        setThumbnailInputMode('file');
+                                                        setThumbnailLinkInput('');
+                                                        setVideoInputMode('link');
+                                                        setVideoLinkInput('');
                                                         setScriptFile(null);
                                                         setScriptOther('');
                                                         setPreviewData(null);
@@ -2309,6 +2314,10 @@ const ClaimStatusPanel = ({
                                                         if (videoPreview) { URL.revokeObjectURL(videoPreview); setVideoPreview(null); }
                                                         setThumbnailPreview(null);
                                                         setThumbnailFile(null);
+                                                        setThumbnailInputMode('file');
+                                                        setThumbnailLinkInput('');
+                                                        setVideoInputMode('link');
+                                                        setVideoLinkInput('');
                                                         setScriptFile(null);
                                                         setScriptOther('');
                                                         setPreviewData(null);
@@ -2336,6 +2345,10 @@ const ClaimStatusPanel = ({
                                                         if (videoPreview) { URL.revokeObjectURL(videoPreview); setVideoPreview(null); }
                                                         setThumbnailPreview(null);
                                                         setThumbnailFile(null);
+                                                        setThumbnailInputMode('file');
+                                                        setThumbnailLinkInput('');
+                                                        setVideoInputMode('link');
+                                                        setVideoLinkInput('');
                                                         setScriptFile(null);
                                                         setScriptOther('');
                                                         setPreviewData(null);
@@ -2394,7 +2407,7 @@ const ClaimStatusPanel = ({
                                                 })()
                                             )}
                                         </button>
-                                        <button onClick={() => { setPublishStep('overlays'); }} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">Back</button>
+                                        <button onClick={() => { setPublishStep('form'); }} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">Back</button>
                                     </>
                                 )}
                             </div>
@@ -2566,69 +2579,6 @@ const ClaimStatusPanel = ({
                 </div>
             )}
 
-            {/* Upgrade to Pro Modal — shown when starter creators try to upload from device */}
-            {showUpgradeModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowUpgradeModal(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-[90%] max-w-md" onClick={(e) => e.stopPropagation()} style={{ animation: 'fadeIn 250ms ease-out' }}>
-                        <style>{`@keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }`}</style>
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-16 h-16 rounded-full bg-[var(--color-gold-light-bg)] flex items-center justify-center mb-4">
-                                <Lock size={28} className="text-[var(--color-gold)]" />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                {getTranslation('Pro Feature', selectedLanguage)}
-                            </h3>
-                            <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-                                {getTranslation('Uploading videos directly from your device is exclusive to Pro Creators.', selectedLanguage)}
-                            </p>
-                            <div className="w-full bg-gray-50 rounded-xl p-4 mb-4 text-left">
-                                <p className="text-sm font-semibold text-gray-800 mb-2">
-                                    {getTranslation('Starter creators can still publish videos:', selectedLanguage)}
-                                </p>
-                                <ul className="text-sm text-gray-600 space-y-2">
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-[var(--color-gold)] mt-0.5">•</span>
-                                        <span>{getTranslation('Upload your video to YouTube or another platform as "Unlisted"', selectedLanguage)}</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-[var(--color-gold)] mt-0.5">•</span>
-                                        <span>{getTranslation('Paste the video link in the field above', selectedLanguage)}</span>
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-[var(--color-gold)] mt-0.5">•</span>
-                                        <span>{getTranslation('Your video will play seamlessly within Regaarder', selectedLanguage)}</span>
-                                    </li>
-                                </ul>
-                            </div>
-                            <div className="w-full flex flex-col gap-3">
-                                <button
-                                    onClick={() => {
-                                        setShowUpgradeModal(false);
-                                        try {
-                                            const nav = window.__creatordashboard_navigate;
-                                            if (nav) nav('/sponsorship?tab=creator');
-                                            else window.location.href = '/sponsorship?tab=creator';
-                                        } catch (e) {
-                                            console.warn('Navigation failed', e);
-                                            window.location.href = '/sponsorship?tab=creator';
-                                        }
-                                    }}
-                                    className="w-full py-3 bg-[var(--color-gold)] text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition"
-                                >
-                                    {getTranslation('Upgrade to Pro Creator', selectedLanguage)}
-                                </button>
-                                <button
-                                    onClick={() => setShowUpgradeModal(false)}
-                                    className="w-full py-3 border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition"
-                                >
-                                    {getTranslation('Use video link instead', selectedLanguage)}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
                 </>
             )}
         </div>
@@ -2641,8 +2591,6 @@ const ClaimStatusPanel = ({
 // Main pixel-perfect dashboard
 const App = () => {
     const navigate = useNavigate();
-    // Expose navigate so inner components can use it for in-app routing
-    window.__creatordashboard_navigate = navigate;
     const [activeTopTab, setActiveTopTab] = useState('Overview');
     const [showDropdown, setShowDropdown] = useState(false);
 
@@ -3051,9 +2999,8 @@ const App = () => {
             sourceTab: 'Published' // Track that this re-upload came from Published tab
         };
         setClaimedRequests(prev => [newClaim, ...prev]);
-        setPendingReuploadItem({ ...item, targetClaimId: newId, sourceTab: 'Published', openInForm: true, isReupload: true });
-        // Switch to Claims tab so the ClaimStatusPanel can consume the pendingReuploadItem
-        setActiveTopTab('Claims');
+        setPendingReuploadItem({ ...item, targetClaimId: newId, sourceTab: 'Published' });
+        // Stay on Published tab instead of switching to Claims
     };
 
     const handleStartUpload = () => {
@@ -3714,7 +3661,6 @@ const App = () => {
                                                 // Pass pendingReuploadItem ONLY if it targets this request (or if reupload has no target ID, pass to first/active?)
                                                 pendingReuploadItem={pendingReuploadItem && (pendingReuploadItem.targetClaimId === req.id) ? pendingReuploadItem : null}
                                                 clearPendingReupload={() => setPendingReuploadItem(null)}
-                                                isProCreator={isProCreator}
                                             />
                                         )}
                                     </div>

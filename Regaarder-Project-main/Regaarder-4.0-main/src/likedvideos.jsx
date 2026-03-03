@@ -182,14 +182,34 @@ export default function LikedVideos() {
   }, [items, query]);
 
   const onOpen = (it) => {
-    const url = it.url || it.videoId;
     const title = it.title || '';
+    const keyMatch = (it && it.videoId) ? (videoIndex?.byKey?.[it.videoId] || null) : null;
+    const titleMatch = ((title || '').trim().toLowerCase() && videoIndex?.byTitle)
+      ? (videoIndex.byTitle[(title || '').trim().toLowerCase()] || null)
+      : null;
+    const matched = keyMatch || titleMatch || null;
+
+    const url = it.url
+      || matched?.videoUrl
+      || matched?.url
+      || matched?.src
+      || matched?.videoLink
+      || matched?.youtubeUrl
+      || '';
+    const videoId = it.videoId || matched?.id || '';
+    const creatorName = it.creatorName || matched?.creatorName || matched?.author || matched?.creator || '';
     try {
-      const payload = { url, title, creatorName: it.creatorName };
+      const payload = { id: videoId, url, videoUrl: url, src: url, title, creatorName };
       localStorage.setItem('miniPlayerData', JSON.stringify(payload));
+      localStorage.setItem('videoplayer_quick_load', JSON.stringify(payload));
     } catch { }
     try {
-      const href = `/videoplayer?src=${encodeURIComponent(url || '')}&title=${encodeURIComponent(title || '')}`;
+      const params = new URLSearchParams();
+      if (videoId) params.set('id', videoId);
+      if (url) params.set('src', url);
+      if (title) params.set('title', title);
+      if (creatorName) params.set('channel', creatorName);
+      const href = `/videoplayer?${params.toString()}`;
       window.location.href = href;
     } catch {
       navigate('/videoplayer');

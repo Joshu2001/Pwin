@@ -341,7 +341,7 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 											src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&loop=1&playlist=${youtubeId}`}
 											frameBorder="0"
 											allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; autoplay"
-											style={{ background: '#000', width: '100%', height: '100%', border: 'none', display: 'block', pointerEvents: 'none', transform: 'scale(1.3)', transformOrigin: 'center center' }}
+											style={{ background: '#000', width: '100%', height: '100%', border: 'none', display: 'block', pointerEvents: 'none' }}
 											onLoad={() => {
 												// Unmute YouTube ad after autoplay starts (must start muted for autoplay policy)
 												const tryUnmute = () => {
@@ -619,18 +619,13 @@ const VideoPlayer = () => {
 					}
 				} catch { }
 				setSource(videoInfo.src, startTime, false);
-				// ensure local state has a URL so autoplay effects can kick in
-				try {
-					const resolvedSrc = resolveMediaUrl(videoInfo.src);
-					if (resolvedSrc && videoUrl !== resolvedSrc) setVideoUrl(resolvedSrc);
-				} catch { }
 			} else if (v && videoInfo.src) {
 				if (v.src !== (videoInfo.src ? resolveMediaUrl(videoInfo.src) : videoInfo.src)) { v.src = videoInfo.src ? resolveMediaUrl(videoInfo.src) : videoInfo.src; try { v.load(); } catch { } }
 				try { v.currentTime = 0; } catch { }
 				// AUTO-PLAY DISABLED: User must click play
 			}
 		} catch (e) { }
-		}, [videoInfo, globalVideoRef, setSource, videoUrl]);
+		}, [videoInfo, globalVideoRef, setSource]);
 
 	// Attach important event listeners to the global video element (previously inline JSX handlers)
 	useEffect(() => {
@@ -762,7 +757,7 @@ const VideoPlayer = () => {
 				// deltaY < 0 => user scrolled up -> show next (below) video in homepage order
 				// deltaY > 0 => scrolled down -> show previous (above)
 				const dir = e.deltaY < 0 ? 1 : -1;
-				const list = currentPlaylistRef.current || [];
+				const list = currentSourceRef.current || [];
 				if (!list || !list.length) return;
 				let idx = currentIndexRef.current;
 				if (typeof idx !== 'number') idx = -1;
@@ -815,7 +810,7 @@ const VideoPlayer = () => {
 	if (error) {
 		return (
 			<div className="p-6">
-				<div className="p-4 bg-red-50 text-red-700 rounded-md" style={{border: 'none', display: 'none'}}>
+				<div className="p-4 bg-red-50 text-red-700 rounded-md" style={{border: 'none'}}>
 					<strong>Error:</strong> {error}
 				</div>
 			</div>
@@ -852,7 +847,7 @@ const VideoPlayer = () => {
 							src={`https://www.youtube-nocookie.com/embed/${desktopYtId}?autoplay=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
 							className="w-full h-full border-0"
 							allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-							style={{ width: '100%', height: '100%', pointerEvents: 'none', transform: 'scale(1.3)', transformOrigin: 'center center' }}
+							style={{ width: '133%', height: '133%', position: 'relative', left: '-16.5%', top: '-16.5%', pointerEvents: 'none' }}
 							title="Video player"
 						/>
 						<div style={{ position: 'absolute', inset: 0, zIndex: 3 }} />
@@ -1543,12 +1538,25 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	// Local video info state (was missing causing ReferenceError)
 	const [videoInfo, setVideoInfo] = useState(initialVideo || null);
 
+	const pickVideoSource = (video) => {
+		if (!video) return '';
+		return (
+			video.videoUrl ||
+			video.url ||
+			video.src ||
+			video.videoLink ||
+			video.youtubeUrl ||
+			video.mediaUrl ||
+			''
+		);
+	};
+
 	// Feedback modal is disabled - not showing to users
 
 	// Initialize videoUrl immediately from initialVideo prop (avoid blank first frame)
 	const [videoUrl, setVideoUrl] = useState(() => {
 		if (initialVideo) {
-			const u = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
+			const u = pickVideoSource(initialVideo);
 			if (!u) return '';
 			// Don't run resolveMediaUrl on YouTube URLs — they are external
 			if (u.includes('youtube.com') || u.includes('youtu.be')) return u;
@@ -1560,28 +1568,46 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	const isYouTubeUrl = (url) => url && (url.includes('youtube.com') || url.includes('youtu.be'));
 	const getYouTubeVideoId = (url) => {
 		if (!url) return '';
-		if (url.includes('youtu.be/')) return url.split('youtu.be/')[1].split(/[?&#]/)[0];
-		if (url.includes('youtube.com')) { try { return new URL(url).searchParams.get('v') || ''; } catch { return ''; } }
+		const text = String(url).trim();
+		if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
+		if (text.includes('youtu.be/')) return text.split('youtu.be/')[1].split(/[?&#/]/)[0];
+		if (text.includes('youtube.com')) {
+			try {
+				const parsed = new URL(text);
+				const fromV = parsed.searchParams.get('v');
+				if (fromV) return fromV;
+				const pathParts = parsed.pathname.split('/').filter(Boolean);
+				const markerIndex = pathParts.findIndex((part) => part === 'shorts' || part === 'embed' || part === 'live' || part === 'v');
+				if (markerIndex >= 0 && pathParts[markerIndex + 1]) return pathParts[markerIndex + 1];
+			} catch {
+				const match = text.match(/(?:youtube\.com\/(?:shorts|embed|live|watch\?v=|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+				if (match && match[1]) return match[1];
+				return '';
+			}
+		}
 		return '';
 	};
 
 	// Track whether the current video is a YouTube embed
 	const [isYouTubeVideo, setIsYouTubeVideo] = useState(() => {
 		if (initialVideo) {
-			const u = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
+			const u = pickVideoSource(initialVideo);
 			return isYouTubeUrl(u);
 		}
 		return false;
 	});
 	const [youTubeId, setYouTubeId] = useState(() => {
 		if (initialVideo) {
-			const u = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
+			const u = pickVideoSource(initialVideo);
 			return getYouTubeVideoId(u);
 		}
 		return '';
 	});
+	const attemptedVideoLookupRef = useRef(new Set());
 	const ytIframeRef = useRef(null);
 	const [ytLoaded, setYtLoaded] = useState(false); // true once YouTube reports playerState=1 (playing)
+	const ytVisualReadyTimerRef = useRef(null);
+	const ytSawPositiveTimeRef = useRef(false);
 
 	// Track current video metadata so dialogs (Report, Share, etc.) reflect the active media
 	const [videoTitle, setVideoTitle] = useState(() => (initialVideo && initialVideo.title) || "");
@@ -1617,6 +1643,17 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 							const secs = (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0);
 							if (secs > 0) setDuration(secs);
 						}
+					}
+					// Ensure videoInfo is populated so ads, overlays, like/dislike sync, etc. work
+					if (!videoInfo) {
+						setVideoInfo({
+							id: data.id || 'quick-load',
+							src: data.url,
+							videoUrl: data.url,
+							url: data.url,
+							title: data.title || '',
+							author: data.creator || data.creatorName || '',
+						});
 					}
 				}
 				// Clear after loading so it doesn't persist
@@ -1656,10 +1693,13 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	// NEW: state for heart/like button
 	const [liked, setLiked] = useState(false);
 	const [disliked, setDisliked] = useState(false); // Make sure this is declared if not already
-	const tapTimerRef = useRef(null); // NEW: ref for double-tap timer
+	const tapTimerRef = useRef(null); // ref for multi-tap timer
+	const tapCountRef = useRef(0);   // tracks consecutive taps (1=single, 2=double, 3=triple)
+	const tapPosRef = useRef({ x: 0, y: 0 }); // position of the first tap in the sequence
 
 	// Heart explosion particles state for double-tap like animation
 	const [heartExplosions, setHeartExplosions] = useState([]);
+	const [dislikeExplosions, setDislikeExplosions] = useState([]);
 
 	// Sync Like/Dislike state from backend on video load
 	useEffect(() => {
@@ -1695,6 +1735,59 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		};
 		checkState();
 	}, [videoInfo, videoTitle]);
+
+	const emitReactionStatsUpdate = useCallback((payload = null) => {
+		try {
+			const source = videoInfo || {};
+			const resolvedId = source.id || searchParams.get('id') || videoUrl || videoTitle || null;
+			const resolvedSrc = source.src || source.videoUrl || source.url || videoUrl || searchParams.get('src') || null;
+			const nextLikes = Number(payload && payload.likes);
+			const nextDislikes = Number(payload && payload.dislikes);
+
+			window.dispatchEvent(new CustomEvent('video:reactionsUpdated', {
+				detail: {
+					videoId: resolvedId,
+					videoSrc: resolvedSrc,
+					title: source.title || videoTitle || null,
+					likes: Number.isFinite(nextLikes) ? Math.max(0, nextLikes) : undefined,
+					dislikes: Number.isFinite(nextDislikes) ? Math.max(0, nextDislikes) : undefined,
+				}
+			}));
+		} catch { }
+	}, [videoInfo, searchParams, videoUrl, videoTitle]);
+
+	const applyReactionCountsFromPayload = useCallback((payload) => {
+		if (!payload) return;
+		const nextLikes = Number(payload.likes);
+		const nextDislikes = Number(payload.dislikes);
+		if (!Number.isFinite(nextLikes) && !Number.isFinite(nextDislikes)) return;
+		setVideoInfo((prev) => {
+			if (!prev) return prev;
+			const updated = { ...prev };
+			if (Number.isFinite(nextLikes)) updated.likes = Math.max(0, nextLikes);
+			if (Number.isFinite(nextDislikes)) updated.dislikes = Math.max(0, nextDislikes);
+			return updated;
+		});
+		emitReactionStatsUpdate(payload);
+	}, [emitReactionStatsUpdate]);
+
+	const bumpLocalReactionCounts = useCallback((likesDelta = 0, dislikesDelta = 0) => {
+		if (!likesDelta && !dislikesDelta) return;
+		setVideoInfo((prev) => {
+			if (!prev) return prev;
+			const currentLikes = Number(prev.likes);
+			const currentDislikes = Number(prev.dislikes);
+			const safeLikes = Number.isFinite(currentLikes) ? currentLikes : 0;
+			const safeDislikes = Number.isFinite(currentDislikes) ? currentDislikes : 0;
+			const updated = {
+				...prev,
+				likes: Math.max(0, safeLikes + likesDelta),
+				dislikes: Math.max(0, safeDislikes + dislikesDelta)
+			};
+			emitReactionStatsUpdate({ likes: updated.likes, dislikes: updated.dislikes });
+			return updated;
+		});
+	}, [emitReactionStatsUpdate]);
 
 	// Handle lock/unlock button press -> perform explicit lock/unlock flows
 	const handleLockPress = (e) => {
@@ -1754,7 +1847,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 			try { v.currentTime = next; } catch { /* noop */ }
 		}
 	};
-	const [progress, setProgress] = useState(0.05); // 0..1
+	const [progress, setProgress] = useState(0); // 0..1
 	const barRef = useRef(null);
 	const draggingRef = useRef(false);
 	const [progressDragging, setProgressDragging] = useState(false);
@@ -1764,6 +1857,34 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	const [isInPiPMode, setIsInPiPMode] = useState(false);
 	const [duration, setDuration] = useState(0);
 	const handleVideoEndedRef = useRef(null); // kept in sync below so YT message listener can call it
+
+	// Track when the video is actually ready to display (prevents glitch/flash before first frame)
+	const [videoPlayerReady, setVideoPlayerReady] = useState(false);
+	const videoPlayerReadyTimerRef = useRef(null);
+	const [startupUiReady, setStartupUiReady] = useState(false);
+	const startupUiReadyTimerRef = useRef(null);
+
+	// Reset videoPlayerReady when the video source changes (new video loaded)
+	useEffect(() => {
+		setVideoPlayerReady(false);
+		setStartupUiReady(false);
+		clearTimeout(videoPlayerReadyTimerRef.current);
+		clearTimeout(startupUiReadyTimerRef.current);
+		return () => {
+			clearTimeout(videoPlayerReadyTimerRef.current);
+			clearTimeout(startupUiReadyTimerRef.current);
+		};
+	}, [videoUrl, isYouTubeVideo, youTubeId]);
+
+	useEffect(() => {
+		const playerReady = isYouTubeVideo ? ytLoaded : videoPlayerReady;
+		if (!playerReady || startupUiReady) return;
+		clearTimeout(startupUiReadyTimerRef.current);
+		startupUiReadyTimerRef.current = setTimeout(() => {
+			setStartupUiReady(true);
+		}, 500);
+		return () => clearTimeout(startupUiReadyTimerRef.current);
+	}, [isYouTubeVideo, ytLoaded, videoPlayerReady, controlsVisible, startupUiReady]);
 
 	// For YouTube videos, initialize duration from video metadata since <video> onLoadedMetadata won't fire
 	useEffect(() => {
@@ -1789,9 +1910,13 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 
 		// Reset loading cover for new YouTube video
 		setYtLoaded(false);
+		ytSawPositiveTimeRef.current = false;
+		clearTimeout(ytVisualReadyTimerRef.current);
 
-		// Fallback: mark as playing/loaded after delay in case postMessage doesn't fire
-		const fallbackTimer = setTimeout(() => { setIsPlaying(true); setYtLoaded(true); }, 2000);
+		// Fallback: reveal only after a long guard period if message pipeline is delayed
+		const fallbackTimer = setTimeout(() => {
+			if (!ytSawPositiveTimeRef.current) setYtLoaded(true);
+		}, 5500);
 
 		const handleYTMessage = (e) => {
 			try {
@@ -1808,6 +1933,16 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 							if (prev !== info.duration) {
 								// Cache YouTube duration in localStorage so home feed cards can display it
 								try { if (youTubeId) localStorage.setItem(`yt_dur_${youTubeId}`, String(Math.floor(info.duration))); } catch { }
+								// Persist to backend so feed shows real duration next time
+								try {
+									const vid = searchParams.get('id');
+									if (vid) {
+										const _BE = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+										const _s = Math.floor(info.duration);
+										const _t = `${Math.floor(_s / 60)}:${String(_s % 60).padStart(2, '0')}`;
+										fetch(`${_BE}/videos/${vid}/duration`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ time: _t }) }).catch(() => {});
+									}
+								} catch { }
 								return info.duration;
 							}
 							return prev;
@@ -1818,13 +1953,25 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 						const dur = info.duration || duration;
 						ytLastKnownTime.current = info.currentTime;
 						ytLastKnownTimestamp.current = Date.now();
+						if (info.currentTime > 0.12 && !ytSawPositiveTimeRef.current) {
+							ytSawPositiveTimeRef.current = true;
+							setYtLoaded(true);
+						}
 						if (dur > 0 && !draggingRef.current) {
 							setProgress(info.currentTime / dur);
 						}
 					}
 					// Track player state (1=playing, 2=paused, 0=ended)
 					if (typeof info.playerState === 'number') {
-						if (info.playerState === 1) { setIsPlaying(true); setYtLoaded(true); }
+						if (info.playerState === 1) {
+							setIsPlaying(true);
+							if (ytSawPositiveTimeRef.current) {
+								setYtLoaded(true);
+							} else {
+								clearTimeout(ytVisualReadyTimerRef.current);
+								ytVisualReadyTimerRef.current = setTimeout(() => setYtLoaded(true), 900);
+							}
+						}
 						else if (info.playerState === 2) setIsPlaying(false);
 						else if (info.playerState === 0 && !hadOverlayAdRef.current) {
 							// YouTube video ended
@@ -1850,7 +1997,15 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 
 				// onStateChange event also carries player state
 				if (data.event === 'onStateChange' && typeof data.info === 'number') {
-					if (data.info === 1) { setIsPlaying(true); setYtLoaded(true); }
+					if (data.info === 1) {
+						setIsPlaying(true);
+						if (ytSawPositiveTimeRef.current) {
+							setYtLoaded(true);
+						} else {
+							clearTimeout(ytVisualReadyTimerRef.current);
+							ytVisualReadyTimerRef.current = setTimeout(() => setYtLoaded(true), 900);
+						}
+					}
 					else if (data.info === 2) setIsPlaying(false);
 					else if (data.info === 0 && !hadOverlayAdRef.current) {
 						// YouTube video ended (onStateChange variant)
@@ -1939,6 +2094,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 
 		return () => {
 			clearTimeout(fallbackTimer);
+			clearTimeout(ytVisualReadyTimerRef.current);
 			clearTimeout(t1);
 			clearTimeout(t2);
 			clearTimeout(t3);
@@ -2748,7 +2904,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	useEffect(() => {
 		if (!initialVideo) return;
 		try {
-			const rawUrl = initialVideo.videoUrl || initialVideo.url || initialVideo.src || '';
+			const rawUrl = pickVideoSource(initialVideo);
 			if (rawUrl) {
 				if (isYouTubeUrl(rawUrl)) {
 					setVideoUrl(rawUrl); // keep YouTube URLs as-is
@@ -2793,6 +2949,86 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		if (channel && !creatorName) {
 			setCreatorName(channel);
 		}
+
+		// Ensure videoInfo is populated so ads, overlays, like/dislike sync, etc. work
+		if (src && !videoInfo) {
+			setVideoInfo({
+				id: searchParams.get('id') || 'url-video',
+				src: src,
+				videoUrl: src,
+				url: src,
+				title: title || '',
+				author: channel || '',
+				channel: channel || '',
+			});
+		}
+	}, [searchParams, initialVideo, videoUrl]);
+
+	// Fallback: if URL params include only an id (or a non-playable src), fetch the video and resolve a real media URL
+	useEffect(() => {
+		const src = searchParams.get('src') || '';
+		const id = searchParams.get('id') || '';
+		const title = searchParams.get('title') || '';
+		const channel = searchParams.get('channel') || '';
+
+		if (initialVideo && videoUrl) return;
+		if (videoUrl) return;
+
+		const hasPlayableUrl = (value) => {
+			const v = String(value || '').trim();
+			if (!v) return false;
+			if (v.startsWith('blob:') || v.startsWith('data:')) return true;
+			if (/^https?:\/\//i.test(v)) return true;
+			if (v.startsWith('/')) return true;
+			if (v.includes('youtube.com') || v.includes('youtu.be')) return true;
+			return false;
+		};
+
+		if (hasPlayableUrl(src)) return;
+
+		const lookupId = (id || src || '').trim();
+		if (!lookupId) return;
+		if (attemptedVideoLookupRef.current.has(lookupId)) return;
+		attemptedVideoLookupRef.current.add(lookupId);
+
+		let canceled = false;
+		(async () => {
+			try {
+				const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+				const response = await fetch(`${BACKEND}/videos/${encodeURIComponent(lookupId)}`);
+				if (!response.ok) return;
+				const info = await response.json();
+				if (canceled || !info) return;
+
+				const rawUrl = info.videoUrl || info.url || info.src || info.videoLink || info.youtubeUrl || '';
+				if (!rawUrl) return;
+
+				if (isYouTubeUrl(rawUrl)) {
+					setVideoUrl(rawUrl);
+					setIsYouTubeVideo(true);
+					setYouTubeId(getYouTubeVideoId(rawUrl));
+				} else {
+					setVideoUrl(resolveMediaUrl(rawUrl));
+					setIsYouTubeVideo(false);
+					setYouTubeId('');
+				}
+
+				setVideoTitle(info.title || title || '');
+				setCreatorName(info.author || info.creator || info.channel || channel || '');
+				setVideoInfo({
+					...info,
+					id: info.id || lookupId,
+					src: rawUrl,
+					videoUrl: rawUrl,
+					url: rawUrl,
+				});
+
+				const dur = Number(info.duration || 0);
+				if (Number.isFinite(dur) && dur > 0) setDuration(dur);
+			} catch { }
+		})();
+
+		return () => { canceled = true; };
 	}, [searchParams, initialVideo, videoUrl]);
 
 	// Load overlays from videoInfo when it changes
@@ -3306,38 +3542,41 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	};
 
 	// Quick-action handlers for the floating long-press card
-	const onQuickLike = (e) => {
+	const onQuickLike = async (e) => {
 		e?.stopPropagation?.();
 		if (!auth.user) { auth.openAuthModal(); return; }
-		setLiked((s) => {
-			const next = !s;
-			// if we're liking, ensure dislike is cleared and synced to backend
-			if (next) {
-				setDisliked(false);
-				try {
-					const token = localStorage.getItem('regaarder_token');
-					if (token) {
-						const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
-						fetch(`${BACKEND}/dislikes`, {
-							method: 'DELETE',
-							headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-							body: JSON.stringify({ videoId: videoUrl || videoTitle || null })
-						}).catch(() => { });
-					}
-				} catch (e) { }
-			}
-			// persist like/unlike to backend
-			try {
-				const token = localStorage.getItem('regaarder_token');
-				if (token) {
-					const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
-					fetch(`${BACKEND}/likes`, {
-						method: next ? 'POST' : 'DELETE',
+		const currentLiked = liked;
+		const currentDisliked = disliked;
+		const next = !currentLiked;
+		setLiked(next);
+		if (next && currentDisliked) setDisliked(false);
+		bumpLocalReactionCounts(next ? 1 : -1, next && currentDisliked ? -1 : 0);
+
+		try {
+			const token = localStorage.getItem('regaarder_token');
+			const videoId = videoInfo?.id || videoUrl || videoTitle || null;
+			if (token && videoId) {
+				const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+				if (next && currentDisliked) {
+					const clearDislike = await fetch(`${BACKEND}/dislikes`, {
+						method: 'DELETE',
 						headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-						body: JSON.stringify({ videoId: videoUrl || videoTitle || null })
-					}).catch(() => { });
+						body: JSON.stringify({ videoId })
+					});
+					if (clearDislike.ok) {
+						try { applyReactionCountsFromPayload(await clearDislike.json()); } catch { }
+					}
 				}
-			} catch (e) { }
+				const likeRes = await fetch(`${BACKEND}/likes`, {
+					method: next ? 'POST' : 'DELETE',
+					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+					body: JSON.stringify({ videoId })
+				});
+				if (likeRes.ok) {
+					try { applyReactionCountsFromPayload(await likeRes.json()); } catch { }
+				}
+			}
+		} catch (e) { }
 			// persist like (or unlike) for real-time Liked Videos updates when not incognito
 			try {
 				if (!incognitoMode) {
@@ -3371,8 +3610,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					});
 				}
 			} catch { }
-			return next;
-		});
+
 		if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
 		setToastMessage(getTranslation('Liked', selectedLanguage));
 		toastTimerRef.current = setTimeout(() => setToastMessage(''), 1200);
@@ -3380,26 +3618,46 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		scheduleHideQuickCard(1800);
 	};
 
-	const onQuickDislike = (e) => {
+	const onQuickDislike = async (e) => {
 		e?.stopPropagation?.();
 		if (!auth.user) { auth.openAuthModal(); return; }
-		setDisliked((s) => {
-			const next = !s;
-			// if we're disliking, ensure like is cleared
-			if (next) setLiked(false);
+		const currentDisliked = disliked;
+		const currentLiked = liked;
+		const next = !currentDisliked;
+		setDisliked(next);
+		if (next && currentLiked) setLiked(false);
+		if (next && typeof triggerDislikeExplosion === 'function') {
+			const fallbackX = typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.5) : 0;
+			const fallbackY = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.45) : 0;
+			triggerDislikeExplosion(e?.clientX ?? fallbackX, e?.clientY ?? fallbackY);
+		}
+		bumpLocalReactionCounts(next && currentLiked ? -1 : 0, next ? 1 : -1);
 
-			// Persist dislike to backend
-			try {
-				const token = localStorage.getItem('regaarder_token');
-				if (token) {
-					const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
-					fetch(`${BACKEND}/dislikes`, {
-						method: next ? 'POST' : 'DELETE',
+		try {
+			const token = localStorage.getItem('regaarder_token');
+			const videoId = videoInfo?.id || videoUrl || videoTitle || null;
+			if (token && videoId) {
+				const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
+				if (next && currentLiked) {
+					const clearLike = await fetch(`${BACKEND}/likes`, {
+						method: 'DELETE',
 						headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-						body: JSON.stringify({ videoId: videoUrl || videoTitle || null })
-					}).catch(() => { });
+						body: JSON.stringify({ videoId })
+					});
+					if (clearLike.ok) {
+						try { applyReactionCountsFromPayload(await clearLike.json()); } catch { }
+					}
 				}
-			} catch (e) { }
+				const dislikeRes = await fetch(`${BACKEND}/dislikes`, {
+					method: next ? 'POST' : 'DELETE',
+					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+					body: JSON.stringify({ videoId })
+				});
+				if (dislikeRes.ok) {
+					try { applyReactionCountsFromPayload(await dislikeRes.json()); } catch { }
+				}
+			}
+		} catch (e) { }
 
 			// when user dislikes, remove from liked list (if not incognito)
 			try {
@@ -3418,8 +3676,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					});
 				}
 			} catch { }
-			return next;
-		});
+
 		if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
 		setToastMessage(getTranslation('Video Disliked', selectedLanguage));
 		toastTimerRef.current = setTimeout(() => setToastMessage(''), 1200);
@@ -3434,7 +3691,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		} catch { }
 	};
 
-	const formatTime = (secs) => {
+	const formatTime = (secs, opts) => {
+		if (opts && opts.dashIfZero && (!secs || secs <= 0)) return '--:--';
 		const s = Math.max(0, Math.floor(secs || 0));
 		return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 	};
@@ -3655,11 +3913,10 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 
 	useEffect(() => {
 		try {
-			if (!localStorage.getItem('vx:hint:gesture')) {
-				// show the gesture hint (we'll mark it persisted once the user interacts)
-				setGestureHintVisible(true);
-				setGestureStep(0);
-			}
+			// Disable first-run gesture tutorial overlay in player to avoid blocking taps.
+			try { localStorage.setItem('vx:hint:gesture', '1'); } catch { }
+			setGestureHintVisible(false);
+			setGestureStep(0);
 		} catch { }
 	}, []);
 
@@ -3846,14 +4103,26 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	useEffect(() => {
 		const savePref = async () => {
 			try {
+				try {
+					if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
+					if (localStorage.getItem('regaarder_disable_preferences_sync') === '1') return;
+				} catch (e) { }
 				const token = localStorage.getItem('regaarder_token');
 				if (!token) return;
 				const BACKEND = (window && window.__BACKEND_URL__) || `${window.location.protocol}//${window.location.hostname}:4000`;
-				await fetch(`${BACKEND}/users/preferences`, {
+				const res = await fetch(`${BACKEND}/users/preferences`, {
 					method: 'PATCH',
 					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
 					body: JSON.stringify({ preferences: { progressColor } })
 				});
+				if (res.status === 401) {
+					try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
+					return;
+				}
+				if (res.status === 404) {
+					try { localStorage.setItem('regaarder_disable_preferences_sync', '1'); } catch (e) { }
+					return;
+				}
 			} catch (e) { }
 		};
 		const t = setTimeout(savePref, 2000); // debounce 2s
@@ -4939,6 +5208,28 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		}, 1200);
 	}, []);
 
+	const triggerDislikeExplosion = useCallback((clientX, clientY) => {
+		const id = Date.now() + Math.floor(Math.random() * 1000);
+		const count = 12;
+		const particles = [];
+		for (let i = 0; i < count; i++) {
+			const angle = (360 / count) * i + (Math.random() * 18 - 9);
+			const rad = (angle * Math.PI) / 180;
+			const distance = 70 + Math.random() * 95;
+			const dx = Math.cos(rad) * distance;
+			const dy = Math.sin(rad) * distance;
+			const size = 15 + Math.random() * 10;
+			const duration = 560 + Math.random() * 300;
+			const delay = Math.random() * 70;
+			particles.push({ dx, dy, size, duration, delay, angle: Math.random() * 36 - 18 });
+		}
+		const explosion = { id, x: clientX, y: clientY, particles };
+		setDislikeExplosions(prev => [...prev, explosion]);
+		setTimeout(() => {
+			setDislikeExplosions(prev => prev.filter(e => e.id !== id));
+		}, 1100);
+	}, []);
+
 	const handleVideoTap = (e) => {
 		e.stopPropagation();
 		// Block taps while an overlay ad is showing
@@ -4961,37 +5252,72 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		// reveal the center overlay briefly on any tap
 		try { showCenterTemporarily(); } catch { }
 
-		// get position info for center/side detection
+		// get position info for zone detection
 		const rect = e.currentTarget.getBoundingClientRect();
 		const x = e.clientX - rect.left;
-		const centerX = rect.width / 2;
-		const centerZone = rect.width * 0.3; // center 60% area
+		const y = e.clientY - rect.top;
 
+		// Increment tap count within the 300ms window
+		tapCountRef.current += 1;
+		const currentCount = tapCountRef.current;
+
+		// Store position for the first tap in the sequence
+		if (currentCount === 1) {
+			tapPosRef.current = { x, y };
+		}
+
+		// Clear any pending timer — we'll set a new one
 		if (tapTimerRef.current) {
-			// double tap: cancel pending single-tap action
 			clearTimeout(tapTimerRef.current);
 			tapTimerRef.current = null;
-
-			if (doubleTap) {
-				// Double-tap anywhere → like the video + radial heart explosion
-				setLiked(true);
-				triggerHeartExplosion(e.clientX, e.clientY);
-			}
-		} else {
-			// single tap -> after debounce decide action: center toggles play, sides show controls
-			tapTimerRef.current = setTimeout(() => {
-				try {
-					if (Math.abs(x - centerX) < centerZone) {
-						// center tap toggles playback
-						togglePlay();
-					} else {
-						// non-center single tap shows controls and center overlay briefly
-						showCenterTemporarily();
-					}
-				} catch { }
-				tapTimerRef.current = null;
-			}, 250);
 		}
+
+		// If we've reached 3 taps, fire triple-tap immediately (dislike)
+		if (currentCount >= 3 && doubleTap) {
+			tapCountRef.current = 0;
+			tapTimerRef.current = null;
+			onQuickDislike(e);
+			return;
+		}
+
+		// Set a 300ms timer: if no further tap arrives, resolve the gesture
+		tapTimerRef.current = setTimeout(() => {
+			const count = tapCountRef.current;
+			tapCountRef.current = 0;
+			tapTimerRef.current = null;
+			const tx = tapPosRef.current.x;
+			const ty = tapPosRef.current.y;
+
+			const centerX = rect.width / 2;
+			const centerY = rect.height / 2;
+			// Seek band: a horizontal strip ±15% of height around the vertical center (where the pause button is)
+			const seekBandHalf = rect.height * 0.15;
+			const inSeekBand = Math.abs(ty - centerY) <= seekBandHalf;
+			const isLeft = tx < centerX;
+
+			if (count === 1) {
+				// ── SINGLE TAP ──
+				// Single tap only shows/hides controls — video NEVER pauses from a tap.
+				// The explicit play/pause button handles pausing via its own stopPropagation onClick.
+				showCenterTemporarily();
+			} else if (count === 2 && doubleTap) {
+				// ── DOUBLE TAP ──
+				if (inSeekBand) {
+					// Inside the seek band: left = rewind, right = forward
+					if (isLeft) {
+						seekBy(-10);
+						showCenterTemporarily(900);
+					} else {
+						seekBy(10);
+						showCenterTemporarily(900);
+					}
+				} else {
+					// Outside the seek band: LIKE
+					if (!liked) onQuickLike(e);
+					triggerHeartExplosion(e.clientX, e.clientY);
+				}
+			}
+		}, 300);
 	};
 
 	// --- ADDED: swipe-to-reveal carbon-copy panel (starts from middle area) ---
@@ -5641,6 +5967,19 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	// When rendered as a route component (standalone), use position:fixed.
 	const isOverlay = !!onChevronDown;
 
+	useEffect(() => {
+		if (!startupUiReady) return;
+		// Player first frame is painted — now safe to fade out the launch mask
+		try {
+			const mask = document.getElementById('vp-launch-mask');
+			if (mask) {
+				mask.style.transition = 'opacity 300ms ease';
+				mask.style.opacity = '0';
+				setTimeout(() => { try { mask.remove(); } catch { } }, 350);
+			}
+		} catch { }
+	}, [startupUiReady]);
+
 	// --- Render ---
 	return (
 		<div
@@ -5736,6 +6075,11 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 						60% { transform: translate(calc(var(--heart-dx) * 0.9), calc(var(--heart-dy) * 0.9)) scale(0.85) rotate(var(--heart-rot, 0deg)); opacity: 0.7; }
 						100% { transform: translate(var(--heart-dx), var(--heart-dy)) scale(0.4) rotate(var(--heart-rot, 0deg)); opacity: 0; }
 					}
+					@keyframes dislike-explode {
+						0% { transform: translate(0, 0) scale(0.32) rotate(var(--heart-rot, 0deg)); opacity: 1; }
+						30% { transform: translate(calc(var(--heart-dx) * 0.55), calc(var(--heart-dy) * 0.55)) scale(1.02) rotate(var(--heart-rot, 0deg)); opacity: 0.95; }
+						100% { transform: translate(var(--heart-dx), var(--heart-dy)) scale(0.4) rotate(var(--heart-rot, 0deg)); opacity: 0; }
+					}
 					
 					/* Bottom Ad Text Animations */
 					@keyframes fadeInText { 0% { opacity: 0; } 100% { opacity: 1; } }
@@ -5767,7 +6111,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 				`}</style>
 
 			{/* YouTube-style Gesture Tutorial Overlay */}
-			{gestureHintVisible && (
+			{false && gestureHintVisible && (
 				<div aria-hidden style={{
 					position: 'fixed', inset: 0, zIndex: 1200,
 					display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -5908,11 +6252,11 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					transform: forceLandscapeCss ? "translate(-50%, -50%) rotate(90deg) translateY(calc(-50vw + 50%))" : "none",
 					transformOrigin: "center",
 				
-					paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)",
+					paddingTop: "calc(env(safe-area-inset-top, 0px) + 6px)",
 					paddingBottom: 8,
-					paddingLeft: forceLandscapeCss ? 20 : 16,
+					paddingLeft: forceLandscapeCss ? 20 : 4,
 					paddingRight: forceLandscapeCss ? 20 : 16,
-					marginTop: 4,
+					marginTop: 0,
 					marginLeft: forceLandscapeCss ? "0" : "auto",
 					marginRight: forceLandscapeCss ? "0" : "auto",
 					zIndex: 500,
@@ -5938,8 +6282,11 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					style={{ color: darkMode ? "#fff" : "#111" }}
 					onClick={(e) => {
 						try { e.stopPropagation(); } catch { }
-						try { if (videoRef.current) videoRef.current.pause(); } catch { }
-						try { setIsPlaying(false); } catch { }
+						const hasOverlayHandoff = !!(onChevronDown && typeof onChevronDown === 'function');
+						if (!hasOverlayHandoff) {
+							try { if (videoRef.current) videoRef.current.pause(); } catch { }
+							try { setIsPlaying(false); } catch { }
+						}
 
 						const v = videoRef.current;
 						// For YouTube videos, videoRef has no currentTime — derive from progress*duration
@@ -5984,16 +6331,15 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 						// instead of pushing a new /home route (which wouldn't have miniplayer state)
 						try { localStorage.setItem('miniPlayerData', JSON.stringify(stored)); } catch { }
 						try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('miniPlayerRequest', stored); } catch { }
-						try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('switchToHome', stored); } catch { }
 						try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch { }
 						// Go back so we return to the existing home component (preserves state + miniplayer)
 						try {
 							if (window.history && window.history.length > 1) {
 								window.history.back();
 							} else {
-								navigate('/home', { state: { miniPlayerData: stored }, replace: true });
+								navigate(-1);
 							}
-						} catch { try { navigate('/home', { state: { miniPlayerData: stored }, replace: true }); } catch { } }
+						} catch { try { navigate(-1); } catch { } }
 					}}
 				>
 					<ChevronDown />
@@ -6063,79 +6409,160 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 						className={`p-1.5 rounded-full hover:bg-white/10`}
 						onClick={async (e) => {
 							e.stopPropagation();
-							const v = (globalVideoRef && globalVideoRef.current) || videoRef.current;
+							const directVideo = (videoRef && videoRef.current) || null;
+							const queryVideo = document.querySelector('.vx-video-area video') || document.querySelector('video');
+							const v = directVideo || queryVideo;
+							const Cap = window.Capacitor || (typeof Capacitor !== 'undefined' ? Capacitor : null);
+							const capacitorPlatform = (Cap && typeof Cap.getPlatform === 'function') ? Cap.getPlatform() : '';
+							const isAndroidRuntime = capacitorPlatform === 'android';
+
+							if (isAndroidRuntime) {
+								try {
+									if (window.NativePiP && typeof window.NativePiP.setPipAllowed === 'function') {
+										window.NativePiP.setPipAllowed(true);
+									}
+									if (Cap && Cap.Plugins && Cap.Plugins.PiPMode && typeof Cap.Plugins.PiPMode.setPipAllowed === 'function') {
+										await Cap.Plugins.PiPMode.setPipAllowed({ allowed: true });
+									}
+								} catch (err) {
+									console.warn('[PiP] setPipAllowed failed', err);
+								}
+							}
 
 							/* ── 1. Direct native bridge (most reliable — bypasses Capacitor plugin layer) ── */
-							try {
-								if (window.NativePiP && typeof window.NativePiP.enterPiP === 'function') {
-									// Pre-apply PiP CSS BEFORE entering native PiP.
-									// Android throttles WebView rendering in PiP mode,
-									// so CSS changes made AFTER entering PiP never paint.
-									setIsInPiPMode(true);
-									setControlsVisible(false);
-									// Wait for React render + browser paint, then trigger native PiP
-									requestAnimationFrame(() => {
-										requestAnimationFrame(() => {
-											try {
-												window.NativePiP.enterPiP();
-												console.log('[PiP] Called NativePiP.enterPiP (CSS pre-applied)');
-											} catch (err) {
-												console.warn('[PiP] NativePiP.enterPiP failed', err);
-												setIsInPiPMode(false);
-												setControlsVisible(true);
-											}
-										});
-									});
-									return;
+							if (isAndroidRuntime) {
+								try {
+									if (window.NativePiP && typeof window.NativePiP.enterPiP === 'function') {
+										setControlsVisible(false);
+										try {
+											window.NativePiP.enterPiP();
+											console.log('[PiP] Called NativePiP.enterPiP — trusting native bridge');
+										} catch (err) {
+											console.warn('[PiP] NativePiP.enterPiP threw', err);
+											setIsInPiPMode(false);
+											setControlsVisible(true);
+											throw err;
+										}
+										return;
+									}
+								} catch (nativeErr) {
+									console.warn('[PiP] NativePiP bridge failed', nativeErr);
+									setIsInPiPMode(false);
+									setControlsVisible(true);
 								}
-							} catch (nativeErr) {
-								console.warn('[PiP] NativePiP bridge failed', nativeErr);
-								setIsInPiPMode(false);
-								setControlsVisible(true);
 							}
 
 							/* ── 2. Capacitor plugin bridge (backup) ── */
-							try {
-								const Cap = window.Capacitor || (typeof Capacitor !== 'undefined' ? Capacitor : null);
-								if (Cap && Cap.Plugins && Cap.Plugins.PiPMode) {
-									setIsInPiPMode(true);
-									setControlsVisible(false);
-									await Cap.Plugins.PiPMode.enterPiP({ width: 16, height: 9 });
-									console.log('[PiP] Entered Android native PiP via Capacitor');
-									return;
+							if (isAndroidRuntime) {
+								try {
+									if (Cap && Cap.Plugins && Cap.Plugins.PiPMode) {
+										setControlsVisible(false);
+										await Cap.Plugins.PiPMode.enterPiP({ width: 16, height: 9 });
+										console.log('[PiP] Entered Android native PiP via Capacitor');
+										return;
+									}
+								} catch (capErr) {
+									console.warn('[PiP] Capacitor PiP failed', capErr);
+									setIsInPiPMode(false);
+									setControlsVisible(true);
 								}
-							} catch (capErr) {
-								console.warn('[PiP] Capacitor PiP failed', capErr);
-								setIsInPiPMode(false);
-								setControlsVisible(true);
 							}
 
-							/* ── 3. Try browser Picture-in-Picture API (desktop Chrome / Safari) ── */
+							/* ── 3. Try browser Picture-in-Picture API (desktop Chrome / Safari / Edge) ── */
 							try {
 								if (
 									document.pictureInPictureEnabled &&
 									v &&
+									typeof HTMLVideoElement !== 'undefined' &&
+									v instanceof HTMLVideoElement &&
 									typeof v.requestPictureInPicture === 'function' &&
 									!v.disablePictureInPicture
 								) {
+									try {
+										if (v.paused) {
+											const p = v.play();
+											if (p && p.catch) p.catch(() => { });
+										}
+									} catch (e2) { }
 									if (document.pictureInPictureElement === v) {
 										await document.exitPictureInPicture();
 										return;
 									}
 									await v.requestPictureInPicture();
+									setIsInPiPMode(true);
 									console.log('[PiP] Entered browser Picture-in-Picture');
 									return;
+								}
+
+								// Chromium Document PiP fallback (when direct video PiP is unavailable)
+								if (window.documentPictureInPicture && typeof window.documentPictureInPicture.requestWindow === 'function') {
+									const pipWin = await window.documentPictureInPicture.requestWindow({ width: 480, height: 270 });
+									if (pipWin) {
+										const iframeEl = document.querySelector('.vx-video-area iframe');
+										pipWin.document.body.style.margin = '0';
+										pipWin.document.body.style.background = '#000';
+
+										if (v) {
+											const clone = v.cloneNode(true);
+											clone.muted = v.muted;
+											clone.controls = true;
+											clone.autoplay = true;
+											clone.src = v.currentSrc || v.src || '';
+											clone.style.width = '100%';
+											clone.style.height = '100%';
+											clone.style.objectFit = 'contain';
+											pipWin.document.body.appendChild(clone);
+											try {
+												const playPromise = clone.play();
+												if (playPromise && playPromise.catch) playPromise.catch(() => { });
+											} catch { }
+											setIsInPiPMode(true);
+											console.log('[PiP] Entered Document Picture-in-Picture fallback (video clone)');
+											return;
+										}
+
+										if (iframeEl && iframeEl.src) {
+											const pipIframe = pipWin.document.createElement('iframe');
+											pipIframe.src = iframeEl.src;
+											pipIframe.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+											pipIframe.style.width = '100%';
+											pipIframe.style.height = '100%';
+											pipIframe.style.border = '0';
+											pipWin.document.body.appendChild(pipIframe);
+											setIsInPiPMode(true);
+											console.log('[PiP] Entered Document Picture-in-Picture fallback (iframe)');
+											return;
+										}
+									}
+								}
+
+								if (v && typeof v.webkitSupportsPresentationMode === 'function' && v.webkitSupportsPresentationMode('picture-in-picture')) {
+									if (typeof v.webkitSetPresentationMode === 'function') {
+										if (v.webkitPresentationMode === 'picture-in-picture') {
+											v.webkitSetPresentationMode('inline');
+											setIsInPiPMode(false);
+										} else {
+											v.webkitSetPresentationMode('picture-in-picture');
+											setIsInPiPMode(true);
+										}
+										return;
+									}
 								}
 							} catch (pipErr) {
 								console.warn('[PiP] Browser PiP not available', pipErr);
 							}
 
 							/* ── 3. Fallback: in-app mini player ── */
+							setIsInPiPMode(false);
+							setControlsVisible(true);
 							const currentTime = v ? v.currentTime : 0;
 							try {
 								const info = null;
-								const videoSrc = (v && (v.currentSrc || v.src)) || videoUrl || '';
-								const videoThumb = '';
+								const rawElementSrc = (v && (v.currentSrc || v.src)) || '';
+								const rawFallbackSrc = videoUrl || videoInfo?.src || videoInfo?.videoUrl || videoInfo?.url || searchParams.get('src') || '';
+								const safeRawSrc = /^blob:/i.test(rawElementSrc) ? rawFallbackSrc : (rawElementSrc || rawFallbackSrc);
+								const videoSrc = resolveMediaUrl(safeRawSrc) || safeRawSrc;
+								const videoThumb = videoInfo?.imageUrl || videoInfo?.thumbnail || initialVideo?.imageUrl || initialVideo?.thumbnail || '';
 								const videoId = searchParams.get('id') || 'custom';
 
 								const stored = {
@@ -6159,6 +6586,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 									duration: v ? Math.floor(v.duration || 0) : 0
 								};
 								console.log('[PiP] Falling back to in-app mini player ->', stored);
+								if (!videoSrc) throw new Error('No playable source for mini player fallback');
 								try { localStorage.setItem('miniPlayerData', JSON.stringify(stored)); } catch (e2) { console.warn('localStorage set failed', e2); }
 								try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('miniPlayerRequest', stored); } catch (e2) { }
 
@@ -6170,7 +6598,13 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 								navigate(url, { state: { miniPlayerData: stored } });
 							} catch (err) {
 								console.error('Failed to store mini player data / navigate', err);
-								try { navigate('/home'); } catch (e2) { }
+								try {
+									if (window.history && window.history.length > 1) {
+										window.history.back();
+									} else {
+										navigate(-1);
+									}
+								} catch (e2) { }
 							}
 						}}
 						style={{ opacity: locked ? 0.28 : 1, pointerEvents: locked ? 'none' : 'auto', color: darkMode ? (locked ? "#9CA3AF" : "#fff") : (locked ? "#9CA3AF" : "#111") }}
@@ -6198,8 +6632,8 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 			<button
 				style={{
 					position: 'absolute',
-					top: 'calc(env(safe-area-inset-top, 0px) + 18px)',
-					left: 16,
+					top: 'calc(env(safe-area-inset-top, 0px) + 6px)',
+					left: 'calc(env(safe-area-inset-left, 0px) + 4px)',
 					width: 44,
 					height: 44,
 					borderRadius: '50%',
@@ -6222,17 +6656,33 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 				}}
 				onClick={(e) => {
 					try { e.stopPropagation(); } catch { }
-					try { if (videoRef.current) videoRef.current.pause(); } catch { }
-					try { setIsPlaying(false); } catch { }
+					const hasOverlayHandoff = !!(onChevronDown && typeof onChevronDown === 'function');
+					if (!hasOverlayHandoff) {
+						try { if (videoRef.current) videoRef.current.pause(); } catch { }
+						try { setIsPlaying(false); } catch { }
+					}
 					const v = videoRef.current;
 					// For YouTube videos, videoRef has no currentTime — derive from progress*duration
 					const currentTime = isYouTubeVideo ? Math.floor(progress * (duration || 0)) : (v ? v.currentTime : 0);
-					const rawSrc = (v && (v.currentSrc || v.src)) || videoUrl || '';
-					const videoSrc = resolveMediaUrl(rawSrc) || rawSrc;
+					const rawElementSrc = (v && (v.currentSrc || v.src)) || '';
+					const rawFallbackSrc = videoUrl || videoInfo?.src || videoInfo?.videoUrl || videoInfo?.url || searchParams.get('src') || '';
+					const safeRawSrc = /^blob:/i.test(rawElementSrc) ? rawFallbackSrc : (rawElementSrc || rawFallbackSrc);
+					const videoSrc = resolveMediaUrl(safeRawSrc) || safeRawSrc;
 					const videoId = searchParams.get('id') || 'custom';
 					const stored = {
-						video: { id: videoId, title: videoTitle || null, src: videoSrc, url: videoSrc, videoUrl: videoSrc, thumbnail: '', imageUrl: '', author: creatorName || null, creator: creatorName || null, channel: creatorName || null },
-						time: Math.floor(currentTime || 0), paused: false, title: videoTitle || null, creatorName: creatorName || null, duration: isYouTubeVideo ? Math.floor(duration || 0) : (v ? Math.floor(v.duration || 0) : 0)
+						video: {
+							id: videoId,
+							title: videoTitle || null,
+							src: videoSrc,
+							url: videoSrc,
+							videoUrl: videoSrc,
+							thumbnail: videoInfo?.thumbnail || videoInfo?.imageUrl || initialVideo?.thumbnail || initialVideo?.imageUrl || '',
+							imageUrl: videoInfo?.imageUrl || videoInfo?.thumbnail || initialVideo?.imageUrl || initialVideo?.thumbnail || '',
+							author: creatorName || null,
+							creator: creatorName || null,
+							channel: creatorName || null
+						},
+						time: Math.floor(currentTime || 0), paused: !isPlaying, title: videoTitle || null, creatorName: creatorName || null, duration: isYouTubeVideo ? Math.floor(duration || 0) : (v ? Math.floor(v.duration || 0) : 0)
 					};
 					if (onChevronDown && typeof onChevronDown === 'function') {
 						try { onChevronDown(stored); } catch { }
@@ -6241,15 +6691,14 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					}
 					try { localStorage.setItem('miniPlayerData', JSON.stringify(stored)); } catch { }
 					try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('miniPlayerRequest', stored); } catch { }
-					try { if (typeof eventBus !== 'undefined' && eventBus.emit) eventBus.emit('switchToHome', stored); } catch { }
 					try { if (typeof window !== 'undefined' && typeof window.setFooterTab === 'function') window.setFooterTab('home'); } catch { }
 					try {
 						if (window.history && window.history.length > 1) {
 							window.history.back();
 						} else {
-							navigate('/home', { state: { miniPlayerData: stored }, replace: true });
+							navigate(-1);
 						}
-					} catch { try { navigate('/home', { state: { miniPlayerData: stored }, replace: true }); } catch { } }
+					} catch { try { navigate(-1); } catch { } }
 				}}
 				aria-label="Go back"
 			>
@@ -6259,24 +6708,29 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 			{/* 2. Title & Metadata Section */}
 			{/* Keep in normal flow so layout is preserved. Use visibility+opacity for show/hide. */}
 			<div
-					className="w-full mt-0 mb-0 px-4"
+				className="w-full mt-0 mb-0"
 				style={{
+					paddingLeft: forceLandscapeCss ? 20 : 8,
+					paddingRight: 16,
+					paddingTop: forceLandscapeCss ? 0 : 24,
 					position: forceLandscapeCss ? "fixed" : "relative",
 					left: forceLandscapeCss ? "50%" : "auto",
 					top: forceLandscapeCss ? "50%" : "auto",
 					width: forceLandscapeCss ? "100vh" : "100%",
 					// Y points Left. -50vw moves center to Right Edge. +120px moves Left (Down). 
-					transform: forceLandscapeCss ? "translate(-50%, -50%) rotate(90deg) translateY(calc(-50vw + 120px))" : "none",
+					transform: forceLandscapeCss
+						? "translate(-50%, -50%) rotate(90deg) translateY(calc(-50vw + 120px))"
+						: "none",
 					transformOrigin: "center",
 					zIndex: 450, // slightly below top controls
 					marginLeft: forceLandscapeCss ? "0" : "auto",
 					marginRight: forceLandscapeCss ? "0" : "auto",
 
-					visibility: controlsVisible ? "visible" : "hidden",
-					opacity: controlsVisible ? 1 : 0,
+					visibility: (controlsVisible && startupUiReady) ? "visible" : "hidden",
+					opacity: (controlsVisible && startupUiReady) ? 1 : 0,
 					transition: "opacity 220ms ease, backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease, background 240ms ease",
 					// keep pointer events off when hidden
-					pointerEvents: controlsVisible ? "auto" : "none"
+					pointerEvents: (controlsVisible && startupUiReady) ? "auto" : "none"
 				}}
 			>
 				{/* Title + Author + Badge */}
@@ -6436,13 +6890,11 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 									className="w-full h-full border-0"
 									allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
 									allowFullScreen={false}
-									style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#000', pointerEvents: 'none', transform: 'scale(1.3)', transformOrigin: 'center center' }}
+									style={{ position: 'absolute', width: '133%', height: '133%', left: '-16.5%', top: '-16.5%', background: '#000', pointerEvents: 'none' }}
 									title="Video player"
 								/>
 								{/* Loading cover — hides YouTube's own loading spinner until video starts playing */}
-								{!ytLoaded && (
-									<div style={{ position: 'absolute', inset: 0, zIndex: 2, background: '#000', pointerEvents: 'none', transition: 'opacity 0.3s ease-out' }} />
-								)}
+								<div style={{ position: 'absolute', inset: 0, zIndex: 2, background: '#000', pointerEvents: startupUiReady ? 'none' : 'auto', opacity: startupUiReady ? 0 : 1, transition: 'opacity 0.4s ease-out 0.15s' }} />
 								{/* Click-blocking overlay so taps go to our controls, not YouTube */}
 								<div style={{ position: 'absolute', inset: 0, zIndex: 3 }} />
 								{/* Edge gradient masks — hide YouTube watermark & title overlay (skip in landscape/fullscreen — already scaled) */}
@@ -6465,8 +6917,18 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 								x5-video-orientation="portrait"
 								preload="auto"
 								fetchpriority="high"
-								poster="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-								style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: (isFullscreen || forceLandscapeCss) ? 'cover' : 'contain', background: '#000' }}
+								poster="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+								style={{
+									position: 'absolute',
+									inset: 0,
+									width: '100%',
+									height: '100%',
+									objectFit: (isFullscreen || forceLandscapeCss) ? 'cover' : 'contain',
+									background: '#000',
+									visibility: videoPlayerReady ? 'visible' : 'hidden',
+									opacity: videoPlayerReady ? 1 : 0,
+									transition: 'opacity 220ms ease-out'
+								}}
 								onLoadedMetadata={(e) => {
 									try {
 										const v = e.target;
@@ -6479,7 +6941,19 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 								}}
 								onEnded={handleVideoEnded}
 								onPause={() => setIsPlaying(false)}
-								onPlay={() => setIsPlaying(true)}
+								onPlay={() => { setIsPlaying(true); }}
+								onPlaying={() => {
+									if (!videoPlayerReady) {
+										clearTimeout(videoPlayerReadyTimerRef.current);
+										videoPlayerReadyTimerRef.current = setTimeout(() => setVideoPlayerReady(true), 150);
+									}
+								}}
+								onLoadedData={() => {
+									if (!videoPlayerReady) {
+										clearTimeout(videoPlayerReadyTimerRef.current);
+										videoPlayerReadyTimerRef.current = setTimeout(() => setVideoPlayerReady(true), 180);
+									}
+								}}
 								onCanPlay={() => {
 									// Triggered when enough data is loaded to play — auto-start
 									try {
@@ -6488,6 +6962,11 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 											v.play().catch(() => {});
 										}
 									} catch { }
+									// Mark as ready once enough data is available
+									if (!videoPlayerReady) {
+										clearTimeout(videoPlayerReadyTimerRef.current);
+										videoPlayerReadyTimerRef.current = setTimeout(() => setVideoPlayerReady(true), 220);
+									}
 								}}
 								onError={(e) => {
 									// Video failed to load — retry once after delay (handles cold backend / network blip)
@@ -6505,6 +6984,17 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 									} catch { }
 								}}
 							/>
+						)}
+						{/* Black cover to prevent glitch/flash while video loads — fades out when ready */}
+						{!isYouTubeVideo && !startupUiReady && (
+							<div style={{
+								position: 'absolute', inset: 0, zIndex: 6,
+								background: '#000',
+								backgroundImage: (videoInfo?.imageUrl || videoInfo?.thumbnail) ? `url(${videoInfo.imageUrl || videoInfo.thumbnail})` : 'none',
+								backgroundSize: 'cover', backgroundPosition: 'center',
+								transition: 'opacity 0.3s ease-out',
+								pointerEvents: 'none'
+							}} />
 						)}
 						{/* Video Overlay Layer - renders links and images at specific times */}
 						<div
@@ -6750,6 +7240,29 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 				</div>
 			))}
 
+			{dislikeExplosions.map(exp => (
+				<div key={exp.id} style={{ position: 'fixed', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 9999 }}>
+					{exp.particles.map((p, i) => (
+						<div
+							key={i}
+							style={{
+								position: 'absolute',
+								left: exp.x,
+								top: exp.y,
+								'--heart-dx': `${p.dx}px`,
+								'--heart-dy': `${p.dy}px`,
+								'--heart-rot': `${p.angle}deg`,
+								animation: `dislike-explode ${p.duration}ms cubic-bezier(0.25, 0.46, 0.45, 0.94) ${p.delay}ms forwards`,
+								willChange: 'transform, opacity',
+								pointerEvents: 'none',
+							}}
+						>
+							<HeartOff size={p.size} color="#ef4444" />
+						</div>
+					))}
+				</div>
+			))}
+
 			{/* 4. Bottom Controls */}
 			{/* Hide bottom controls if fullscreen overlay or video player overlay is visible */}
 			{!visibleAds.some(ad => ad.type === 'overlay' && (ad.overlayAdPosition === 'fullscreen' || ad.overlayAdPosition === 'videoPlayer')) && (
@@ -6947,16 +7460,17 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 				{/* Footer Actions Row */}
 				<div className="flex items-center justify-between text-white mt-1">
 					<div className="flex items-center space-x-3">
-						<span className="text-xs font-medium text-gray-200 tracking-wide">
-							{(() => {
-								const v = videoRef.current;
-								// For YouTube videos, always compute current time from progress * duration
-								const cur = (isYouTubeVideo || !v) ? Math.floor(progress * (duration || 0)) : Math.floor(v.currentTime || (progress * duration || 0));
-								const total = Math.floor(duration || 0);
-								const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-								return `${fmt(cur)} / ${fmt(total || 0)}`;
-							})()}
-						</span>
+						{duration > 0 && (
+							<span className="text-xs font-medium text-gray-200 tracking-wide">
+								{(() => {
+									const v = videoRef.current;
+									const cur = (isYouTubeVideo || !v) ? Math.floor(progress * (duration || 0)) : Math.floor(v.currentTime || (progress * duration || 0));
+									const total = Math.floor(duration || 0);
+									const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+									return `${fmt(cur)} / ${fmt(total)}`;
+								})()}
+							</span>
+						)}
 						{/* match "Requested" badge colors: dark background + blue text */}
 						<button
 							onClick={() => setShowQualityDropdown(!showQualityDropdown)}
@@ -8145,11 +8659,10 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 													setPlaybackSpeed(v);
 												}}
 												style={{ width: 72, padding: '6px 8px', borderRadius: 8, background: '#fff', color: '#111', border: '1px solid #e5e7eb' }}
-												aria-label="Custom playback speed"
 											/>
 											<div className="text-gray-500">x</div>
 										</div>
-									</div>
+								</div>
 								</div>
 							</div>
 

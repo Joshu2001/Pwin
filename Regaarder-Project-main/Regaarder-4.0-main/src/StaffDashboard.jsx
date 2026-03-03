@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, Eye, EyeOff, Search, Users, Clock, Trash, Trash2, Ban, Crown, Gift, Megaphone, Filter, Plus, Copy, Home, Image as ImageIcon, AlertCircle, Maximize2, CheckCircle, AlertTriangle, Star } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, EyeOff, Search, Users, Clock, Trash, Trash2, Ban, Crown, Gift, Megaphone, Filter, Plus, Copy, Home, Image as ImageIcon, AlertCircle, Maximize2, CheckCircle, AlertTriangle, Star, DollarSign } from 'lucide-react';
 import SupportTicketPanel from './SupportTicketPanel.jsx';
 
 const STAFF_BACKEND_PLACEHOLDER = (typeof window !== 'undefined' && window.__BACKEND_URL__)
@@ -21,6 +21,106 @@ const staffFetch = (input, init) => {
 };
 
 const fetch = staffFetch;
+
+const STAFF_BACKEND_FALLBACKS = [
+  'https://regaarder-pwin.onrender.com',
+  'https://pwin.onrender.com',
+  'https://pwin-copy-production.up.railway.app',
+];
+
+const REQUEST_AMOUNT_OVERRIDES_KEY = 'staff_request_amount_overrides_v1';
+
+const readPersistedRequestAmountOverrides = () => {
+  try {
+    const raw = localStorage.getItem(REQUEST_AMOUNT_OVERRIDES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writePersistedRequestAmountOverrides = (map) => {
+  try {
+    const safe = map && typeof map === 'object' ? map : {};
+    if (Object.keys(safe).length === 0) {
+      localStorage.removeItem(REQUEST_AMOUNT_OVERRIDES_KEY);
+      return;
+    }
+    localStorage.setItem(REQUEST_AMOUNT_OVERRIDES_KEY, JSON.stringify(safe));
+  } catch {}
+};
+
+const removePersistedRequestAmountOverride = (requestId) => {
+  if (!requestId) return;
+  const map = readPersistedRequestAmountOverrides();
+  delete map[String(requestId)];
+  writePersistedRequestAmountOverrides(map);
+};
+
+const joinBasePath = (base, path) => {
+  const normalizedBase = String(base || '').replace(/\/+$/, '');
+  const normalizedPath = String(path || '').replace(/^\/+/, '');
+  return `${normalizedBase}/${normalizedPath}`;
+};
+
+const buildStaffBackendCandidates = () => {
+  const candidates = [
+    getStaffBackendBaseUrl(),
+    (typeof window !== 'undefined' && window.__BACKEND_URL__) || null,
+    ...STAFF_BACKEND_FALLBACKS,
+  ].filter(Boolean);
+  return Array.from(new Set(candidates));
+};
+
+const postToStaffEndpointWithFallback = async (path, payload, employeeId) => {
+  const candidates = buildStaffBackendCandidates();
+  let lastResponse = null;
+  let lastError = null;
+
+  for (const base of candidates) {
+    const endpoint = `${joinBasePath(base, path)}?employeeId=${encodeURIComponent(String(employeeId))}`;
+    try {
+      const response = await nativeFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+
+      if (response.ok) return response;
+      lastResponse = response;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (lastResponse) return lastResponse;
+  throw lastError || new Error('All backend attempts failed');
+};
+
+const postToStaffPathVariantsWithFallback = async (paths, payload, employeeId) => {
+  const variants = Array.isArray(paths) ? paths.filter(Boolean) : [];
+  if (!variants.length) throw new Error('No endpoint paths provided');
+
+  let lastResponse = null;
+  let lastError = null;
+
+  for (const path of variants) {
+    try {
+      const response = await postToStaffEndpointWithFallback(path, payload, employeeId);
+      if (response.ok) return response;
+
+      lastResponse = response;
+      if (response.status !== 404) return response;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (lastResponse) return lastResponse;
+  throw lastError || new Error('All endpoint variants failed');
+};
 
 // Utility: convert hex color to rgba string
 function hexToRgba(hex, alpha = 1) {
@@ -522,6 +622,7 @@ export default function StaffDashboard() {
   const [undoModal, setUndoModal] = useState({ isOpen: false, action: null, itemId: null, itemType: null });
   const [reasonModal, setReasonModal] = useState({ isOpen: false, action: null, itemId: null, itemType: null, reason: '' });
   const [userActionModal, setUserActionModal] = useState({ isOpen: false, userId: null, action: null });
+  const [amountOverrideModal, setAmountOverrideModal] = useState({ isOpen: false, requestId: null, currentAmount: 0, overrideAmount: '', reason: '' });
   const [promotionModal, setPromotionModal] = useState({ isOpen: false, title: '', message: '', recipientType: 'individual', selectedUsers: [], promotionType: 'offer', ctaText: 'Learn More', ctaIcon: 'gift', ctaColor: '#f59e0b', ctaUrl: '' });
   const [ctaPickerOpen, setCtaPickerOpen] = useState(false);
   const [promoTemplates, setPromoTemplates] = useState(() => {
@@ -769,8 +870,25 @@ export default function StaffDashboard() {
   useEffect(() => {
     const session = localStorage.getItem('staffSession');
     if (session) {
-      setStaffSession(JSON.parse(session));
-      loadData(JSON.parse(session));
+      const parsed = JSON.parse(session);
+      setStaffSession(parsed);
+      loadData(parsed);
+
+      // ── Periodic sync: refresh requests from backend every 45s ──
+      const syncInterval = setInterval(async () => {
+        try {
+          // Refresh requests list from backend so other-device changes appear
+          const requestsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/requests?employeeId=${parsed.id}`);
+          if (requestsRes.ok) {
+            const data = await requestsRes.json();
+            setRequests(data.requests || []);
+          }
+        } catch (e) {
+          console.warn('[StaffSync] Periodic sync error', e);
+        }
+      }, 45_000);
+
+      return () => clearInterval(syncInterval);
     }
   }, []);
 
@@ -1341,6 +1459,129 @@ export default function StaffDashboard() {
     } catch (err) {
       console.error('Hide failed:', err);
       setError('Error hiding request');
+    }
+  };
+
+  const handleOverrideRequestAmount = async (requestId, currentAmount = 0) => {
+    // Open modal instead of using prompt
+    setAmountOverrideModal({
+      isOpen: true,
+      requestId: requestId,
+      currentAmount: currentAmount,
+      overrideAmount: String(Number(currentAmount || 0).toFixed(2)),
+      reason: ''
+    });
+  };
+
+  const submitAmountOverride = async () => {
+    const rawRequestId = amountOverrideModal.requestId;
+    if (rawRequestId === null || typeof rawRequestId === 'undefined' || String(rawRequestId).trim() === '') {
+      setToast({ type: 'error', message: 'Missing request ID. Please refresh and try again.' });
+      return;
+    }
+
+    const actorEmployeeId = Number(staffSession?.id ?? staffSession?.employeeId) || 0;
+    const encodedRequestId = encodeURIComponent(String(rawRequestId));
+
+    const nextAmount = Number(amountOverrideModal.overrideAmount);
+    if (!Number.isFinite(nextAmount) || nextAmount < 0) {
+      setToast({ type: 'error', message: 'Invalid amount' });
+      return;
+    }
+
+    const payload = {
+      employeeId: actorEmployeeId,
+      actorId: actorEmployeeId,
+      amount: nextAmount,
+      reason: amountOverrideModal.reason || ''
+    };
+    const endpointVariants = [
+      `/staff/requests/${encodedRequestId}/override-amount`,
+      `/staff/request/${encodedRequestId}/override-amount`,
+      `/staff/override-request/${encodedRequestId}`,
+      `/staff/override-request-amount/${encodedRequestId}`,
+    ];
+
+    try {
+      const res = await postToStaffPathVariantsWithFallback(endpointVariants, payload, actorEmployeeId);
+
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        console.error('Override amount failed:', res.status, errorBody);
+        setToast({ type: 'error', message: `Failed to update amount (${res.status}). ${errorBody.error || 'Please try again.'}` });
+        setAmountOverrideModal({ isOpen: false, requestId: null, currentAmount: 0, overrideAmount: '', reason: '' });
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      const updated = data.request || {};
+      setRequests(prev => prev.map(r => String(r.id) === String(rawRequestId)
+        ? {
+            ...r,
+            amount: Number(updated.amount ?? nextAmount) || 0,
+            funding: Number(updated.funding ?? nextAmount) || 0,
+            meta: updated.meta || r.meta
+          }
+        : r
+      ));
+      removePersistedRequestAmountOverride(rawRequestId);
+      setToast({ type: 'success', message: `Amount updated to $${nextAmount.toFixed(2)}` });
+      setAmountOverrideModal({ isOpen: false, requestId: null, currentAmount: 0, overrideAmount: '', reason: '' });
+    } catch (err) {
+      console.error('Override amount failed:', err);
+      setToast({ type: 'error', message: 'Server unreachable. Amount was not saved.' });
+    }
+  };
+
+  const handleRevertRequestAmount = async (requestId) => {
+    if (requestId === null || typeof requestId === 'undefined' || String(requestId).trim() === '') {
+      setToast({ type: 'error', message: 'Missing request ID. Please refresh and try again.' });
+      return;
+    }
+
+    const actorEmployeeId = Number(staffSession?.id ?? staffSession?.employeeId) || 0;
+    const encodedRequestId = encodeURIComponent(String(requestId));
+    const reason = window.prompt('Reason for revert (optional):', '') || '';
+
+    const payload = {
+      employeeId: actorEmployeeId,
+      actorId: actorEmployeeId,
+      reason: reason || ''
+    };
+    const endpointVariants = [
+      `/staff/requests/${encodedRequestId}/revert-amount`,
+      `/staff/request/${encodedRequestId}/revert-amount`,
+      `/staff/revert-request/${encodedRequestId}`,
+      `/staff/revert-request-amount/${encodedRequestId}`,
+    ];
+
+    try {
+      const res = await postToStaffPathVariantsWithFallback(endpointVariants, payload, actorEmployeeId);
+
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        console.error('Revert amount failed:', res.status, errorBody);
+        setToast({ type: 'error', message: `Failed to revert amount (${res.status}). ${errorBody.error || 'Please try again.'}` });
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      const updated = data.request || {};
+      const revertedAmount = Number(updated.amount ?? 0) || 0;
+      setRequests(prev => prev.map(r => String(r.id) === String(requestId)
+        ? {
+            ...r,
+            amount: revertedAmount,
+            funding: Number(updated.funding ?? revertedAmount) || revertedAmount,
+            meta: updated.meta || r.meta
+          }
+        : r
+      ));
+      removePersistedRequestAmountOverride(requestId);
+      setToast({ type: 'success', message: 'Amount reverted' });
+    } catch (err) {
+      console.error('Revert amount failed:', err);
+      setToast({ type: 'error', message: 'Server unreachable. Revert was not saved.' });
     }
   };
 
@@ -2833,6 +3074,7 @@ export default function StaffDashboard() {
                         // Determine border color: accent color if boosted or selected, otherwise grey
                         const isSelected = requestAccentColorSelection[req.id];
                         const isBoosted = (req.boosts || 0) >= 1;
+                        const amountOverrideActive = !!(req.meta && req.meta.staffAmountOverride && req.meta.staffAmountOverride.active);
                         const useAccentBorder = isSelected || isBoosted;
                         const accentColor = '#9333ea'; // Purple accent from theme
                         
@@ -2922,7 +3164,23 @@ export default function StaffDashboard() {
                             fontWeight: '600'
                           }}>
                             <Crown size={14} />
-                            Admin Selected
+                            Sponsored
+                          </span>
+                        )}
+                        {amountOverrideActive && (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 12px',
+                            backgroundColor: '#0ea5e9',
+                            color: 'white',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            <DollarSign size={14} />
+                            Amount Overridden
                           </span>
                         )}
                       </div>
@@ -2942,6 +3200,9 @@ export default function StaffDashboard() {
                           )}
                           <p style={{ margin: '4px 0', color: '#666', fontSize: '14px' }}>
                             Likes: {req.likes} | Comments: {req.comments} | Boosts: {req.boosts || 0}
+                          </p>
+                          <p style={{ margin: '4px 0', color: '#111827', fontSize: '14px', fontWeight: '600' }}>
+                            Request Amount: ${Number(req.amount || req.funding || 0).toFixed(2)}
                           </p>
                           <p style={{ margin: '4px 0', color: '#999', fontSize: '12px' }}>
                             {new Date(req.createdAt).toLocaleString()}
@@ -3020,6 +3281,40 @@ export default function StaffDashboard() {
                                 <Crown size={14} />
                                 {requestAccentColorSelection[req.id] ? 'Selected' : 'Select'}
                               </button>
+                              <button
+                                onClick={() => handleOverrideRequestAmount(req.id, Number(req.amount || req.funding || 0))}
+                                style={{
+                                  padding: '8px 16px',
+                                  backgroundColor: '#f8fafc',
+                                  color: '#0f172a',
+                                  border: '2px solid #0f172a',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                  fontWeight: 'bold',
+                                  transition: 'all 0.2s'
+                                }}
+                              >
+                                Set Amount
+                              </button>
+                              {amountOverrideActive && (
+                                <button
+                                  onClick={() => handleRevertRequestAmount(req.id)}
+                                  style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: 'white',
+                                    color: '#0ea5e9',
+                                    border: '2px solid #0ea5e9',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    transition: 'all 0.2s'
+                                  }}
+                                >
+                                  Revert Amount
+                                </button>
+                              )}
                             </>
                           )}
                           {(req.hidden || req.deleted) && (
@@ -5392,6 +5687,138 @@ export default function StaffDashboard() {
               <button
                 onClick={() => setActionModal({ isOpen: false, itemId: null, itemType: null })}
                 style={{
+                  padding: '12px 16px',
+                  backgroundColor: '#e5e7eb',
+                  color: '#374151',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+                onMouseLeave={(e) => e.target.style.opacity = '1'}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Amount Override Modal */}
+      {amountOverrideModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          backdropFilter: 'blur(2px)',
+          WebkitBackdropFilter: 'blur(2px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1001
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '32px',
+            maxWidth: '450px',
+            width: '90%',
+            boxShadow: '0 20px 25px rgba(0, 0, 0, 0.15)'
+          }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 8px 0', color: '#1f2937' }}>
+              Override Request Amount
+            </h2>
+            <p style={{ fontSize: '14px', color: '#666', margin: '0 0 24px 0' }}>
+              Current amount: <strong>${Number(amountOverrideModal.currentAmount || 0).toFixed(2)}</strong>
+            </p>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
+                New Amount ($ USD)
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#4f46e5' }}>$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={amountOverrideModal.overrideAmount}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Only allow numbers with up to 2 decimal places
+                    if (val === '' || /^\d+(\.\d{0,2})?$/.test(val)) {
+                      setAmountOverrideModal({ ...amountOverrideModal, overrideAmount: val });
+                    }
+                  }}
+                  placeholder="0.00"
+                  autoFocus
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    fontFamily: 'inherit',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <p style={{ fontSize: '12px', color: '#999', margin: '8px 0 0 0' }}>
+                Display value: ${Number(amountOverrideModal.overrideAmount || 0).toFixed(2)}
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
+                Reason for Override (Optional)
+              </label>
+              <input
+                type="text"
+                value={amountOverrideModal.reason}
+                onChange={(e) => setAmountOverrideModal({ ...amountOverrideModal, reason: e.target.value })}
+                placeholder="e.g., Subsidy, Discount, etc."
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontFamily: 'inherit',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={submitAmountOverride}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  backgroundColor: '#4f46e5',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.opacity = '0.9'}
+                onMouseLeave={(e) => e.target.style.opacity = '1'}
+              >
+                Update Amount
+              </button>
+              <button
+                onClick={() => setAmountOverrideModal({ isOpen: false, requestId: null, currentAmount: 0, overrideAmount: '', reason: '' })}
+                style={{
+                  flex: 1,
                   padding: '12px 16px',
                   backgroundColor: '#e5e7eb',
                   color: '#374151',

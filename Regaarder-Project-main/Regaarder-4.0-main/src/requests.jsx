@@ -40,6 +40,9 @@ const customColors = {
 // Resolve image URL strings used in request cards and mock data.
 const resolveImageUrl = (url) => resolveMediaUrl(url);
 
+// Local amount override helpers removed – all request amounts are now
+// authoritative from the backend so every device/user sees the same values.
+
 // Small utility to produce human-friendly relative time strings from ISO timestamps
 const timeAgoFromISO = (iso) => {
     try {
@@ -59,6 +62,88 @@ const timeAgoFromISO = (iso) => {
         if (w < 4) return `${w}w ago`;
         return then.toLocaleDateString();
     } catch (e) { return ''; }
+};
+
+const SUPPORTED_REQUEST_LANGUAGES = [
+    'All',
+    'English',
+    'Español',
+    'Chinese Traditional',
+    'Vietnamese',
+    'Filipino',
+    'Estonian',
+];
+
+const REQUEST_LANGUAGE_ALIASES = {
+    spanish: 'Español',
+    espanol: 'Español',
+    'español': 'Español',
+    chinese: 'Chinese Traditional',
+    'traditional chinese': 'Chinese Traditional',
+    'chinese traditional': 'Chinese Traditional',
+};
+
+const normalizeTextValue = (value) => String(value || '').trim().toLowerCase();
+
+const normalizeRequestLanguageValue = (value) => {
+    const normalized = normalizeTextValue(value);
+    if (!normalized) return null;
+    return REQUEST_LANGUAGE_ALIASES[normalized] || normalized;
+};
+
+const getRequestLanguageValue = (request) => {
+    if (!request || typeof request !== 'object') return null;
+    const candidates = [
+        request.requestLanguage,
+        request.language,
+        request.preferredLanguage,
+        request.meta && request.meta.language,
+        request.meta && request.meta.preferredLanguage,
+        request.meta && request.meta.requestedLanguage,
+        request.meta && request.meta.contentLanguage,
+    ];
+    const supported = SUPPORTED_REQUEST_LANGUAGES.slice(1);
+    for (const candidate of candidates) {
+        if (typeof candidate !== 'string') continue;
+        const candidateNormalized = normalizeRequestLanguageValue(candidate);
+        const found = supported.find((lang) => normalizeRequestLanguageValue(lang) === candidateNormalized);
+        if (found) return found;
+    }
+    return null;
+};
+
+const isVideoVisibleOnHomePage = (video) => {
+    if (!video || typeof video !== 'object') return false;
+    if (video.hidden || video.deleted || video.shadowDeleted) return false;
+
+    const isPublic = !video.appearance || video.appearance === 'public';
+    if (!isPublic) return false;
+
+    const imageUrl = String(video.imageUrl || video.thumbnail || video.image || '');
+    const videoUrl = String(video.videoUrl || video.url || video.src || video.videoLink || video.youtubeUrl || video.mediaUrl || '');
+    const hasValidImage = !!imageUrl && !imageUrl.startsWith('blob:');
+    const hasValidVideo = !!videoUrl && !videoUrl.startsWith('blob:');
+
+    return hasValidImage || hasValidVideo;
+};
+
+const getRequestCompletionKeyCandidates = (request) => {
+    if (!request || typeof request !== 'object') return [];
+    const keys = [];
+    if (request.id) keys.push(`id:${String(request.id)}`);
+    const title = normalizeTextValue(request.title);
+    if (title) keys.push(`title:${title}`);
+    return keys;
+};
+
+const getVideoCompletionKeyCandidates = (video) => {
+    if (!video || typeof video !== 'object') return [];
+    const keys = [];
+    const requestId = video.requestId || video.originalRequestId || (video.request && video.request.id) || null;
+    if (requestId) keys.push(`id:${String(requestId)}`);
+    const title = normalizeTextValue(video.title || (video.request && video.request.title) || '');
+    if (title) keys.push(`title:${title}`);
+    return keys;
 };
 // Mock User Data for new comments
 const MOCK_USER = {
@@ -1262,7 +1347,7 @@ const Toast = ({ message, isVisible, onClose, actionLabel, onAction, variant = '
 
 
 // --- Reusable Component for a Single Request Card ---
-const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onTogglePin, pulseActive = false, onOpenProfile, selectedLanguage = 'English', initialBookmarked = false, adminSelections = {}, onBookmarkChange = null, isFocused = false }) => {
+const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onTogglePin, pulseActive = false, claimPulseActive = false, onOpenProfile, selectedLanguage = 'English', initialBookmarked = false, adminSelections = {}, onBookmarkChange = null, isFocused = false }) => {
     const goldColor = 'var(--color-gold)';
     const lightGreyBg = customColors['--color-neutral-light-bg']; // UPDATED
 
@@ -2397,7 +2482,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={handleClaimClick}
                             style={claimButtonStyle}
-                            className="focus:outline-none hover:text-gray-900 transition duration-150"
+                            className={`focus:outline-none hover:text-gray-900 transition duration-150 ${claimPulseActive && !isClaimed ? 'animate-pulse' : ''}`}
                             disabled={isClaimed}
                             title={isClaimed && claimedBy ? `Claimed by ${claimedBy.name}` : 'Claim this request'}
                             aria-label={isClaimed && claimedBy ? `Claimed by ${claimedBy.name}` : 'Claim this request'}
@@ -2450,7 +2535,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                                 marginLeft: '6px'
                             }}>
                                 <Crown className="w-4 h-4 mr-1" />
-                                Admin Selected
+                                Sponsored
                             </div>
                         )}
                         <div style={fundingBadgeStyle}>
@@ -3321,8 +3406,8 @@ export default function RequestsFeed() {
             const p = new URLSearchParams(window.location.search);
             const f = p.get('filter');
             // Check against valid filters to be safe, or just allow it if the UI can handle it.
-            // Valid maps: 'For You', 'Trending', 'Newest', 'Top Funded', 'Completed'
-            if (['For You', 'Trending', 'Newest', 'Top Funded', 'Completed'].includes(f)) {
+            // Valid maps: 'For You', 'Trending', 'Newest', 'Top Funded', 'Completed', 'Following'
+            if (['For You', 'Trending', 'Newest', 'Top Funded', 'Completed', 'Following'].includes(f)) {
                 return f;
             }
         } catch (e) { }
@@ -3334,8 +3419,10 @@ export default function RequestsFeed() {
     const [bookmarkedReqSet, setBookmarkedReqSet] = useState(new Set());
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('All');
+    const [selectedType, setSelectedType] = useState('All');
     const [selectedDateRange, setSelectedDateRange] = useState('All Time');
     const [selectedStatus, setSelectedStatus] = useState('All');
+    const [selectedRequestLanguage, setSelectedRequestLanguage] = useState('All');
     const [selectedDate, setSelectedDate] = useState(null); // For calendar date picker
     const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
     const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -3365,6 +3452,8 @@ export default function RequestsFeed() {
             return {};
         }
     });
+    const [followedCreatorIds, setFollowedCreatorIds] = useState(new Set());
+    const [completedVideoRequestKeys, setCompletedVideoRequestKeys] = useState(new Set());
     const filterDropdownRef = useRef(null);
 
     // Initialize hint visibility on component mount
@@ -3431,11 +3520,62 @@ export default function RequestsFeed() {
         try {
             const p = new URLSearchParams(location.search);
             const f = p.get('filter');
-            if (f && ['For You', 'Trending', 'Newest', 'Top Funded', 'Completed'].includes(f)) {
+            if (f && ['For You', 'Trending', 'Newest', 'Top Funded', 'Completed', 'Following'].includes(f)) {
                 setActiveFilter(f);
             }
         } catch (e) { }
     }, [location.search]);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                try {
+                    if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
+                } catch (e) { }
+                const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
+                if (!token) {
+                    if (!cancelled) setFollowedCreatorIds(new Set());
+                    return;
+                }
+                const res = await fetch(`${getBackendBaseUrl()}/following`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (res.status === 401) {
+                    try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
+                    return;
+                }
+                if (!res.ok) return;
+                const body = await res.json();
+                const ids = new Set(
+                    (Array.isArray(body && body.following) ? body.following : [])
+                        .map((creator) => String(creator && creator.id))
+                        .filter(Boolean)
+                );
+                if (!cancelled) setFollowedCreatorIds(ids);
+            } catch (e) { }
+        })();
+        return () => { cancelled = true; };
+    }, [auth.user && auth.user.id]);
+
+    useEffect(() => {
+        if (activeFilter !== 'Completed') return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`${getBackendBaseUrl()}/videos`);
+                if (!res.ok) return;
+                const body = await res.json();
+                const videos = (Array.isArray(body && body.videos) ? body.videos : []).filter(isVideoVisibleOnHomePage);
+                const nextKeys = new Set();
+                videos.forEach((video) => {
+                    getVideoCompletionKeyCandidates(video).forEach((key) => nextKeys.add(key));
+                });
+                if (!cancelled) setCompletedVideoRequestKeys(nextKeys);
+            } catch (e) { }
+        })();
+        return () => { cancelled = true; };
+    }, [activeFilter]);
 
 
     // If arriving with a query param, seed the search box or target specific request
@@ -3466,6 +3606,28 @@ export default function RequestsFeed() {
 
     // id of the request that should briefly pulse (set immediately after pin or via deep link)
     const [pulseId, setPulseId] = useState(null);
+    const [claimPulseActive, setClaimPulseActive] = useState(false);
+
+    useEffect(() => {
+        let timer = null;
+        try {
+            const params = new URLSearchParams(window.location.search || '');
+            const claimPulseParam = params.get('claimPulse');
+            if (claimPulseParam === '1' || claimPulseParam === 'true') {
+                setClaimPulseActive(true);
+                timer = setTimeout(() => setClaimPulseActive(false), 9000);
+
+                params.delete('claimPulse');
+                const nextQuery = params.toString();
+                const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash || ''}`;
+                window.history.replaceState({}, '', nextUrl);
+            }
+        } catch (e) { }
+
+        return () => {
+            if (timer) clearTimeout(timer);
+        };
+    }, [location.search]);
 
     // --- Influence and Ranking Calculation Logic ---
     // Influence: 1 Like = 1 Influence, $1 Boost = 2 Influence
@@ -3555,9 +3717,18 @@ export default function RequestsFeed() {
                 const token = localStorage.getItem('regaarder_token');
                 let bookmarkedRequestIds = new Set();
                 try {
+                    try {
+                        if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') throw new Error('auth_unavailable');
+                    } catch (e) {
+                        if (e && e.message === 'auth_unavailable') throw e;
+                    }
                     const bookmarksRes = await fetch(`${BACKEND}/bookmarks`, {
                         headers: token ? { Authorization: `Bearer ${token}` } : {}
                     });
+                    if (bookmarksRes.status === 401) {
+                        try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
+                        throw new Error('auth_unavailable');
+                    }
                     const bookmarksData = await bookmarksRes.json();
                     if (bookmarksData && bookmarksData.success && Array.isArray(bookmarksData.requests)) {
                         bookmarksData.requests.forEach(b => {
@@ -3573,7 +3744,7 @@ export default function RequestsFeed() {
                 }
 
                 // Construct URL with feed param based on activeFilter
-                const filterMap = { 'For You': 'recommended', 'Trending': 'trending', 'Newest': 'fresh', 'Top Funded': 'funded', 'Completed': 'completed' };
+                const filterMap = { 'For You': 'recommended', 'Trending': 'trending', 'Newest': 'fresh', 'Top Funded': 'funded', 'Completed': 'completed', 'Following': 'fresh' };
                 const feedType = filterMap[activeFilter] || 'recommended';
                 const url = new URL(`${BACKEND}/requests`);
                 url.searchParams.set('feed', feedType);
@@ -3739,6 +3910,7 @@ export default function RequestsFeed() {
                     base.creator = creatorObj || { id: creatorId || null, name: requesterName, image: requesterAvatar || '' };
                     base.requesterName = requesterName;
                     base.requesterAvatar = requesterAvatar || '';
+                    base.requestLanguage = getRequestLanguageValue(base);
                     // Derive company / display name
                     base.company = base.company || requesterName;
                     base.companyInitial = base.companyInitial || (base.company ? String(base.company).charAt(0).toUpperCase() : 'C');
@@ -3781,6 +3953,8 @@ export default function RequestsFeed() {
                         });
                     }
                 } catch (e) { }
+
+                // Local amount overrides removed – backend is sole source of truth
 
                 // Hide requests created by the current user - REMOVED so users can see their own requests
                 // if (auth.user) {
@@ -3853,7 +4027,7 @@ export default function RequestsFeed() {
             }
         })();
         return () => { cancelled = true; };
-    }, [activeFilter, selectedCategory, selectedStatus, location.search]); // Re-fetch on URL query change
+    }, [activeFilter, selectedCategory, selectedType, selectedStatus, location.search]); // Re-fetch on URL query change
 
     // Listen for local events when a new request is created in Ideas page
     useEffect(() => {
@@ -3954,11 +4128,21 @@ export default function RequestsFeed() {
     // Load per-user reactions from backend to persist across devices
     useEffect(() => {
         try {
+            try {
+                if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
+            } catch (e) { }
             const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
             if (!token) return;
             fetch(`${getBackendBaseUrl()}/requests/react/me`, {
                 headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.json()).then(data => {
+            }).then(res => {
+                if (res.status === 401) {
+                    try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
+                    return null;
+                }
+                return res.json();
+            }).then(data => {
+                if (!data) return;
                 if (data && data.reactions) {
                     try {
                         const raw = localStorage.getItem('request_reacts_v1');
@@ -4262,6 +4446,14 @@ export default function RequestsFeed() {
             });
         }
 
+        // Apply type filter (one-time, series, recurrent, catalogue)
+        if (selectedType !== 'All') {
+            filtered = filtered.filter(r => {
+                const requestType = r.meta?.selectedFormat || r.type || 'one-time';
+                return String(requestType).toLowerCase() === String(selectedType).toLowerCase();
+            });
+        }
+
         // Apply specific date filter
         if (selectedDate) {
             filtered = filtered.filter(r => {
@@ -4292,6 +4484,11 @@ export default function RequestsFeed() {
             } else if (selectedStatus === 'Active') {
                 filtered = filtered.filter(r => !r.isCompleted);
             }
+        }
+
+        // Apply language filter
+        if (selectedRequestLanguage !== 'All') {
+            filtered = filtered.filter(r => normalizeRequestLanguageValue(r.requestLanguage) === normalizeRequestLanguageValue(selectedRequestLanguage));
         }
 
         // Apply primary filter (Trending, Newest, etc)
@@ -4343,8 +4540,23 @@ export default function RequestsFeed() {
                 return db - da; // Descending
             });
             case 'Top Funded': return [...filtered].sort((a, b) => b.funding - a.funding);
-            case 'Completed': return filtered.filter(r => r.isCompleted === true);
-            case 'Following': return filtered; // placeholder
+            case 'Completed':
+                return filtered.filter(r => {
+                    if (!completedVideoRequestKeys || completedVideoRequestKeys.size === 0) return false;
+                    const requestKeys = getRequestCompletionKeyCandidates(r);
+                    return requestKeys.some(key => completedVideoRequestKeys.has(key));
+                });
+            case 'Following':
+                return filtered.filter(r => {
+                    const personIds = [
+                        (r.creator && r.creator.id),
+                        r.creatorId,
+                        r.createdBy,
+                        r.requesterId,
+                        (r.requester && r.requester.id),
+                    ].map((value) => String(value || '').trim()).filter(Boolean);
+                    return personIds.some((id) => followedCreatorIds.has(id));
+                });
             default: return filtered;
         }
     };
@@ -4447,16 +4659,16 @@ export default function RequestsFeed() {
                                 aria-label="Advanced filters"
                                 className="p-1.5 rounded-full text-gray-500 hover:text-gray-800 hover:bg-gray-200 transition relative"
                                 style={{
-                                    backgroundColor: (selectedCategory !== 'All' || selectedDateRange !== 'All Time' || selectedStatus !== 'All' || selectedDate)
+                                    backgroundColor: (selectedCategory !== 'All' || selectedType !== 'All' || selectedDateRange !== 'All Time' || selectedStatus !== 'All' || selectedRequestLanguage !== 'All' || selectedDate)
                                         ? 'var(--color-gold-light)'
                                         : 'transparent',
-                                    color: (selectedCategory !== 'All' || selectedDateRange !== 'All Time' || selectedStatus !== 'All' || selectedDate)
+                                    color: (selectedCategory !== 'All' || selectedType !== 'All' || selectedDateRange !== 'All Time' || selectedStatus !== 'All' || selectedRequestLanguage !== 'All' || selectedDate)
                                         ? 'var(--color-gold)'
                                         : '#6b7280'
                                 }}
                             >
                                 <SlidersHorizontal className="w-5 h-5" />
-                                {(selectedCategory !== 'All' || selectedDateRange !== 'All Time' || selectedStatus !== 'All' || selectedDate) && (
+                                {(selectedCategory !== 'All' || selectedType !== 'All' || selectedDateRange !== 'All Time' || selectedStatus !== 'All' || selectedRequestLanguage !== 'All' || selectedDate) && (
                                     <span
                                         className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
                                         style={{ backgroundColor: 'var(--color-gold)' }}
@@ -4568,6 +4780,30 @@ export default function RequestsFeed() {
                                             >
                                                 {selectedCategory === cat && <CheckCircle2 className="w-4 h-4 inline mr-2" />}
                                                 {getTranslation(cat, selectedLanguage)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Type Filter */}
+                                <div className="mb-4">
+                                    <label className="text-sm font-semibold text-gray-700 mb-2 block">{getTranslation('Type', selectedLanguage)}</label>
+                                    <div className="space-y-1.5">
+                                        {['All', 'one-time', 'series', 'recurrent', 'catalogue'].map(typeOpt => (
+                                            <button
+                                                key={typeOpt}
+                                                onClick={() => setSelectedType(typeOpt)}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${selectedType === typeOpt
+                                                        ? 'font-semibold'
+                                                        : 'text-gray-600 hover:bg-gray-50'
+                                                    }`}
+                                                style={{
+                                                    backgroundColor: selectedType === typeOpt ? 'var(--color-gold-light)' : 'transparent',
+                                                    color: selectedType === typeOpt ? 'var(--color-gold)' : '#4b5563'
+                                                }}
+                                            >
+                                                {selectedType === typeOpt && <CheckCircle2 className="w-4 h-4 inline mr-2" />}
+                                                {getTranslation(typeOpt === 'one-time' ? 'One-Time' : typeOpt === 'series' ? 'Series' : typeOpt === 'recurrent' ? 'Recurrent' : typeOpt === 'catalogue' ? 'Catalogue' : 'All', selectedLanguage)}
                                             </button>
                                         ))}
                                     </div>
@@ -4782,16 +5018,41 @@ export default function RequestsFeed() {
                                         ))}
                                     </div>
                                 </div>
+
+                                {/* Language Filter */}
+                                <div className="mb-2">
+                                    <label className="text-sm font-semibold text-gray-700 mb-2 block">{getTranslation('Language', selectedLanguage)}</label>
+                                    <div className="space-y-1.5">
+                                        {SUPPORTED_REQUEST_LANGUAGES.map(lang => (
+                                            <button
+                                                key={lang}
+                                                onClick={() => setSelectedRequestLanguage(lang)}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${selectedRequestLanguage === lang
+                                                        ? 'font-semibold'
+                                                        : 'text-gray-600 hover:bg-gray-50'
+                                                    }`}
+                                                style={{
+                                                    backgroundColor: selectedRequestLanguage === lang ? 'var(--color-gold-light)' : 'transparent',
+                                                    color: selectedRequestLanguage === lang ? 'var(--color-gold)' : '#4b5563'
+                                                }}
+                                            >
+                                                {selectedRequestLanguage === lang && <CheckCircle2 className="w-4 h-4 inline mr-2" />}
+                                                {lang === 'All' ? getTranslation('All', selectedLanguage) : getTranslation(lang, selectedLanguage)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Fixed Footer with Clear Button */}
-                            {(selectedCategory !== 'All' || selectedDate || selectedStatus !== 'All') && (
+                            {(selectedCategory !== 'All' || selectedDate || selectedStatus !== 'All' || selectedRequestLanguage !== 'All') && (
                                 <div className="p-4 pt-3 border-t border-gray-100 bg-white sticky bottom-0">
                                     <button
                                         onClick={() => {
                                             setSelectedCategory('All');
                                             setSelectedDateRange('All Time');
                                             setSelectedStatus('All');
+                                            setSelectedRequestLanguage('All');
                                             setSelectedDate(null);
                                         }}
                                         className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
@@ -4893,6 +5154,7 @@ export default function RequestsFeed() {
                     displayedRequests.map(req => (
                         <div key={req.id} data-request-id={req.id}>
                             <RequestCard
+                                                                claimPulseActive={claimPulseActive}
                                 key={req.id}
                                 request={req}
                                 detailedRank={req}
