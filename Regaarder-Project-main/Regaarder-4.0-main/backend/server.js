@@ -1400,7 +1400,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ status: 'ok', version: '2026-03-04-dbcache', db: !!process.env.DATABASE_URL });
 });
 
 app.get('/healthz', (req, res) => {
