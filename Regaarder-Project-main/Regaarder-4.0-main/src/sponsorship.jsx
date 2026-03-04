@@ -797,7 +797,7 @@ const Sponsorships = () => {
                                             planKey.replace('Creator', '').toLowerCase() : 
                                             planKey.toLowerCase();
                                         
-                                        fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin.onrender.com'}${endpoint}`, {
+                                        fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}${endpoint}`, {
                                             method: 'POST',
                                             headers: {
                                                 'Authorization': `Bearer ${token}`,

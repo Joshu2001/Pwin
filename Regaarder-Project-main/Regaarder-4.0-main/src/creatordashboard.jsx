@@ -495,7 +495,7 @@ const ClaimStatusPanel = ({
     // Fetch categories from backend
     const fetchCategories = useCallback(async () => {
         try {
-            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://web-production-b6cfe.up.railway.app';
             const res = await fetch(`${BACKEND}/categories`);
             if (res.ok) {
                 const data = await res.json();
@@ -533,7 +533,7 @@ const ClaimStatusPanel = ({
 
         try {
             const raw = newCategoryName.trim();
-            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://web-production-b6cfe.up.railway.app';
             const res = await fetch(`${BACKEND}/categories`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2125,7 +2125,7 @@ const ClaimStatusPanel = ({
                                                     // POST to backend to save video
                                                     // Upload video and thumbnail files to server first
                                                     try {
-                                                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
+                                                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
                                                         const token = localStorage.getItem('regaarder_token');
 
                                                         console.log('Uploading files to backend:', {
@@ -2487,7 +2487,7 @@ const ClaimStatusPanel = ({
                                     onClick={async () => {
                                         try {
                                             const token = localStorage.getItem('regaarder_token');
-                                            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
+                                            const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
                                             if (token) {
                                                 const response = await fetch(`${BACKEND}/claims`, {
                                                     method: 'DELETE',
@@ -2698,7 +2698,7 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+                const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://web-production-b6cfe.up.railway.app';
                 const response = await fetch(`${BACKEND}/users/me`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -2725,7 +2725,7 @@ const App = () => {
              // Fallback default list
             const defaults = ['Travel', 'Education', 'Entertainment', 'Music', 'Sports'];
 
-            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://web-production-b6cfe.up.railway.app';
             const res = await fetch(`${BACKEND}/categories`);
             if (res.ok) {
                 const data = await res.json();
@@ -2759,7 +2759,7 @@ const App = () => {
 
         try {
             const raw = newCategoryName.trim();
-            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin.onrender.com';
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://web-production-b6cfe.up.railway.app';
             const res = await fetch(`${BACKEND}/categories`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3108,7 +3108,7 @@ const App = () => {
             const token = localStorage.getItem('regaarder_token');
             const rid = requestId;
             if (token && rid) {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
                 fetch(`${BACKEND}/requests/${rid}/status`, {
                     method: 'POST',
                     headers: {

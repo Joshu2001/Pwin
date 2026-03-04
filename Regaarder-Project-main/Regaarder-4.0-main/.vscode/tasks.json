@@ -6,6 +6,12 @@
 			"type": "shell",
 			"command": "cd android && .\\gradlew.bat assembleDebug",
 			"group": "build"
+		},
+		{
+			"label": "Build signed AAB prod31",
+			"type": "shell",
+			"command": "cd android && gradlew.bat bundleProdRelease -Pandroid.injected.signing.store.file=\"C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\upload-keystore.jks\" -Pandroid.injected.signing.store.password=\"regaarder123\" -Pandroid.injected.signing.key.alias=\"upload-key\" -Pandroid.injected.signing.key.password=\"regaarder123\"",
+			"isBackground": false
 		}
 	]
 }

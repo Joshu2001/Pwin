@@ -56,7 +56,7 @@ const Subscriptions = () => {
                 // Get backend URL dynamically
                 const protocol = window.location.protocol;
                 const hostname = window.location.hostname;
-                const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
+                const backendUrl = window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app';
 
                 // Fetch subscription status from payment endpoint
                 const response = await fetch(`${backendUrl}/payment/subscription`, {
@@ -314,7 +314,7 @@ const Subscriptions = () => {
                                                         const token = localStorage.getItem('authToken');
                                                         const protocol = window.location.protocol;
                                                         const hostname = window.location.hostname;
-                                                        const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
+                                                        const backendUrl = window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app';
                                                         
                                                         const response = await fetch(`${backendUrl}/payment/subscription/cancel`, {
                                                             method: 'POST',

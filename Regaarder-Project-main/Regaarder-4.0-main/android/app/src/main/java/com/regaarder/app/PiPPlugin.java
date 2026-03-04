@@ -49,18 +49,21 @@ public class PiPPlugin extends Plugin {
 	@PluginMethod
 	public void enterPiP(PluginCall call) {
 		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-			call.reject("PiP requires Android 8.0+");
+			call.reject("PiP requires Android 8.0+ (API 26+)");
 			return;
 		}
 
 		int width  = call.getInt("width", 16);
 		int height = call.getInt("height", 9);
 
-		// CRITICAL: enterPictureInPictureMode MUST run on the UI thread.
-		// Capacitor plugin methods execute on a background executor by default.
 		Activity activity = getActivity();
-		if (activity == null || activity.isFinishing()) {
-			call.reject("Activity not available");
+		if (activity == null) {
+			call.reject("Activity reference is null");
+			return;
+		}
+		
+		if (activity.isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && activity.isDestroyed())) {
+			call.reject("Activity is finishing or destroyed");
 			return;
 		}
 
@@ -70,17 +73,33 @@ public class PiPPlugin extends Plugin {
 
 		activity.runOnUiThread(() -> {
 			try {
+				if (activity.isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && activity.isDestroyed())) {
+					Log.w(TAG, "Activity became unavailable before entering PiP");
+					return;
+				}
+				
 				PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
 						.setAspectRatio(new Rational(width, height));
 
 				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 					builder.setAutoEnterEnabled(true);
+					// Android 12+: enable seamless resize for smoother transitions
+					builder.setSeamlessResizeEnabled(true);
 				}
 
-				boolean entered = activity.enterPictureInPictureMode(builder.build());
-				Log.d(TAG, "enterPictureInPictureMode returned: " + entered);
+				PictureInPictureParams params = builder.build();
+				boolean entered = activity.enterPictureInPictureMode(params);
+				
+				if (entered) {
+					Log.d(TAG, "Successfully entered PiP mode (aspect " + width + ":" + height + ")");
+				} else {
+					Log.w(TAG, "enterPictureInPictureMode returned false (may already be in PiP)");
+				}
+			} catch (IllegalStateException e) {
+				// This is thrown if activity is no longer resumed
+				Log.w(TAG, "Cannot enter PiP - Activity not resumed", e);
 			} catch (Exception e) {
-				Log.e(TAG, "Failed to enter PiP", e);
+				Log.e(TAG, "Unexpected error entering PiP", e);
 			}
 		});
 	}
@@ -92,19 +111,25 @@ public class PiPPlugin extends Plugin {
 	 */
 	@PluginMethod
 	public void setPipAllowed(PluginCall call) {
-		pipAllowed = Boolean.TRUE.equals(call.getBoolean("allowed", false));
-		Log.d(TAG, "setPipAllowed: " + pipAllowed);
+		boolean allowed = Boolean.TRUE.equals(call.getBoolean("allowed", false));
+		pipAllowed = allowed;
+		Log.d(TAG, "setPipAllowed: " + allowed + " - auto-PiP will " + (allowed ? "ACTIVATE" : "DISABLE") + " on Home press");
 
 		// Android 12+: proactively set auto-enter params on the activity
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 			Activity activity = getActivity();
-			if (activity != null && !activity.isFinishing()) {
+			if (activity != null && !activity.isFinishing() && !(Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && activity.isDestroyed())) {
 				activity.runOnUiThread(() -> {
 					try {
-						PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
-								.setAspectRatio(new Rational(16, 9))
-								.setAutoEnterEnabled(pipAllowed);
-						activity.setPictureInPictureParams(builder.build());
+						Activity act = getActivity();
+						if (act != null && !act.isFinishing() && !(Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && act.isDestroyed())) {
+							PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
+									.setAspectRatio(new Rational(16, 9))
+									.setAutoEnterEnabled(allowed)
+									.setSeamlessResizeEnabled(true);
+							act.setPictureInPictureParams(builder.build());
+							Log.d(TAG, "Updated PictureInPictureParams: autoEnter=" + allowed);
+						}
 					} catch (Exception e) {
 						Log.w(TAG, "setPictureInPictureParams failed", e);
 					}

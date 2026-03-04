@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 4173;
 const BACKEND_URL =
   process.env.BACKEND_URL ||
   process.env.VITE_BACKEND_URL ||
-  'https://pwin.onrender.com';
+  'https://web-production-b6cfe.up.railway.app';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

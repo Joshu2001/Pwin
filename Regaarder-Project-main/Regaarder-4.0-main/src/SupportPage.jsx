@@ -359,7 +359,7 @@ const SupportPage = () => {
       const userEmail = localStorage.getItem('userEmail') || getOrCreateAnonymousUserEmail();
       const protocol = window.location.protocol;
       const hostname = window.location.hostname;
-      const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
+      const backendUrl = window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app';
 
       const response = await fetch(`${backendUrl}/support/tickets?userEmail=${encodeURIComponent(userEmail)}`);
       if (response.ok) {
@@ -458,7 +458,7 @@ const SupportPage = () => {
 
       const protocol = window.location.protocol;
       const hostname = window.location.hostname;
-      const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
+      const backendUrl = window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app';
 
       const response = await fetch(`${backendUrl}/support/ticket`, {
         method: 'POST',
@@ -497,7 +497,7 @@ const SupportPage = () => {
     try {
       const protocol = window.location.protocol;
       const hostname = window.location.hostname;
-      const backendUrl = window.__BACKEND_URL__ || 'https://pwin.onrender.com';
+      const backendUrl = window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app';
 
       const response = await fetch(`${backendUrl}/support/ticket/${selectedTicket.id}/customer-response`, {
         method: 'POST',

@@ -1,0 +1,81 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build signed AAB",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android && gradlew.bat bundleProdRelease -Pandroid.injected.signing.store.file=C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\upload-keystore.jks -Pandroid.injected.signing.store.password=regaarder123 -Pandroid.injected.signing.key.alias=upload-key -Pandroid.injected.signing.key.password=regaarder123 --stacktrace > C:\\Users\\user\\Desktop\\Regaarder-Pwin\\build-aab.log 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build signed APK",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android && gradlew.bat assembleProdRelease -Pandroid.injected.signing.store.file=C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\upload-keystore.jks -Pandroid.injected.signing.store.password=regaarder123 -Pandroid.injected.signing.key.alias=upload-key -Pandroid.injected.signing.key.password=regaarder123 --stacktrace > C:\\Users\\user\\Desktop\\Regaarder-Pwin\\build-apk.log 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build signed AAB+APK combined",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android && gradlew.bat --no-daemon --max-workers=1 -Dorg.gradle.jvmargs=-Xmx1024m bundleProdRelease assembleProdRelease -Pandroid.injected.signing.store.file=C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\upload-keystore.jks -Pandroid.injected.signing.store.password=regaarder123 -Pandroid.injected.signing.key.alias=upload-key -Pandroid.injected.signing.key.password=regaarder123 --stacktrace > C:\\Users\\user\\Desktop\\Regaarder-Pwin\\build-release-combined.log 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Write artifact info",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"powershell -NoProfile -ExecutionPolicy Bypass -Command \"$a='C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android\\app\\build\\outputs\\bundle\\prodRelease\\app-prod-release.aab'; $b='C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android\\app\\build\\outputs\\apk\\prod\\release\\app-prod-release.apk'; Get-Item $a,$b | Select-Object FullName,Length,LastWriteTime | Format-List | Out-File -FilePath C:\\Users\\user\\Desktop\\Regaarder-Pwin\\artifact-info.txt -Encoding utf8\""
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Compute APK hash visibility fix",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"$src='C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android\\app\\build\\outputs\\apk\\prod\\release\\app-prod-release.apk'; if (!(Test-Path $src)) { Write-Output 'SRC_MISSING'; exit 1 }; $ts=Get-Date -Format 'yyyyMMdd-HHmmss'; $dst=\"$env:USERPROFILE\\Downloads\\app-prod-release-visibility-fix-$ts.apk\"; Copy-Item $src $dst -Force; $hash=(Get-FileHash $dst -Algorithm SHA256).Hash; $item=Get-Item $dst; Write-Output \"APK=$($item.FullName)\"; Write-Output \"SIZE_MB=$([math]::Round($item.Length/1MB,2))\"; Write-Output \"SHA256=$hash\"; Write-Output \"MTIME=$($item.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))\""
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build signed APK",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android && gradlew.bat assembleProdRelease -Pandroid.injected.signing.store.file=C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\upload-keystore.jks -Pandroid.injected.signing.store.password=regaarder123 -Pandroid.injected.signing.key.alias=upload-key -Pandroid.injected.signing.key.password=regaarder123 --stacktrace > C:\\Users\\user\\Desktop\\Regaarder-Pwin\\build-apk.log 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Copy APK to Downloads (fixed)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"$src='C:\\Users\\user\\Desktop\\Regaarder-Pwin\\Regaarder-Project-main\\Regaarder-4.0-main\\android\\app\\build\\outputs\\apk\\prod\\release\\app-prod-release.apk'; if (!(Test-Path $src)) { Write-Output 'SRC_MISSING'; exit 1 }; $ts=Get-Date -Format 'yyyyMMdd-HHmmss'; $dst=Join-Path $env:USERPROFILE ('Downloads\\app-prod-release-visibility-fix-' + $ts + '.apk'); Copy-Item $src $dst -Force; $hash=(Get-FileHash $dst -Algorithm SHA256).Hash; $item=Get-Item $dst; Write-Output ('APK=' + $item.FullName); Write-Output ('SIZE_MB=' + [math]::Round($item.Length/1MB,2)); Write-Output ('SHA256=' + $hash); Write-Output ('MTIME=' + $item.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+			],
+			"isBackground": false
+		}
+	]
+}

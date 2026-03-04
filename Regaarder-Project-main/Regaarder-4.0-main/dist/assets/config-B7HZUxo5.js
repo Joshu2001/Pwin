@@ -1,0 +1,1 @@
+const t={},o="https://regaarder.com",p=()=>{if("undefined"!=typeof window&&window.__BACKEND_URL__)return window.__BACKEND_URL__;const o=void 0!==import.meta&&t?"https://web-production-b6cfe.up.railway.app":null;return o||"https://web-production-b6cfe.up.railway.app"};export{o as W,p as g};

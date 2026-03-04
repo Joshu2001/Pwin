@@ -73,7 +73,7 @@ const AuthModal = ({ onClose, onLogin }) => {
     if (!validate()) return;
     setErrors((e) => ({ ...e, server: null }));
     setLoading(true);
-    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
     fetch(`${BACKEND}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -105,7 +105,7 @@ const AuthModal = ({ onClose, onLogin }) => {
     if (!validate()) return;
     setErrors((e) => ({ ...e, server: null }));
     setLoading(true);
-    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin.onrender.com';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
     fetch(`${BACKEND}/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -263,7 +263,7 @@ const AuthModal = ({ onClose, onLogin }) => {
                     }
                     setResetLoading(true); setResetError('');
                     try {
-                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
                       const resp = await fetch(`${BACKEND}/forgot-password`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email: resetEmail })
@@ -314,7 +314,7 @@ const AuthModal = ({ onClose, onLogin }) => {
                     onClick={async () => {
                       setResetLoading(true); setResetError('');
                       try {
-                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
                         await fetch(`${BACKEND}/forgot-password`, {
                           method: 'POST', headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ email: resetEmail })
@@ -343,7 +343,7 @@ const AuthModal = ({ onClose, onLogin }) => {
                     if (resetCode.length !== 6) { setResetError(getTranslation('Enter the 6-digit code', selectedLanguage)); return; }
                     setResetLoading(true); setResetError('');
                     try {
-                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
                       const resp = await fetch(`${BACKEND}/verify-reset-code`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email: resetEmail, code: resetCode })
@@ -403,7 +403,7 @@ const AuthModal = ({ onClose, onLogin }) => {
                     if (newPasswordValue.length < 8) { setResetError(getTranslation('Password must be at least 8 characters', selectedLanguage)); return; }
                     setResetLoading(true); setResetError('');
                     try {
-                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
                       const resp = await fetch(`${BACKEND}/reset-password`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email: resetEmail, resetToken, newPassword: newPasswordValue })

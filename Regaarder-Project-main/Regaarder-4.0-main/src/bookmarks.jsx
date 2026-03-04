@@ -7,8 +7,8 @@ import { getTranslation } from './translations';
 const GOLD_COLOR = '#CB8B04';
 
 const BACKEND_URL = typeof window !== 'undefined'
-  ? (window.__BACKEND_URL__ || 'https://pwin.onrender.com')
-  : 'https://pwin.onrender.com';
+  ? (window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app')
+  : 'https://web-production-b6cfe.up.railway.app';
 
 const formatSeconds = (s) => {
   try { const n = Math.max(0, Math.floor(Number(s)||0)); const m = Math.floor(n/60); const sec = String(n%60).padStart(2,'0'); return `${m}:${sec}`; } catch { return '0:00'; }

@@ -1,0 +1,16 @@
+﻿
+
+FullName      : C:\Users\user\Desktop\Regaarder-Pwin\Regaarder-Project-main\Reg
+                aarder-4.0-main\android\app\build\outputs\bundle\prodRelease\ap
+                p-prod-release.aab
+Length        : 3734010
+LastWriteTime : 3/1/2026 12:21:38 PM
+
+FullName      : C:\Users\user\Desktop\Regaarder-Pwin\Regaarder-Project-main\Reg
+                aarder-4.0-main\android\app\build\outputs\apk\prod\release\app-
+                prod-release.apk
+Length        : 3873963
+LastWriteTime : 3/1/2026 11:43:06 AM
+
+
+

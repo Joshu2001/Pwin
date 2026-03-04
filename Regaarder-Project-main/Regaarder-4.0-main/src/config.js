@@ -17,11 +17,11 @@ const getBackendUrl = () => {
 
   // Default to deployed backend
   if (typeof window !== 'undefined') {
-    return 'https://pwin-copy-production.up.railway.app';
+    return 'https://web-production-b6cfe.up.railway.app';
   }
 
   // Fallback
-  return 'https://pwin-copy-production.up.railway.app';
+  return 'https://web-production-b6cfe.up.railway.app';
 };
 
 /**
