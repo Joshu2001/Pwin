@@ -560,11 +560,12 @@ const App = () => {
                 if (res.ok) {
                     const data = await res.json();
                     if (data && data.url) {
-                        setProfile(prev => ({ ...prev, avatarUrl: data.url }));
+                        const normalizedUrl = resolveMediaUrl(data.url) || data.url;
+                        setProfile(prev => ({ ...prev, avatarUrl: normalizedUrl }));
                         // Persist the real URL to localStorage so it survives page reloads
                         try {
                             const existing = JSON.parse(localStorage.getItem('regaarder_user') || '{}');
-                            existing.image = data.url;
+                            existing.image = normalizedUrl;
                             localStorage.setItem('regaarder_user', JSON.stringify(existing));
                         } catch (e) { console.warn('Failed to persist image to localStorage', e); }
                         // Also persist to backend user record so it survives across devices
@@ -572,7 +573,7 @@ const App = () => {
                             await fetch(`${BACKEND}/users/update`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                body: JSON.stringify({ image: data.url })
+                                body: JSON.stringify({ image: normalizedUrl })
                             });
                         } catch (e) { console.warn('Failed to persist image to backend', e); }
                     }

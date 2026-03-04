@@ -4,6 +4,7 @@ import { X, Menu, Bell, Settings, Search, Star, TrendingUp, Trophy, Home, FileTe
 import { useNavigate } from 'react-router-dom';
 import { getTranslation } from './translations';
 import { WEB_URL, getBackendBaseUrl } from './config';
+import { resolveMediaUrl } from './utils/media.js';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
 
 // Utility function to format numbers as 1k, 1m, etc.
@@ -538,16 +539,17 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
 
             const data = await res.json();
             if (data && data.url) {
+                const normalizedUrl = resolveMediaUrl(data.url) || data.url;
                 // If backend tells us it's an image, persist to `image`; otherwise persist as `document`
                 if (data.mimeType && data.mimeType.startsWith('image/')) {
                     // Now persist the REAL URL via parent update (saves to state + localStorage + backend)
-                    onUpdate('image', data.url);
+                    onUpdate('image', normalizedUrl);
                     // Clear the local preview since the real URL is now set
                     setLocalPreviewImage(null);
                 } else {
                     // non-image document uploaded: save as `document` field and show filename
-                    onUpdate('document', data.url);
-                    setPreviewDocument(prev => ({ ...(prev || {}), url: data.url }));
+                    onUpdate('document', normalizedUrl);
+                    setPreviewDocument(prev => ({ ...(prev || {}), url: normalizedUrl }));
                 }
                 if (onShowToast) onShowToast({ title: getTranslation("Upload Successful", selectedLanguage), subtitle: getTranslation("Your profile image has been updated", selectedLanguage) });
             } else {
