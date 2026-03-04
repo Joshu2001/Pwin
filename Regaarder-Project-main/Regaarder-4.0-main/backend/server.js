@@ -317,6 +317,7 @@ const loadStaffStateFromDb = async () => {
 
 initDb()
   .then(() => refreshUserCache())
+  .then(() => refreshRequestCache())
   .then(() => loadStaffStateFromDb())
   .catch((err) => {
     console.error('Database init error', err);
@@ -947,7 +948,152 @@ function updateStreak(userId) {
   }
 }
 
+/* ── Request DB cache ─────────────────────────────────────────────────
+ * Mirrors the user cache approach.  When DB_ENABLED the authoritative
+ * copy of requests lives in PostgreSQL.  Legacy endpoints call the
+ * synchronous readRequests()/writeRequests().  We make those two
+ * transparently DB-aware via an in-memory cache.
+ * ─────────────────────────────────────────────────────────────────── */
+let _requestDbCache = [];
+let _requestDbCacheReady = false;
+let _requestDbWriteChain = Promise.resolve();
+
+function mapRequestRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    likes: Number(row.likes || 0),
+    comments: Number(row.comments || 0),
+    boosts: Number(row.boosts || 0),
+    amount: row.amount != null ? Number(row.amount) : 0,
+    funding: row.funding != null ? Number(row.funding) : 0,
+    isTrending: Boolean(row.is_trending),
+    isSponsored: Boolean(row.is_sponsored),
+    company: row.company,
+    companyInitial: row.company_initial,
+    companyColor: row.company_color,
+    imageUrl: row.image_url,
+    creatorId: row.creator_id,
+    creatorName: row.creator_name,
+    creatorEmail: row.creator_email,
+    creator: row.creator_id ? { id: row.creator_id, name: row.creator_name || 'Anonymous', email: row.creator_email || null } : null,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    currentStep: row.current_step,
+    claimed: row.claimed,
+    claimedBy: row.claimed_by,
+    claimedAt: row.claimed_at,
+    meta: row.meta,
+    // snake_case aliases for DB-path code that expects them
+    is_trending: Boolean(row.is_trending),
+    is_sponsored: Boolean(row.is_sponsored),
+    company_initial: row.company_initial,
+    company_color: row.company_color,
+    image_url: row.image_url,
+    creator_id: row.creator_id,
+    creator_name: row.creator_name,
+    creator_email: row.creator_email,
+    created_by: row.created_by,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    current_step: row.current_step,
+    claimed_by: row.claimed_by,
+    claimed_at: row.claimed_at
+  };
+}
+
+async function refreshRequestCache() {
+  if (!DB_ENABLED) return;
+  try {
+    const { rows } = await dbQuery('SELECT * FROM requests ORDER BY created_at DESC');
+    _requestDbCache = rows.map(mapRequestRow);
+    _requestDbCacheReady = true;
+    console.log(`[request-cache] refreshed – ${_requestDbCache.length} request(s)`);
+  } catch (err) {
+    console.error('[request-cache] refresh error:', err);
+  }
+}
+
+function requestToDbParams(r) {
+  return [
+    r.id,
+    r.title,
+    r.description || '',
+    Number(r.likes || 0),
+    Number(r.comments || 0),
+    Number(r.boosts || 0),
+    r.amount != null ? Number(r.amount) : 0,
+    r.funding != null ? Number(r.funding) : 0,
+    Boolean(r.isTrending || r.is_trending),
+    Boolean(r.isSponsored || r.is_sponsored),
+    r.company || null,
+    r.companyInitial || r.company_initial || null,
+    r.companyColor || r.company_color || null,
+    r.imageUrl || r.image_url || null,
+    r.creatorId || r.creator_id || (r.creator && r.creator.id) || null,
+    r.creatorName || r.creator_name || (r.creator && r.creator.name) || null,
+    r.creatorEmail || r.creator_email || (r.creator && r.creator.email) || null,
+    r.createdBy || r.created_by || null,
+    r.createdAt || r.created_at || new Date().toISOString(),
+    r.updatedAt || r.updated_at || null,
+    r.currentStep != null ? r.currentStep : (r.current_step != null ? r.current_step : null),
+    Boolean(r.claimed),
+    r.claimedBy || r.claimed_by ? (typeof (r.claimedBy || r.claimed_by) === 'string' ? (r.claimedBy || r.claimed_by) : JSON.stringify(r.claimedBy || r.claimed_by)) : null,
+    r.claimedAt || r.claimed_at || null,
+    r.meta ? (typeof r.meta === 'string' ? r.meta : JSON.stringify(r.meta)) : null
+  ];
+}
+
+const UPSERT_REQUEST_SQL = `
+  INSERT INTO requests
+    (id,title,description,likes,comments,boosts,amount,funding,
+     is_trending,is_sponsored,company,company_initial,company_color,image_url,
+     creator_id,creator_name,creator_email,created_by,created_at,updated_at,
+     current_step,claimed,claimed_by,claimed_at,meta)
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+  ON CONFLICT (id) DO UPDATE SET
+    title=EXCLUDED.title, description=EXCLUDED.description,
+    likes=EXCLUDED.likes, comments=EXCLUDED.comments, boosts=EXCLUDED.boosts,
+    amount=EXCLUDED.amount, funding=EXCLUDED.funding,
+    is_trending=EXCLUDED.is_trending, is_sponsored=EXCLUDED.is_sponsored,
+    company=EXCLUDED.company, company_initial=EXCLUDED.company_initial,
+    company_color=EXCLUDED.company_color, image_url=EXCLUDED.image_url,
+    creator_id=EXCLUDED.creator_id, creator_name=EXCLUDED.creator_name,
+    creator_email=EXCLUDED.creator_email, created_by=EXCLUDED.created_by,
+    updated_at=EXCLUDED.updated_at, current_step=EXCLUDED.current_step,
+    claimed=EXCLUDED.claimed, claimed_by=EXCLUDED.claimed_by,
+    claimed_at=EXCLUDED.claimed_at, meta=EXCLUDED.meta`;
+
+async function syncRequestsToDb(requests) {
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+    const ids = [];
+    for (const r of requests) {
+      if (!r || !r.id) continue;
+      ids.push(r.id);
+      await client.query(UPSERT_REQUEST_SQL, requestToDbParams(r));
+    }
+    if (ids.length > 0) {
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+      await client.query(`DELETE FROM requests WHERE id NOT IN (${placeholders})`, ids);
+    } else {
+      await client.query('DELETE FROM requests');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[request-cache] syncRequestsToDb error:', err);
+  } finally {
+    client.release();
+  }
+}
+
 function readRequests() {
+  if (DB_ENABLED && _requestDbCacheReady) return _requestDbCache;
   try {
     if (!fs.existsSync(REQUESTS_FILE)) return [];
     const raw = fs.readFileSync(REQUESTS_FILE, 'utf8');
@@ -959,6 +1105,14 @@ function readRequests() {
 }
 
 function writeRequests(requests) {
+  if (DB_ENABLED) {
+    _requestDbCache = requests;
+    _requestDbCacheReady = true;
+    _requestDbWriteChain = _requestDbWriteChain
+      .then(() => syncRequestsToDb(requests))
+      .catch(err => console.error('[request-cache] bg write error:', err));
+    return;
+  }
   try {
     fs.writeFileSync(REQUESTS_FILE, JSON.stringify(requests, null, 2), 'utf8');
   } catch (err) {
@@ -3209,6 +3363,7 @@ app.post('/requests/:id/comments', authMiddleware, async (req, res) => {
     try {
       if (DB_ENABLED) {
         await dbQuery('UPDATE requests SET comments = COALESCE(comments, 0) + 1 WHERE id = $1', [requestId]);
+        refreshRequestCache().catch(() => {});
       } else {
         const requests = readRequests();
         const idx = requests.findIndex(r => String(r.id) === String(requestId));
@@ -3285,6 +3440,7 @@ app.delete('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
     try {
       if (DB_ENABLED) {
         await dbQuery('UPDATE requests SET comments = GREATEST(COALESCE(comments, 0) - 1, 0) WHERE id = $1', [requestId]);
+        refreshRequestCache().catch(() => {});
       } else {
         const requests = readRequests();
         const ridx = requests.findIndex(r => String(r.id) === String(requestId));
@@ -3393,6 +3549,7 @@ app.post('/requests', authMiddleware, async (req, res) => {
       );
 
       const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1', [id]);
+      refreshRequestCache().catch(() => {});
       return res.json({ success: true, request: rows[0] });
     }
 
@@ -4725,6 +4882,7 @@ app.post('/requests/react', async (req, res) => {
         );
         await dbQuery('UPDATE requests SET likes = $1 WHERE id = $2', [likesCount, requestId]);
         await dbQuery('COMMIT');
+        refreshRequestCache().catch(() => {});
 
         return res.json({ success: true, requestId, action, likes: likesCount });
       })().catch((err) => {
@@ -4859,7 +5017,8 @@ app.post('/pay/create-session', (req, res) => {
             dbQuery(
               'UPDATE requests SET funding = $1, boosts = $2, meta = $3::jsonb, updated_at = NOW() WHERE id = $4',
               [nextPaid, nextBoosts, JSON.stringify({ ...nextMeta, syntheticBoosts: nextBoosts }), String(requestId)]
-            ).catch((err) => console.error('create-session db update error', err));
+            ).then(() => refreshRequestCache().catch(() => {}))
+            .catch((err) => console.error('create-session db update error', err));
           })
           .catch((err) => console.error('create-session db read error', err));
       } else {
@@ -6301,6 +6460,7 @@ app.post('/staff/requests/:requestId/override-amount', (req, res) => {
             'UPDATE requests SET meta = $1::jsonb, updated_at = NOW() WHERE id = $2',
             [JSON.stringify(nextMeta), requestId]
           ).then(() => {
+            refreshRequestCache().catch(() => {});
             return res.json({
               success: true,
               message: 'Request amount overridden',
@@ -6413,6 +6573,7 @@ app.post('/staff/requests/:requestId/revert-amount', (req, res) => {
             'UPDATE requests SET meta = $1::jsonb, updated_at = NOW() WHERE id = $2',
             [JSON.stringify(nextMeta), requestId]
           ).then(() => {
+            refreshRequestCache().catch(() => {});
             return res.json({
               success: true,
               message: 'Request amount reverted',
@@ -6565,6 +6726,7 @@ app.post('/staff/hide-request/:requestId', (req, res) => {
               createdAt: new Date().toISOString()
             });
             writeStaff(staff);
+            refreshRequestCache().catch(() => {});
             return res.json({ success: true, message: 'Request hidden' });
           });
         })
