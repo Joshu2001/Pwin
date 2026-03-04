@@ -18,6 +18,10 @@ export const resolveMediaUrl = (input) => {
 
   const backend = getBackendBase();
 
+  if (/^[a-z0-9.-]+(?::\d+)?\//i.test(raw) && !/^https?:\/\//i.test(raw)) {
+    return `https://${raw}`;
+  }
+
   if (raw.startsWith('uploaded:')) {
     const filename = raw.split(':')[1] || raw.slice('uploaded:'.length);
     if (!backend) return raw;

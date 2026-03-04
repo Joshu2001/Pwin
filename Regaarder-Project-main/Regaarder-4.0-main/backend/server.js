@@ -22,6 +22,20 @@ const PUBLIC_BACKEND_URL =
   null;
 const CLEANUP_TOKEN = process.env.CLEANUP_TOKEN || null;
 
+const ensureAbsoluteHttpUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('//')) return `https:${raw}`;
+  if (/^[a-z0-9.-]+(?::\d+)?(?:\/.*)?$/i.test(raw)) return `https://${raw}`;
+  return raw;
+};
+
+const getPublicBackendBase = (req) => {
+  const fallback = `${req.protocol}://${req.get('host')}`;
+  return ensureAbsoluteHttpUrl(PUBLIC_BACKEND_URL || fallback).replace(/\/$/, '');
+};
+
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -365,14 +379,14 @@ const persistUploadedFile = async (req, file, prefix = 'uploads') => {
     }
     return buildS3PublicUrl(key);
   }
-  const publicBase = (PUBLIC_BACKEND_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  const publicBase = getPublicBackendBase(req);
   return `${publicBase}/uploads/${file.filename}`;
 };
 
 const normalizeMediaUrl = (rawUrl, req) => {
   if (!rawUrl || String(rawUrl).startsWith('blob:')) return null;
   try {
-    const base = (PUBLIC_BACKEND_URL || `${req.protocol}://${req.get('host')}`);
+    const base = getPublicBackendBase(req);
     const u = new URL(String(rawUrl), base);
     const host = (u.hostname || '').toLowerCase();
     if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
@@ -573,7 +587,7 @@ const rewriteUrlsDeep = (input, baseUrl) => {
 };
 
 app.use((req, res, next) => {
-  const baseUrl = PUBLIC_BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+  const baseUrl = getPublicBackendBase(req);
   const originalJson = res.json.bind(res);
   res.json = (payload) => originalJson(rewriteUrlsDeep(payload, baseUrl));
   next();
