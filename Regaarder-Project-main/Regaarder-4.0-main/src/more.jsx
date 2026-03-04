@@ -214,7 +214,7 @@ const MorePage = () => {
                   // Mark user as creator locally and attempt to persist to backend, then navigate to creator profile
                   try {
                     const token = localStorage.getItem('regaarder_token');
-                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                     // Try to persist minimal creator flag server-side
                     try {
                       await fetch(`${BACKEND}/creator/complete`, {

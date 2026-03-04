@@ -342,7 +342,7 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 const res = await fetch(`${BACKEND}/users/me`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -388,7 +388,7 @@ const App = () => {
             const token = localStorage.getItem('regaarder_token');
             if (!token) return;
 
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
             await fetch(`${BACKEND}/users/update`, {
                 method: 'POST',
                 headers: {
@@ -463,7 +463,7 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 const res = await fetch(`${BACKEND}/following`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -489,7 +489,7 @@ const App = () => {
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 const res = await fetch(`${BACKEND}/requests/my`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -550,7 +550,7 @@ const App = () => {
                 const formData = new FormData();
                 formData.append('image', file);
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 const res = await fetch(`${BACKEND}/creator/photo`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
@@ -723,7 +723,7 @@ const App = () => {
                 return newSet;
             });
 
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
             const res = await fetch(`${BACKEND}/unfollow`, {
                 method: 'POST',
                 headers: {

@@ -46,7 +46,7 @@ const Referrals = () => {
                     return;
                 }
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 const response = await fetch(`${BACKEND}/users/me`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });

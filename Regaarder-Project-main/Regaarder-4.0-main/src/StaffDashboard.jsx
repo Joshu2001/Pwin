@@ -5,7 +5,7 @@ import SupportTicketPanel from './SupportTicketPanel.jsx';
 const STAFF_BACKEND_PLACEHOLDER = (typeof window !== 'undefined' && window.__BACKEND_URL__)
   || import.meta.env.VITE_BACKEND_URL
   || import.meta.env.VITE_BACKEND
-  || 'https://web-production-b6cfe.up.railway.app';
+  || 'https://pwin-copy-production.up.railway.app';
 const getStaffBackendBaseUrl = () => {
   if (typeof window !== 'undefined' && window.__BACKEND_URL__) return window.__BACKEND_URL__;
   return STAFF_BACKEND_PLACEHOLDER;
@@ -23,7 +23,7 @@ const staffFetch = (input, init) => {
 const fetch = staffFetch;
 
 const STAFF_BACKEND_FALLBACKS = [
-  'https://web-production-b6cfe.up.railway.app',
+  'https://pwin-copy-production.up.railway.app',
 ];
 
 const REQUEST_AMOUNT_OVERRIDES_KEY = 'staff_request_amount_overrides_v1';

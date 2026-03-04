@@ -1,0 +1,1 @@
+const p={},o="https://regaarder.com",t=()=>{if("undefined"!=typeof window&&window.__BACKEND_URL__)return window.__BACKEND_URL__;const o=void 0!==import.meta&&p?"https://pwin-copy-production.up.railway.app":null;return o||"https://pwin-copy-production.up.railway.app"};export{o as W,t as g};

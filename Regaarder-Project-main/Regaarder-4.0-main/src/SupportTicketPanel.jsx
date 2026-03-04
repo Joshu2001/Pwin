@@ -168,7 +168,7 @@ const SupportTicketPanel = ({ selectedLanguage = 'English' }) => {
   const getBackendUrl = () => {
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;
-    return window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app';
+    return window.__BACKEND_URL__ || 'https://pwin-copy-production.up.railway.app';
   };
 
   // Fetch tickets

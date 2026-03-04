@@ -659,7 +659,7 @@ const CreatorOnboardingDialog = ({ onClose, selectedLanguage = 'English' }) => {
     const [showIntroError, setShowIntroError] = useState(false);
     const [uploadingIntro, setUploadingIntro] = useState(false);
     const auth = useAuth();
-    const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
 
     const features = [
         {
@@ -1877,7 +1877,7 @@ const ReportVideoDialog = ({ video, videoTitle, onClose, selectedLanguage = 'Eng
     };
 
     const handleSubmit = async () => {
-        const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
         const token = localStorage.getItem('regaarder_token');
         let reporter = null;
         try { reporter = JSON.parse(localStorage.getItem('regaarder_user') || '{}'); } catch (e) { }
@@ -2019,7 +2019,7 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
     const [followActive, setFollowActive] = useState(false);
     const [requestActive, setRequestActive] = useState(false);
     const [loadedProfileData, setLoadedProfileData] = useState(null);
-    const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
 
     // Fetch user profile data to get avatar if not already provided
     useEffect(() => {
@@ -2957,7 +2957,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             if (sessionStorage.getItem('beta_wait_modal_seen') === '1') return;
         } catch (e) { }
 
-        const BACKEND = (typeof window !== 'undefined' && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+        const BACKEND = (typeof window !== 'undefined' && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
         const totalSeconds = 80;
         const totalMs = totalSeconds * 1000;
         const showDelayMs = 1800;
@@ -3105,7 +3105,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             const token = localStorage.getItem('regaarder_token');
             if (!token) return;
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 const res = await fetch(`${BACKEND}/notifications`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -3459,7 +3459,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             if (!v) return;
             const bookmarking = !v.bookmarked;
             if (!bookmarking) return; // only persist adds; removal not supported server-side
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/bookmarks/videos`, {
                 method: 'POST',
@@ -3473,7 +3473,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const handleUnpinVideo = async (videoId) => {
         setVideos(prev => prev.map((v) => (v.id === videoId ? { ...v, pinned: false, pinnedDays: null } : v)));
         try {
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/videos/${encodeURIComponent(videoId)}`, {
                 method: 'PATCH',
@@ -3598,7 +3598,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
         setVideos([]); // Reset videos on tab change
         const fetchVideos = async () => {
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 console.log('Fetching videos from:', `${BACKEND}/videos`);
 
                 // Fetch bookmarks to sync state
@@ -3911,7 +3911,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
         });
 
         try {
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
             const token = localStorage.getItem('regaarder_token');
             await fetch(`${BACKEND}/videos/${encodeURIComponent(videoId)}`, {
                 method: 'PATCH',
@@ -3978,7 +3978,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                         try {
                             const token = localStorage.getItem('regaarder_token');
                             if (token && staffActionNotification.id) {
-                                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                                 await fetch(`${BACKEND}/notifications/${staffActionNotification.id}/read`, {
                                     method: 'POST',
                                     headers: { 'Authorization': `Bearer ${token}` }
@@ -4149,7 +4149,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 // Fetch the latest video data from backend to ensure ads are up-to-date
                                 let freshVideo = video;
                                 try {
-                                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                                    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                                     const freshResponse = await fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}`);
                                     if (freshResponse.ok) {
                                         const freshData = await freshResponse.json();
@@ -4173,7 +4173,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     // Already absolute
                                     if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
                                     try {
-                                        const BACKEND_URL = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                                        const BACKEND_URL = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                                         return new URL(rawUrl, BACKEND_URL).toString();
                                     } catch (e) { return rawUrl; }
                                 };
@@ -4780,7 +4780,7 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
 
                     // Save to backend (fire-and-forget)
                     try {
-                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                         fetch(`${BACKEND}/videos/${encodeURIComponent(video.id)}/duration`, {
                             method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
@@ -5324,7 +5324,7 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
 
     const SELECTED_CREATOR_KEY = 'ideas_selectedCreator_v1';
 
-    const getBackendBase = () => (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+    const getBackendBase = () => (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
     const normalizeImageUrl = (url) => {
         if (!url) return null;
         try {
@@ -5575,7 +5575,7 @@ const TabPills = ({ activeTab, setActiveTab, selectedLanguage = 'English' }) => 
     useEffect(() => {
         const fetchCategories = async () => {
              try {
-                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                  const res = await fetch(`${BACKEND}/categories`);
                  if (res.ok) {
                      const catList = await res.json();

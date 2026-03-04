@@ -81,7 +81,7 @@ export function recordWatchProgress(payload = {}) {
 
     // Also persist to backend when available
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const token = localStorage.getItem('regaarder_token');
       fetch(`${BACKEND}/watch/history`, {
         method: 'POST',
@@ -108,7 +108,7 @@ export function recordWatchProgress(payload = {}) {
 
 export function getWatchHistory() {
   try {
-    const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+    const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
     const token = localStorage.getItem('regaarder_token');
     // Fetch remote history (token optional)
     const res = window.fetch ? null : null;
@@ -130,7 +130,7 @@ export function clearWatchHistory() {
     }
     _IN_MEMORY_HISTORY = null;
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const token = localStorage.getItem('regaarder_token');
       window.fetch && window.fetch(`${BACKEND}/watch/history`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} }).catch(() => { });
     } catch { }
@@ -166,7 +166,7 @@ const App = () => {
   React.useEffect(() => {
     (async () => {
       try {
-        const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
         const resp = await fetch(`${BACKEND}/videos`).then(r => r.json()).catch(() => null);
         const arr = resp && resp.success && Array.isArray(resp.videos) ? resp.videos : [];
         const idx = {};
@@ -282,7 +282,7 @@ const App = () => {
       saveHistory(list);
       // backend delete
       try {
-        const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+        const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
         const token = localStorage.getItem('regaarder_token');
         window.fetch && window.fetch(`${BACKEND}/watch/history/${encodeURIComponent(videoId)}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} }).catch(() => { });
       } catch { }

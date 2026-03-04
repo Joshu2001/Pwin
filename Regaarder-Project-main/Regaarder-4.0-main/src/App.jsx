@@ -209,7 +209,7 @@ function App() {
         // Get backend URL
         const protocol = window.location.protocol;
         const hostname = window.location.hostname;
-        const backendUrl = window.__BACKEND_URL__ || 'https://web-production-b6cfe.up.railway.app';
+        const backendUrl = window.__BACKEND_URL__ || 'https://pwin-copy-production.up.railway.app';
 
         // Get pending payment session
         const pendingSession = localStorage.getItem('pending_payment_session');

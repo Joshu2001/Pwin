@@ -29,7 +29,7 @@ const Settings = () => {
   const [selectedLanguage] = useState(() => {
     try { return localStorage.getItem('regaarder_language') || 'English'; } catch (e) { return 'English'; }
   });
-  const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+  const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
 
   const user = (() => { try { return auth.user || JSON.parse(localStorage.getItem('regaarder_user') || '{}'); } catch { return {}; } })();
   const token = (() => { try { return localStorage.getItem('regaarder_token'); } catch { return null; } })();

@@ -26,7 +26,7 @@ const useSearch = useLocalSearch;
 const API_BASE = (typeof window !== 'undefined' && window.__BACKEND_URL__)
   || import.meta.env.VITE_BACKEND_URL
   || import.meta.env.VITE_BACKEND
-  || 'https://web-production-b6cfe.up.railway.app';
+  || 'https://pwin-copy-production.up.railway.app';
 
 // Helper to resolve user avatar/image URLs
 const resolveImageUrl = (url) => {

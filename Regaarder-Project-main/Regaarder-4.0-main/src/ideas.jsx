@@ -2911,7 +2911,7 @@ const App = () => {
   const [creatorsList, setCreatorsList] = useState([]);
   const BACKEND = (function() {
       if (window && window.__BACKEND_URL__) return window.__BACKEND_URL__;
-      return 'https://web-production-b6cfe.up.railway.app';
+      return 'https://pwin-copy-production.up.railway.app';
   })();
 
   // Helper: normalize image URLs (uploaded: prefix → full backend URL, http→https)
@@ -4046,7 +4046,7 @@ const App = () => {
   // Send notification to creator when request is assigned to them
   const sendCreatorNotification = async (creatorId, requestData) => {
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const token = localStorage.getItem('regaarder_token');
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -4313,7 +4313,7 @@ const App = () => {
     try {
       const REQUESTS_KEY = "ideas_requests_v1";
       const tempId = `req_${Date.now()}`;
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       
       // Create valid creator object - use localStorage instead of auth context
       let submitterCreator = null;

@@ -313,7 +313,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                 const token = localStorage.getItem('regaarder_token');
                 if (!token) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 const res = await fetch(`${BACKEND}/following/${profile.id}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -424,7 +424,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
                 return;
             }
 
-            const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
             const endpoint = isFollowing ? '/unfollow' : '/follow';
 
             setFollowActive(true);
@@ -520,7 +520,7 @@ const ProfileHeader = ({ profile, onUpdate, isPreviewMode, onTogglePreview, onTi
 
             const fd = new FormData();
             fd.append('image', file);
-            const BACKEND = (typeof getBackendBaseUrl === 'function' ? getBackendBaseUrl() : null) || (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+            const BACKEND = (typeof getBackendBaseUrl === 'function' ? getBackendBaseUrl() : null) || (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
             const res = await fetch(`${BACKEND}/creator/photo`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
@@ -1160,7 +1160,7 @@ const AllVideosPopup = ({ videos, creatorId, onClose, onDelete, isPreview = fals
             if (!creatorId) return;
             setIsLoading(true);
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND || 'https://pwin-copy-production.up.railway.app';
                 const response = await fetch(`${BACKEND}/videos/${creatorId}`, {
                     credentials: 'include'
                 });
@@ -2495,7 +2495,7 @@ const SponsorPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
     // Get backend URL dynamically
     const getBackendUrl = () => {
         if (window && window.__BACKEND_URL__) return window.__BACKEND_URL__;
-        return 'https://web-production-b6cfe.up.railway.app';
+        return 'https://pwin-copy-production.up.railway.app';
     };
 
     // Process payment and redirect to PayPal
@@ -2948,7 +2948,7 @@ const App = () => {
                 // Extract handle from /@handle URL pattern
                 const pathHandle = window.location.pathname.startsWith('/@') ? window.location.pathname.slice(2).split('?')[0] : null;
                 const isSharedLink = params.get('shared') === 'true' || params.get('request') === 'true';
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 
                 // Use handle from URL path, query params, or default
                 const finalHandle = pathHandle || handle;
@@ -3127,7 +3127,7 @@ const App = () => {
             try {
                 if (!profile.id) return;
 
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 
                 // Fetch fresh user data to get updated stats
                 const res = await fetch(`${BACKEND}/users/${encodeURIComponent(profile.id)}`);
@@ -3165,7 +3165,7 @@ const App = () => {
             }
 
             try {
-                const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
                 
                 // Fetch all videos to recalculate stats
                 const videosRes = await fetch(`${BACKEND}/videos`);
@@ -3680,7 +3680,7 @@ const App = () => {
                     console.warn('No authentication token. Featured video saved locally only.');
                     return;
                 }
-                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -3710,7 +3710,7 @@ const App = () => {
                     console.warn('No authentication token. Featured video deleted locally only.');
                     return;
                 }
-                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -3751,7 +3751,7 @@ const App = () => {
             }
 
             const payload = { [field]: value };
-            const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/creator/complete`, {
+            const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/creator/complete`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3845,7 +3845,7 @@ const App = () => {
                     console.warn('No authentication token. Categories saved locally only.');
                     return;
                 }
-                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -3889,7 +3889,7 @@ const App = () => {
                     console.warn('No authentication token. Template saved locally only.');
                     return;
                 }
-                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/creator/complete`, {
+                const response = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/creator/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

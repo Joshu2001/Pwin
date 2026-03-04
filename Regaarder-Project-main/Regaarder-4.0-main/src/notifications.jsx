@@ -128,7 +128,7 @@ const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId,
         try {
           const token = localStorage.getItem('regaarder_token');
           if (!token) return;
-          const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+          const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
           const res = await fetch(`${BACKEND}/user/${otherPerson.id}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
@@ -521,7 +521,7 @@ const App = ({ onClose }) => {
     try {
       const token = localStorage.getItem('regaarder_token');
       if (!token) return;
-      const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/notifications`, {
+      const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/notifications`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -685,7 +685,7 @@ const App = ({ onClose }) => {
       // Perform backend delete for all items in thread
       const token = localStorage.getItem('regaarder_token');
       if (!token) return;
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
 
       const results = await Promise.all((itemsToDelete || []).map((item) => {
         if (!item || item.id == null) return Promise.resolve(false);
@@ -720,7 +720,7 @@ const App = ({ onClose }) => {
     const token = localStorage.getItem('regaarder_token');
     if (!token) return;
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       await fetch(`${BACKEND}/suggestion`, {
         method: 'POST',
         headers: {

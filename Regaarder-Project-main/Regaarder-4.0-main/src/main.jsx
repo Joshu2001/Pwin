@@ -13,13 +13,13 @@ if (typeof window !== 'undefined' && !window.__BACKEND_URL__) {
   try { storedBackend = window.localStorage.getItem('regaarder_backend_url'); } catch (e) { storedBackend = null; }
   const envBackend = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || null;
 
-  const RAILWAY_URL = 'https://web-production-b6cfe.up.railway.app';
+  const RAILWAY_URL = 'https://pwin-copy-production.up.railway.app';
   const normalizeBackend = (val) => {
     if (!val) return null;
     const v = String(val).trim();
     if (!v) return null;
     // Redirect all old Render/Railway URLs and localhost to correct Railway
-    if (v.includes('pwin.onrender.com') || v.includes('regaarder-pwin.onrender.com') || v.includes('pwin-copy-production.up.railway.app') || v.includes('localhost:4000')) {
+    if (v.includes('pwin.onrender.com') || v.includes('regaarder-pwin.onrender.com') || v.includes('web-production-b6cfe.up.railway.app') || v.includes('localhost:4000')) {
       return RAILWAY_URL;
     }
     return v;
@@ -42,7 +42,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
       const base = window.__BACKEND_URL__
         || import.meta.env.VITE_BACKEND_URL
         || import.meta.env.VITE_BACKEND
-        || 'https://web-production-b6cfe.up.railway.app';
+        || 'https://pwin-copy-production.up.railway.app';
       const rewrite = (url) => {
         if (typeof url !== 'string') return url;
         return url
@@ -50,7 +50,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
           .replace('http://pwin.onrender.com', base)
           .replace('https://regaarder-pwin.onrender.com', base)
           .replace('http://regaarder-pwin.onrender.com', base)
-          .replace('https://pwin-copy-production.up.railway.app', base);
+          .replace('https://web-production-b6cfe.up.railway.app', base);
       };
 
       if (typeof input === 'string') {

@@ -70,7 +70,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
   const fetchNextEmployeeId = async () => {
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const res = await fetch(`${BACKEND}/staff/next-employee-id`);
       const data = await res.json();
       if (data.nextEmployeeId) {
@@ -89,7 +89,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
     setIsCheckingStatus(true);
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const res = await fetch(`${BACKEND}/staff/check-account-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,7 +154,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const res = await fetch(`${BACKEND}/staff/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,7 +205,7 @@ export default function StaffLoginModal({ isOpen, onClose, onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const BACKEND = (window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app';
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const res = await fetch(`${BACKEND}/staff/create-account`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

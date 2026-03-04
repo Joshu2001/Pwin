@@ -1026,7 +1026,7 @@ const BrandLogoPage = ({ setCurrentPage, ACCENT_COLOR, ICON_BACKGROUND, uploaded
             // (brief is optional at signup; sponsors can add it later)
 
             const token = localStorage.getItem('regaarder_token');
-            const resp = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/sponsors`, {
+            const resp = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/sponsors`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1187,7 +1187,7 @@ const AdvertiserDashboard = ({ setCurrentPage, ACCENT_COLOR, previewUrl, uploade
                     return;
                 }
                 const token = localStorage.getItem('regaarder_token');
-                const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/advertiser/dashboard`, {
+                const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/advertiser/dashboard`, {
                     headers: { 'Authorization': token ? `Bearer ${token}` : '' }
                 });
                 if (!res.ok) {
@@ -3935,7 +3935,7 @@ const App = () => {
                 }
 
                 const token = localStorage.getItem('regaarder_token');
-                const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://web-production-b6cfe.up.railway.app'}/sponsors/me`, {
+                const res = await fetch(`${(window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app'}/sponsors/me`, {
                     headers: { 'Authorization': token ? `Bearer ${token}` : '' }
                 });
                 if (!res.ok) {
