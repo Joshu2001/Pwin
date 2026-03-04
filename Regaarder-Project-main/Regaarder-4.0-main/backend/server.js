@@ -2732,7 +2732,7 @@ app.get('/users', (req, res) => {
     const users = readUsers();
     const q = (req.query.query || req.query.q || '').trim().toLowerCase();
     const creatorsOnly = req.query.creatorsOnly === '1' || req.query.creatorsOnly === 'true';
-    let results = users.map(({ passwordHash, token, ...u }) => u);
+    let results = users.map(({ password_hash, passwordHash, token, ...u }) => u);
     if (creatorsOnly) results = results.filter(u => u.isCreator);
     if (q) {
       results = results.filter(u => {
