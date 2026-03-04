@@ -1415,13 +1415,33 @@ app.get('/debug/db-status', async (req, res) => {
         counts[t] = parseInt(rows[0].c);
       } catch (e) { counts[t] = 'error: ' + e.message; }
     }
+    // Try refreshing caches and capture errors
+    let userRefreshError = null;
+    let requestRefreshError = null;
+    try { await refreshUserCache(); } catch (e) { userRefreshError = e.message; }
+    try { await refreshRequestCache(); } catch (e) { requestRefreshError = e.message; }
+    // Also try a raw SELECT to see what columns exist
+    let userColumns = [];
+    try {
+      const { rows } = await dbQuery("SELECT column_name FROM information_schema.columns WHERE table_name='users' ORDER BY ordinal_position");
+      userColumns = rows.map(r => r.column_name);
+    } catch (e) { userColumns = ['error: ' + e.message]; }
+    let sampleUser = null;
+    try {
+      const { rows } = await dbQuery('SELECT * FROM users LIMIT 1');
+      if (rows[0]) sampleUser = Object.keys(rows[0]);
+    } catch (e) { sampleUser = 'error: ' + e.message; }
     res.json({
       db: true,
       tableCounts: counts,
       userCacheSize: _userDbCache.length,
       userCacheReady: _userDbCacheReady,
+      userRefreshError,
       requestCacheSize: typeof _requestDbCache !== 'undefined' ? _requestDbCache.length : 'N/A',
-      requestCacheReady: typeof _requestDbCacheReady !== 'undefined' ? _requestDbCacheReady : 'N/A'
+      requestCacheReady: typeof _requestDbCacheReady !== 'undefined' ? _requestDbCacheReady : 'N/A',
+      requestRefreshError,
+      userColumns,
+      sampleUserKeys: sampleUser
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
