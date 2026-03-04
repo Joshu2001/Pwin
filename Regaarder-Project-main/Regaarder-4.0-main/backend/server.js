@@ -316,6 +316,7 @@ const loadStaffStateFromDb = async () => {
 };
 
 initDb()
+  .then(() => refreshUserCache())
   .then(() => loadStaffStateFromDb())
   .catch((err) => {
     console.error('Database init error', err);
@@ -463,7 +464,7 @@ const ensureH264Mp4 = async (file) => {
 
 const toPublicUser = (user) => {
   if (!user) return null;
-  const { password_hash, token, ...rest } = user;
+  const { password_hash, passwordHash, token, ...rest } = user;
   return rest;
 };
 
@@ -473,6 +474,7 @@ const mapUserRow = (row) => {
     id: row.id,
     email: row.email,
     name: row.name,
+    // snake_case (DB convention)
     password_hash: row.password_hash,
     token: row.token,
     referral_code: row.referral_code,
@@ -494,7 +496,22 @@ const mapUserRow = (row) => {
     tagline: row.tagline,
     pricingType: row.pricing_type,
     categories: row.categories,
-    userPlan: row.user_plan
+    userPlan: row.user_plan,
+    creatorPlan: row.creator_plan,
+    creatorPlanUpgradedAt: row.creator_plan_upgraded_at,
+    streak: row.streak,
+    lastStreakDate: row.last_streak_date,
+    meta: row.meta,
+    // camelCase aliases (legacy JSON convention – many endpoints rely on these)
+    passwordHash: row.password_hash,
+    referralCode: row.referral_code,
+    referrerId: row.referrer_id,
+    referralCount: row.referral_count,
+    createdAt: row.created_at,
+    passwordChangedAt: row.password_changed_at,
+    isCreator: row.is_creator,
+    creatorSince: row.creator_since,
+    intro_video: row.intro_video
   };
 };
 
@@ -701,7 +718,122 @@ function fileFilter(req, file, cb) {
 
 const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_BYTES }, fileFilter });
 
+/* ── User DB cache ───────────────────────────────────────────────────────
+ * When DB_ENABLED the authoritative copy of users lives in PostgreSQL.
+ * Many legacy endpoints still call the synchronous readUsers()/writeUsers()
+ * helpers.  Instead of rewriting every endpoint we keep an in-memory cache
+ * that is loaded once at startup (refreshUserCache) and kept in sync:
+ *   • readUsers()  → returns the cache when DB is active
+ *   • writeUsers() → updates the cache AND queues an async DB upsert
+ * Endpoints that already have their own if(DB_ENABLED) branches touch the
+ * DB directly; after those writes we call refreshUserCache() to re-sync.
+ * ───────────────────────────────────────────────────────────────────── */
+let _userDbCache = [];
+let _userDbCacheReady = false;
+let _userDbWriteChain = Promise.resolve();  // serialise background writes
+
+async function refreshUserCache() {
+  if (!DB_ENABLED) return;
+  try {
+    const { rows } = await dbQuery('SELECT * FROM users');
+    _userDbCache = rows.map(mapUserRow);
+    _userDbCacheReady = true;
+    console.log(`[user-cache] refreshed – ${_userDbCache.length} user(s)`);
+  } catch (err) {
+    console.error('[user-cache] refresh error:', err);
+  }
+}
+
+/**
+ * Reverse-map a user JS object (mapUserRow-format OR legacy camelCase) to
+ * an array of DB column values, in the exact order the upsert SQL expects.
+ */
+function userToDbParams(u) {
+  return [
+    u.id,
+    u.email,
+    u.name,
+    u.password_hash || u.passwordHash || null,
+    u.token || null,
+    u.referral_code || u.referralCode || null,
+    u.referrer_id || u.referrerId || null,
+    Number(u.referral_count ?? u.referralCount ?? 0),
+    u.created_at || u.createdAt || new Date().toISOString(),
+    u.password_changed_at || u.passwordChangedAt || null,
+    u.handle || null,
+    u.tag || null,
+    u.bio || null,
+    u.interests ? (typeof u.interests === 'string' ? u.interests : JSON.stringify(u.interests)) : null,
+    u.image || null,
+    u.social ? (typeof u.social === 'string' ? u.social : JSON.stringify(u.social)) : null,
+    typeof u.is_creator !== 'undefined' ? u.is_creator : (u.isCreator || false),
+    u.creator_since || u.creatorSince || null,
+    u.introVideo || u.intro_video || null,
+    u.document || null,
+    u.price != null ? Number(u.price) : null,
+    u.tagline || null,
+    u.pricingType || u.pricing_type || null,
+    u.categories ? (typeof u.categories === 'string' ? u.categories : JSON.stringify(u.categories)) : null,
+    u.userPlan || u.user_plan || null,
+    u.creatorPlan || u.creator_plan || null,
+    u.creatorPlanUpgradedAt || u.creator_plan_upgraded_at || null,
+    u.streak != null ? Number(u.streak) : null,
+    u.lastStreakDate || u.last_streak_date || null,
+    u.meta ? (typeof u.meta === 'string' ? u.meta : JSON.stringify(u.meta)) : null
+  ];
+}
+
+const UPSERT_USER_SQL = `
+  INSERT INTO users
+    (id,email,name,password_hash,token,referral_code,referrer_id,referral_count,
+     created_at,password_changed_at,handle,tag,bio,interests,image,social,
+     is_creator,creator_since,intro_video,document,price,tagline,pricing_type,
+     categories,user_plan,creator_plan,creator_plan_upgraded_at,streak,
+     last_streak_date,meta)
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+  ON CONFLICT (id) DO UPDATE SET
+    email=EXCLUDED.email, name=EXCLUDED.name, password_hash=EXCLUDED.password_hash,
+    token=EXCLUDED.token, referral_code=EXCLUDED.referral_code,
+    referrer_id=EXCLUDED.referrer_id, referral_count=EXCLUDED.referral_count,
+    password_changed_at=EXCLUDED.password_changed_at, handle=EXCLUDED.handle,
+    tag=EXCLUDED.tag, bio=EXCLUDED.bio, interests=EXCLUDED.interests,
+    image=EXCLUDED.image, social=EXCLUDED.social, is_creator=EXCLUDED.is_creator,
+    creator_since=EXCLUDED.creator_since, intro_video=EXCLUDED.intro_video,
+    document=EXCLUDED.document, price=EXCLUDED.price, tagline=EXCLUDED.tagline,
+    pricing_type=EXCLUDED.pricing_type, categories=EXCLUDED.categories,
+    user_plan=EXCLUDED.user_plan, creator_plan=EXCLUDED.creator_plan,
+    creator_plan_upgraded_at=EXCLUDED.creator_plan_upgraded_at,
+    streak=EXCLUDED.streak, last_streak_date=EXCLUDED.last_streak_date,
+    meta=EXCLUDED.meta`;
+
+async function syncUsersToDb(users) {
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+    const ids = [];
+    for (const u of users) {
+      if (!u || !u.id) continue;
+      ids.push(u.id);
+      await client.query(UPSERT_USER_SQL, userToDbParams(u));
+    }
+    // Remove users that were deleted from the array
+    if (ids.length > 0) {
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+      await client.query(`DELETE FROM users WHERE id NOT IN (${placeholders})`, ids);
+    } else {
+      await client.query('DELETE FROM users');
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[user-cache] syncUsersToDb error:', err);
+  } finally {
+    client.release();
+  }
+}
+
 function readUsers() {
+  if (DB_ENABLED && _userDbCacheReady) return _userDbCache;
   try {
     if (!fs.existsSync(DATA_FILE)) return [];
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
@@ -713,6 +845,16 @@ function readUsers() {
 }
 
 function writeUsers(users) {
+  if (DB_ENABLED) {
+    // Update in-memory cache immediately (synchronous)
+    _userDbCache = users;
+    _userDbCacheReady = true;
+    // Queue a serialised async DB sync (fire-and-forget)
+    _userDbWriteChain = _userDbWriteChain
+      .then(() => syncUsersToDb(users))
+      .catch(err => console.error('[user-cache] bg write error:', err));
+    return;
+  }
   fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2), 'utf8');
 }
 
@@ -1279,6 +1421,7 @@ app.post('/signup', async (req, res) => {
       }
 
       const { rows } = await dbQuery('SELECT * FROM users WHERE id = $1', [userId]);
+      refreshUserCache().catch(() => {});  // keep cache in sync
       return res.json({ user: toPublicUser(mapUserRow(rows[0])), token });
     } catch (err) {
       console.error('signup db error', err);
@@ -1348,6 +1491,7 @@ app.post('/login', async (req, res) => {
       const token = crypto.randomBytes(16).toString('hex');
       await dbQuery('UPDATE users SET token = $1 WHERE id = $2', [token, user.id]);
       const refreshed = await dbQuery('SELECT * FROM users WHERE id = $1', [user.id]);
+      refreshUserCache().catch(() => {});  // keep cache in sync
       return res.json({ user: toPublicUser(mapUserRow(refreshed.rows[0])), token });
     } catch (err) {
       console.error('login db error', err);
@@ -2420,6 +2564,7 @@ app.get('/users/me', authMiddleware, (req, res) => {
             const newReferralCode = crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 8);
             await dbQuery('UPDATE users SET referral_code = $1 WHERE id = $2', [newReferralCode, u.id]);
             const refreshed = await dbQuery('SELECT * FROM users WHERE id = $1', [u.id]);
+            refreshUserCache().catch(() => {});
             return res.json({ user: toPublicUser(mapUserRow(refreshed.rows[0])) });
           }
           return res.json({ user: toPublicUser(u) });
@@ -2501,6 +2646,7 @@ app.post('/users/update', authMiddleware, (req, res) => {
       return dbQuery(sql, values)
         .then(({ rows }) => {
           if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+          refreshUserCache().catch(() => {});
           return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
         })
         .catch((err) => {
@@ -3552,6 +3698,7 @@ app.post('/creator/intro-video', authMiddleware, (req, res) => {
       // For demo, attach to user record
       if (DB_ENABLED) {
         await dbQuery('UPDATE users SET intro_video = $1 WHERE id = $2', [url, req.user.id]);
+        refreshUserCache().catch(() => {});
       } else {
         const users = readUsers();
         const idx = users.findIndex(u => u.id === req.user.id);
@@ -3598,6 +3745,7 @@ app.post('/creator/photo', authMiddleware, (req, res) => {
         } else {
           await dbQuery('UPDATE users SET document = $1 WHERE id = $2', [url, req.user.id]);
         }
+        refreshUserCache().catch(() => {});
       } else {
         const users = readUsers();
         const idx = users.findIndex(u => u.id === req.user.id);
@@ -3659,6 +3807,7 @@ app.post('/creator/complete', authMiddleware, (req, res) => {
       return dbQuery(sql, values)
         .then(({ rows }) => {
           if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+          refreshUserCache().catch(() => {});
           return res.json({ success: true, user: toPublicUser(mapUserRow(rows[0])) });
         })
         .catch((err) => {
