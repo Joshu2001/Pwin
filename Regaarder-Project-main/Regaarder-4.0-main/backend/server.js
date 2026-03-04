@@ -1403,6 +1403,29 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', version: '2026-03-04-dbcache', db: !!process.env.DATABASE_URL });
 });
 
+// Temporary diagnostic - shows DB table row counts and cache sizes
+app.get('/debug/db-status', async (req, res) => {
+  try {
+    if (!DB_ENABLED) return res.json({ db: false, message: 'DB not enabled' });
+    const tables = ['users', 'requests', 'videos'];
+    const counts = {};
+    for (const t of tables) {
+      try {
+        const { rows } = await dbQuery(`SELECT COUNT(*) as c FROM ${t}`);
+        counts[t] = parseInt(rows[0].c);
+      } catch (e) { counts[t] = 'error: ' + e.message; }
+    }
+    res.json({
+      db: true,
+      tableCounts: counts,
+      userCacheSize: _userDbCache.length,
+      userCacheReady: _userDbCacheReady,
+      requestCacheSize: typeof _requestDbCache !== 'undefined' ? _requestDbCache.length : 'N/A',
+      requestCacheReady: typeof _requestDbCacheReady !== 'undefined' ? _requestDbCacheReady : 'N/A'
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/healthz', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
