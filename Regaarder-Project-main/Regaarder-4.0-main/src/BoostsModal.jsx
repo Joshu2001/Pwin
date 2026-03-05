@@ -177,7 +177,7 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
 
     return (
         <div
-            className={`fixed inset-0 z-50 transition-all duration-300 flex items-center justify-center ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            className={`fixed inset-0 z-[80] transition-all duration-300 flex items-center justify-center ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
             style={{ transitionProperty: 'opacity', transitionTimingFunction: 'cubic-bezier(.4,0,.2,1)' }}
             aria-hidden={!isOpen}
         >
@@ -192,10 +192,10 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
             <div
                 ref={modalRef}
                 tabIndex={-1}
-                className="relative w-full mx-auto rounded-3xl flex flex-col z-50"
+                className="relative w-full mx-auto rounded-3xl flex flex-col z-[81]"
                 style={{
                     maxHeight: '75vh',
-                    maxWidth: '280px',
+                    maxWidth: '420px',
                     background: '#ffffff',
                     boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
                     border: '1px solid #e5e7eb'
@@ -205,8 +205,8 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
 
                 {/* Header */}
                 <header className="relative px-5 pt-5 pb-3 text-center">
-                    <h2 className="text-lg font-bold text-gray-900 mb-0.5">{getHeadline()}</h2>
-                    <p className="text-gray-500 text-xs leading-relaxed">{getSubheadline()}</p>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Boost Your Request</h2>
+                    <p className="text-gray-500 text-sm leading-relaxed">Move your request higher so creators discover it sooner.</p>
                 </header>
 
                 {/* Main Content */}
@@ -217,7 +217,7 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
                         <div className="flex items-start space-x-2">
                             <div className="w-3.5 h-3.5 rounded-full bg-blue-500 flex-shrink-0 mt-0.5"></div>
                             <div className="flex-1">
-                                <div className="font-medium text-gray-900 text-xs">{getTranslation('Reach More Creators', selectedLanguage)}</div>
+                                <div className="font-medium text-gray-900 text-sm">Appear higher in creator feeds</div>
                             </div>
                         </div>
 
@@ -225,8 +225,12 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
                         <div className="flex items-start space-x-2">
                             <div className="w-3.5 h-3.5 rounded-full bg-green-500 flex-shrink-0 mt-0.5"></div>
                             <div className="flex-1">
-                                <div className="font-medium text-gray-900 text-xs">{getTranslation('Get Fulfilled Faster', selectedLanguage)}</div>
+                                <div className="font-medium text-gray-900 text-sm">Get your video made faster</div>
                             </div>
+                        </div>
+
+                        <div className="text-xs text-gray-500 pl-5">
+                            Requests with higher priority are more likely to be fulfilled first.
                         </div>
                     </section>
 
@@ -245,9 +249,9 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
                                         boxShadow: selectedAmount === amount ? '0 0 12px rgba(17, 24, 39, 0.15)' : 'none',
                                     }}
                                 >
-                                    <div className="text-xs font-bold">${amount}</div>
-                                    <div className="text-[10px] mt-0.5" style={{ opacity: 0.7 }}>
-                                        +{amount * 2}
+                                    <div className="text-sm font-bold">${amount}</div>
+                                    <div className="text-xs mt-0.5" style={{ opacity: 0.85 }}>
+                                        Boost +{amount === 10 ? 20 : amount === 25 ? 50 : 100}
                                     </div>
                                 </button>
                             ))}

@@ -78,7 +78,7 @@ const SharedBottomBar = ({ selectedLanguage = 'English', activeTabOverride = nul
 
     return (
         <div
-            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50"
+            className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40"
             style={{
                 paddingTop: '10px',
                 paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',

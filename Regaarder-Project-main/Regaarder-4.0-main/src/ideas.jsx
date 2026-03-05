@@ -2619,6 +2619,8 @@ const App = () => {
   const [selectedCreator, setSelectedCreator] = useState(null);
   const [selectedCreatorImage, setSelectedCreatorImage] = useState(null); // Separate state for creator image
   const [creatorSearch, setCreatorSearch] = useState("");
+  const [targetCategory, setTargetCategory] = useState("");
+  const [availableCategories, setAvailableCategories] = useState([]);
   const [chooseCreatorExpanded, setChooseCreatorExpanded] = useState(false);
   const [chooseCreatorFocused, setChooseCreatorFocused] = useState(false);
   const [creatorSelectionType, setCreatorSelectionType] = useState(null); // 'specific' | 'any' | 'expert' | null
@@ -3178,6 +3180,36 @@ const App = () => {
     });
   })();
 
+  const ANY_CREATORS_OPTION = {
+    id: '@anycreators',
+    name: 'Any creators',
+    displayName: 'Any creators',
+    handle: 'anycreators',
+    isAnyCreators: true,
+    price: null,
+    fallbackColor: '#6b7280'
+  };
+  const filteredCreatorsWithAny = [ANY_CREATORS_OPTION, ...filteredCreators];
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch(`${BACKEND}/categories`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const list = Array.isArray(json) ? json : [];
+        if (!cancelled) setAvailableCategories(list.filter((c) => typeof c === 'string' && c.trim()));
+      } catch (e) {
+        // ignore
+      }
+    };
+    fetchCategories();
+    return () => {
+      cancelled = true;
+    };
+  }, [BACKEND]);
+
   // Prevent background scroll and ensure backdrop covers everything when payment modal is open
   useEffect(() => {
     try {
@@ -3637,11 +3669,13 @@ const App = () => {
   const [titleGradient, setTitleGradient] = useState(null);
 
   const selectedCreatorHandle = String(
-    selectedCreator?.handle ||
-    selectedCreator?.username ||
-    selectedCreator?.name ||
-    selectedCreator?.displayName ||
-    ""
+    selectedCreator?.id === '@anycreators'
+      ? 'anycreators'
+      : (selectedCreator?.handle ||
+        selectedCreator?.username ||
+        selectedCreator?.name ||
+        selectedCreator?.displayName ||
+        "")
   ).trim().replace(/^@+/, "");
   const selectedCreatorMention = selectedCreatorHandle ? ` @${selectedCreatorHandle}` : "";
 
@@ -3678,6 +3712,19 @@ const App = () => {
     setSelectedCreator(null);
     setSelectedCreatorImage(null);
     setCreatorSearch("");
+  };
+
+  const getRequestTargeting = () => {
+    const normalizedCategory = String(targetCategory || '').trim();
+    const selectedId = selectedCreator?.id ? String(selectedCreator.id) : '';
+    const isSpecificCreator = !!selectedId && selectedId !== '@anycreators';
+    if (isSpecificCreator) {
+      return { mode: 'specific', creatorId: selectedId, category: null };
+    }
+    if (normalizedCategory) {
+      return { mode: 'category', creatorId: null, category: normalizedCategory };
+    }
+    return { mode: 'anycreators', creatorId: null, category: null };
   };
 
   const handleDescriptionKeyDown = (e) => {
@@ -4128,7 +4175,9 @@ const App = () => {
         ...(selectedDeliveryType === 'series' ? { episodes: numberOfEpisodes, schedule: selectedReleaseSchedule, customDates: customSeriesDates } : {}),
         ...(selectedDeliveryType === 'recurrent' ? { frequency: selectedFrequency, customDates: customRecurrentDates } : {}),
         ...(selectedDeliveryType === 'catalogue' ? { targetVideos, themes } : {}),
-        selectedCreator: selectedCreator ? selectedCreator.id : null,
+        selectedCreator: (selectedCreator && selectedCreator.id && selectedCreator.id !== '@anycreators') ? selectedCreator.id : null,
+        targetCategory: String(targetCategory || '').trim() || null,
+        targeting: getRequestTargeting(),
         // Added for restoration after redirect
         flow: pendingSubmission ? pendingSubmission.flow : 'one-time',
         nextStep: pendingSubmission ? pendingSubmission.nextStep : 1,
@@ -4176,6 +4225,8 @@ const App = () => {
               selectedTones: requestData.tones || [],
               selectedVideoLength: requestData.videoLength || null,
               selectedPrivacy: requestData.privacy || null,
+              targetCategory: requestData.targetCategory,
+              targeting: requestData.targeting,
             },
             isPendingPayment: true // Flag to indicate it's not fully paid yet
         };
@@ -4219,11 +4270,6 @@ const App = () => {
             console.log('🟢🟢🟢 Backend returned:', json);
             createdRequest = json.request || newRequest;
             isBackendSynced = true;
-
-            // Send notification to selected creator if one was chosen
-            if (selectedCreator && selectedCreator.id) {
-              await sendCreatorNotification(selectedCreator.id, createdRequest);
-            }
 
             // FORCE UPDATE LOCAL STORAGE with the confirmed backend data
             try {
@@ -4349,6 +4395,8 @@ const App = () => {
           selectedTones: selectedTones || [],
           selectedVideoLength: selectedVideoLength || null,
           selectedPrivacy: selectedPrivacy || null,
+          targetCategory: String(targetCategory || '').trim() || null,
+          targeting: getRequestTargeting(),
         },
         isFreeSubmission: true
       };
@@ -4392,11 +4440,6 @@ const App = () => {
         console.log('🟢🟢🟢 Backend returned:', json);
         
         const savedRequest = json.request || newRequest;
-        
-        // Send notification to selected creator if one was chosen
-        if (selectedCreator && selectedCreator.id) {
-          await sendCreatorNotification(selectedCreator.id, savedRequest);
-        }
         
         // Update localStorage with confirmed data
         const rawUpd = window.localStorage.getItem(REQUESTS_KEY);
@@ -4990,6 +5033,7 @@ const App = () => {
               </div>
             </div>
           )}
+
           <div className="relative z-0">
             {selectedCreatorMention && (
               <button
@@ -5992,17 +6036,18 @@ const App = () => {
               {/* Specific Creator Selector with Search */}
               <div className="w-full mb-12">
                  <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-4">Target Specific Creator (Optional)</div>
+
                  
                  {/* If creator is selected, show card with change button */}
                  {selectedCreator && (
                     <div className="flex items-center justify-between w-full border border-blue-200 bg-gradient-to-r from-blue-50/80 to-purple-50/80 rounded-2xl p-4 backdrop-blur-sm mb-4">
                        <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-purple-400 flex-shrink-0 shadow-md flex items-center justify-center flex-none">
-                             {(selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? (
+                            {(selectedCreator.id !== '@anycreators' && (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image)) ? (
                                 <img src={selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
                              ) : null}
-                             <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold" style={{ display: (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image) ? 'none' : 'flex' }}>
-                                {(selectedCreator.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase()}
+                            <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold" style={{ display: (selectedCreator.id !== '@anycreators' && (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image)) ? 'none' : 'flex' }}>
+                              {selectedCreator.id === '@anycreators' ? '@' : (selectedCreator.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase()}
                              </div>
                           </div>
                           <div className="min-w-0">
@@ -6017,7 +6062,7 @@ const App = () => {
                           >
                              Change
                           </button>
-                          <button onClick={() => setSelectedCreator(null)} className="p-2 hover:bg-white/50 rounded-full transition-colors text-gray-400 hover:text-red-500">
+                            <button onClick={() => { setSelectedCreator(null); setSelectedCreatorImage(null); }} className="p-2 hover:bg-white/50 rounded-full transition-colors text-gray-400 hover:text-red-500">
                              <X size={18} />
                           </button>
                        </div>
@@ -6046,17 +6091,17 @@ const App = () => {
                              </button>
                           )}
                        </div>
-                       {(creatorSearch || creatorsList.length > 0) && (
-                          <div className="rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-sm overflow-hidden">
-                             {filteredCreators.length > 0 ? (
-                                <div className="max-h-56 overflow-y-auto space-y-0">
-                                   {filteredCreators.slice(0, 8).map((c) => {
+                        <div className="rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-sm overflow-hidden">
+                            {filteredCreatorsWithAny.length > 0 ? (
+                              <div className="max-h-64 overflow-y-auto space-y-0 pb-2">
+                                {filteredCreatorsWithAny.map((c) => {
                                       const avatarUrl = c.photoURL || c.image;
                                       return (
                                       <button
                                          key={c.id}
                                          onClick={() => {
                                             setSelectedCreator(c);
+                                      if (c.id === '@anycreators') setSelectedCreatorImage(null);
                                             setCreatorSearch("");
                                             trackEvent("creator_selected", { creatorId: c.id });
                                          }}
@@ -6071,7 +6116,9 @@ const App = () => {
                                          </div>
                                          <div className="flex-1 min-w-0">
                                             <div className="text-sm font-semibold text-gray-900 truncate">{c.displayName || c.name}</div>
-                                            {c.price ? <div className="text-xs text-gray-500">${c.price}/request</div> : null}
+                                            {c.id === '@anycreators'
+                                             ? <div className="text-xs text-gray-500">Broadcast to all creators</div>
+                                             : (c.price ? <div className="text-xs text-gray-500">${c.price}/request</div> : null)}
                                          </div>
                                       </button>
                                    );})}
@@ -6083,8 +6130,7 @@ const App = () => {
                                    <div className="text-xs text-gray-400 mt-1">Try a different search term</div>
                                 </div>
                              ) : null}
-                          </div>
-                       )}
+                              </div>
                     </>
               </div>
 
@@ -6164,7 +6210,7 @@ const App = () => {
       {/* Creator Selection Modal for Ideas Page */}
       {showCreatorModal && (
         <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] flex flex-col" style={{ zIndex: 10000 }}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[92vh] flex flex-col" style={{ zIndex: 10000 }}>
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900">{getTranslation('Choose Creator', selectedLanguage)}</h2>
@@ -6201,14 +6247,8 @@ const App = () => {
             </div>
 
             {/* Creator List */}
-            <div className="flex-1 overflow-y-auto">
-              {creatorsList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-8 text-center">
-                  <Users size={40} className="text-gray-300 mb-3" />
-                  <div className="text-sm font-medium text-gray-900">{getTranslation('No creators found', selectedLanguage)}</div>
-                  <div className="text-xs text-gray-500 mt-1">{getTranslation('Try a different username', selectedLanguage)}</div>
-                </div>
-              ) : filteredCreators.length === 0 ? (
+            <div className="flex-1 min-h-0 overflow-y-auto pb-3">
+              {filteredCreatorsWithAny.length === 0 ? (
                 <div className="flex flex-col items-center justify-center p-8 text-center">
                   <Search size={40} className="text-gray-300 mb-3" />
                   <div className="text-sm font-medium text-gray-900">{getTranslation('No creators found', selectedLanguage)}</div>
@@ -6216,11 +6256,12 @@ const App = () => {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {filteredCreators.map((c) => (
+                  {filteredCreatorsWithAny.map((c) => (
                     <button
                       key={c.id}
                       onClick={() => {
                         setSelectedCreator(c);
+                        if (c.id === '@anycreators') setSelectedCreatorImage(null);
                         setShowCreatorModal(false);
                         try {
                           window.localStorage.setItem(SELECTED_CREATOR_KEY, JSON.stringify(c));
@@ -6231,10 +6272,10 @@ const App = () => {
                       <div
                         className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold overflow-hidden"
                         style={{
-                          backgroundColor: (c.photoURL || c.image) ? 'transparent' : (c.fallbackColor || '#3b82f6'),
+                          backgroundColor: (c.id !== '@anycreators' && (c.photoURL || c.image)) ? 'transparent' : (c.fallbackColor || '#3b82f6'),
                         }}
                       >
-                        {(c.photoURL || c.image) ? (
+                        {(c.id !== '@anycreators' && (c.photoURL || c.image)) ? (
                           <img
                             src={c.photoURL || c.image}
                             alt={c.name}
@@ -6242,12 +6283,16 @@ const App = () => {
                             onError={(e) => { e.target.style.display = 'none'; }}
                           />
                         ) : (
-                          String(c.name || 'U').replace("@", "").charAt(0).toUpperCase()
+                          c.id === '@anycreators'
+                            ? '@'
+                            : String(c.name || 'U').replace("@", "").charAt(0).toUpperCase()
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-gray-900">{c.displayName || c.name}</div>
-                        {c.price ? (
+                        {c.id === '@anycreators' ? (
+                          <div className="text-xs text-gray-500">Broadcast to all creators</div>
+                        ) : c.price ? (
                           <div className="text-xs text-gray-500">${c.price} per request</div>
                         ) : (
                           <div className="text-xs text-gray-400">Not set</div>

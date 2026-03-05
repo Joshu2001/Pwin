@@ -434,6 +434,9 @@ const ClaimStatusPanel = ({
     const [toastMessage, setToastMessage] = useState('');
     const [selectedLanguage, setSelectedLanguage] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('regaarder_language') : 'English') || 'English');
     const { user: authUser } = useAuth(); // For accent color in category dropdown
+    const [topSuggestions, setTopSuggestions] = useState([]);
+    const [loadingTopSuggestions, setLoadingTopSuggestions] = useState(false);
+    const [rejectingSuggestionId, setRejectingSuggestionId] = useState(null);
 
     useEffect(() => {
         const handleStorage = () => {
@@ -443,6 +446,72 @@ const ClaimStatusPanel = ({
         window.addEventListener('storage', handleStorage);
         return () => window.removeEventListener('storage', handleStorage);
     }, []);
+
+    const fetchTopSuggestions = useCallback(async () => {
+        if (!requestId) {
+            setTopSuggestions([]);
+            return;
+        }
+        setLoadingTopSuggestions(true);
+        try {
+            const token = localStorage.getItem('regaarder_token');
+            if (!token) {
+                setTopSuggestions([]);
+                return;
+            }
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+            const response = await fetch(`${BACKEND}/requests/${encodeURIComponent(requestId)}/top-suggestions`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (!response.ok) {
+                setTopSuggestions([]);
+                return;
+            }
+            const payload = await response.json().catch(() => ({}));
+            setTopSuggestions(Array.isArray(payload.suggestions) ? payload.suggestions : []);
+        } catch (e) {
+            setTopSuggestions([]);
+        } finally {
+            setLoadingTopSuggestions(false);
+        }
+    }, [requestId]);
+
+    useEffect(() => {
+        fetchTopSuggestions();
+    }, [fetchTopSuggestions]);
+
+    const handleRejectSuggestion = async (suggestionId) => {
+        if (!suggestionId || rejectingSuggestionId) return;
+        setRejectingSuggestionId(suggestionId);
+        try {
+            const token = localStorage.getItem('regaarder_token');
+            if (!token) {
+                setToastMessage(getTranslation('Please sign in again', selectedLanguage));
+                return;
+            }
+            const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+            const response = await fetch(`${BACKEND}/suggestions/${encodeURIComponent(suggestionId)}/reject`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ reason: 'Creator rejected' })
+            });
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.error || 'Unable to reject suggestion');
+            }
+
+            setTopSuggestions((prev) => prev.filter((s) => String(s.id) !== String(suggestionId)));
+            setToastMessage(getTranslation('Suggestion rejected', selectedLanguage));
+        } catch (err) {
+            setToastMessage(err.message || getTranslation('Unable to reject suggestion', selectedLanguage));
+        } finally {
+            setRejectingSuggestionId(null);
+        }
+    };
 
     const normalizeInputVideoUrl = (raw) => {
         if (!raw || typeof raw !== 'string') return '';
@@ -1157,6 +1226,35 @@ const ClaimStatusPanel = ({
                             <div className="text-sm font-semibold text-gray-900">{requesterName}</div>
                             <div className="text-xs text-gray-400">{requesterRole}</div>
                         </div>
+                    </div>
+
+                    <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                        <div className="text-sm font-semibold text-gray-900 mb-2">Top Suggestions for This Video</div>
+                        {loadingTopSuggestions ? (
+                            <div className="text-xs text-gray-500">Loading suggestions…</div>
+                        ) : topSuggestions.length === 0 ? (
+                            <div className="text-xs text-gray-500">No funded suggestions yet.</div>
+                        ) : (
+                            <div className="space-y-2">
+                                {topSuggestions.map((suggestion) => (
+                                    <div key={suggestion.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
+                                        <div className="flex items-start gap-2">
+                                            <div className="text-sm font-semibold text-emerald-700 whitespace-nowrap">
+                                                ${Number(suggestion.fundedAmount || 0).toFixed(0)}
+                                            </div>
+                                            <div className="text-sm text-gray-800 leading-snug flex-1">→ {suggestion.text}</div>
+                                            <button
+                                                onClick={() => handleRejectSuggestion(suggestion.id)}
+                                                disabled={rejectingSuggestionId === suggestion.id}
+                                                className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                            >
+                                                {rejectingSuggestionId === suggestion.id ? 'Rejecting…' : 'Reject'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     <div className="mt-6 flex items-center justify-between">

@@ -8,6 +8,7 @@ import { useLanguage } from './LanguageContext.jsx';
 import { WEB_URL, getBackendBaseUrl } from './config.js';
 import { resolveMediaUrl } from './utils/media.js';
 import BoostsModal from './BoostsModal.jsx';
+import SuggestionPaymentModal from './SuggestionPaymentModal.jsx';
 import DailyLimitModal from './DailyLimitModal.jsx';
 import RequestValueLimitModal from './RequestValueLimitModal.jsx';
 import RequestNudgeModal from './RequestNudgeModal.jsx';
@@ -808,6 +809,7 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
     const modalRef = useRef(null);
     const contentRef = useRef(null);
     const inputRef = useRef(null);
+    const captureHandledRef = useRef(false);
 
     const [currentHeight, setCurrentHeight] = useState(window.innerHeight * 0.9);
     const minHeight = window.innerHeight * 0.4;
@@ -815,56 +817,61 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
 
     const auth = useAuth();
     const [inputValue, setInputValue] = useState('');
+    const [pendingSuggestionText, setPendingSuggestionText] = useState('');
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
-    const [isFirstTimeUser, setIsFirstTimeUser] = useState(false);
+    const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+    const [paymentError, setPaymentError] = useState('');
+    const [pendingFundingAttempt, setPendingFundingAttempt] = useState(false);
 
     const goldColor = 'var(--color-gold)'; // accent color
     const goldLight = 'var(--color-gold-light)'; // accent color light
 
-    // Check if first-time user
-    useEffect(() => {
+    const loadSuggestions = useCallback(async () => {
         try {
-            const hasSeenSuggestions = localStorage.getItem('has_seen_suggestions_modal');
-            if (!hasSeenSuggestions) {
-                setIsFirstTimeUser(true);
-                localStorage.setItem('has_seen_suggestions_modal', '1');
+            if (requestId) {
+                const BACKEND = getBackendBaseUrl();
+                const res = await fetch(`${BACKEND}/requests/${requestId}/suggestions`);
+                if (res.ok) {
+                    const body = await res.json();
+                    if (body && Array.isArray(body.suggestions)) {
+                        setSuggestions(body.suggestions);
+                        return;
+                    }
+                }
             }
-        } catch (e) {
-            // ignore localStorage errors
+        } catch (e) { }
+        setSuggestions([]);
+    }, [requestId]);
+
+    const handleSendSuggestion = () => {
+        if (isProcessingPayment) return;
+        const text = String(inputValue || '').trim();
+        if (!text) {
+            setPaymentError('Please add your suggestion first.');
+            return;
         }
-    }, []);
-
-    // Send suggestion handler
-    const handleSendSuggestion = async () => {
-        if (!auth.user) { return; }
-        const text = inputValue.trim();
-        if (!text) return;
-
-        const newSuggestion = {
-            id: Date.now(),
-            text,
-            userName: (auth.user && (auth.user.name || auth.user.email)) || MOCK_USER.name,
-            timestamp: new Date(),
-        };
-
-        setSuggestions(prev => [...prev, newSuggestion]);
-        setInputValue('');
-
-        try {
-            const token = localStorage.getItem('regaarder_token');
-            if (token) {
-                await fetch(`${getBackendBaseUrl()}/suggestion`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ requestId, text })
-                });
-            }
-        } catch { }
-
-        if (inputRef.current) {
-            setTimeout(() => inputRef.current.focus(), 50);
+        
+        // If not authenticated, open login modal and flag that we're pending a funding attempt
+        if (!auth.user) {
+            setPendingFundingAttempt(true);
+            auth.openAuthModal();
+            return;
         }
+        
+        setPaymentError('');
+        setPendingSuggestionText(text);
+        setShowPaymentModal(true);
     };
+
+    // Auto-open payment modal after successful login when user was trying to fund a suggestion
+    useEffect(() => {
+        if (auth.user && pendingFundingAttempt && inputValue.trim()) {
+            setPendingFundingAttempt(false);
+            setPendingSuggestionText(inputValue.trim());
+            setShowPaymentModal(true);
+        }
+    }, [auth.user, pendingFundingAttempt, inputValue]);
 
     useEffect(() => {
         if (contentRef.current) {
@@ -908,24 +915,12 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
         if (isOpen) {
             setCurrentHeight(window.innerHeight * 0.9);
             document.body.style.overflow = 'hidden';
-            setInputValue('');
-            // Load persisted suggestions for this request
-            (async () => {
-                try {
-                    if (requestId) {
-                        const BACKEND = getBackendBaseUrl();
-                        const res = await fetch(`${BACKEND}/requests/${requestId}/suggestions`);
-                        if (res.ok) {
-                            const body = await res.json();
-                            if (body && Array.isArray(body.suggestions)) {
-                                setSuggestions(body.suggestions);
-                                return;
-                            }
-                        }
-                    }
-                } catch (e) { }
-                setSuggestions([]);
-            })();
+            setPaymentError('');
+            setIsProcessingPayment(false);
+            setShowPaymentModal(false);
+            captureHandledRef.current = false;
+            setPendingFundingAttempt(false);
+            loadSuggestions();
 
             setTimeout(() => {
                 if (inputRef.current) {
@@ -938,7 +933,72 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
         return () => {
             document.body.style.overflow = '';
         };
-    }, [isOpen, requestId]);
+    }, [isOpen, requestId, loadSuggestions]);
+
+    useEffect(() => {
+        if (!isOpen || captureHandledRef.current) return;
+
+        const processPayPalReturn = async () => {
+            try {
+                const params = new URLSearchParams(window.location.search || '');
+                const suggestPay = params.get('suggestPay');
+                const returnedSuggestionId = params.get('suggestionId');
+                const returnedRequestId = params.get('requestId');
+                const returnedOrderId = params.get('token') || params.get('orderId');
+
+                if (suggestPay === 'cancel') {
+                    setPaymentError('Payment cancelled. Your suggestion was not published.');
+                }
+
+                if (
+                    suggestPay === '1'
+                    && returnedSuggestionId
+                    && returnedOrderId
+                    && String(returnedRequestId || '') === String(requestId || '')
+                ) {
+                    captureHandledRef.current = true;
+                    setIsProcessingPayment(true);
+                    setPaymentError('');
+
+                    const token = localStorage.getItem('regaarder_token');
+                    if (!token) throw new Error('Sign in required to finalize payment.');
+
+                    const captureResponse = await fetch(`${getBackendBaseUrl()}/suggestions/funded/paypal/capture-order`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            suggestionId: returnedSuggestionId,
+                            orderId: returnedOrderId
+                        })
+                    });
+                    const capturePayload = await captureResponse.json().catch(() => ({}));
+                    if (!captureResponse.ok) {
+                        throw new Error(capturePayload.error || 'Payment capture failed');
+                    }
+
+                    setInputValue('');
+                    setPendingSuggestionText('');
+                    setShowPaymentModal(false);
+                    await loadSuggestions();
+                }
+
+                // Cleanup payment query params from URL
+                const cleanParams = new URLSearchParams(window.location.search || '');
+                ['suggestPay', 'suggestionId', 'requestId', 'token', 'orderId', 'PayerID'].forEach((k) => cleanParams.delete(k));
+                const next = `${window.location.pathname}${cleanParams.toString() ? `?${cleanParams.toString()}` : ''}${window.location.hash || ''}`;
+                window.history.replaceState({}, '', next);
+            } catch (err) {
+                setPaymentError(err.message || 'Unable to complete payment. Please try again.');
+            } finally {
+                setIsProcessingPayment(false);
+            }
+        };
+
+        processPayPalReturn();
+    }, [isOpen, requestId, loadSuggestions]);
     // --- End Drag Handle Logic ---
 
     const isActive = inputValue.trim().length > 0;
@@ -1001,55 +1061,25 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
                 </header>
 
                 <main ref={contentRef} className="flex-grow overflow-y-auto px-5">
-                    {isFirstTimeUser && (
-                        <div
-                            className="relative p-4 mb-5 rounded-2xl overflow-hidden"
-                            style={{
-                                background: `linear-gradient(135deg, ${goldLight} 0%, rgba(255,250,240,0.4) 100%)`,
-                                border: `1.5px solid ${goldColor}`,
-                                boxShadow: '0 4px 12px rgba(203,138,0,0.12)'
-                            }}
-                        >
-                            <div className="absolute top-0 right-0 w-24 h-24 opacity-10" style={{
-                                background: `radial-gradient(circle, ${goldColor} 0%, transparent 70%)`
-                            }}></div>
-                            <div className="relative flex items-start">
-                                <div
-                                    className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mr-3"
-                                    style={{
-                                        background: `linear-gradient(135deg, ${goldLight} 0%, rgba(255,255,255,0.3) 100%)`,
-                                        boxShadow: '0 2px 6px rgba(0,0,0,0.08)'
-                                    }}
-                                >
-                                    <Sparkles className="w-5 h-5" style={{ color: goldColor }} />
-                                </div>
-                                <div>
-                                    <p className="font-bold text-sm mb-1 flex items-center" style={{ color: goldColor }}>
-                                        <Sparkles className="w-4 h-4 mr-1.5" style={{ color: goldColor }} />
-                                        {getTranslation('Reward Great Ideas', selectedLanguage)}
-                                    </p>
-                                    <p className="text-xs text-gray-700 leading-relaxed">
-                                        {getTranslation('Creators love your input! Show appreciation by tipping contributors for their valuable creative suggestions that help shape amazing content.', selectedLanguage)}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {suggestionCount === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center min-h-[200px]">
+                        <div className="flex flex-col items-center justify-center py-10 text-center min-h-[180px]">
                             <div
-                                className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4"
+                                className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
                                 style={{
-                                    background: `linear-gradient(135deg, ${goldLight} 0%, rgba(255,255,255,0.3) 100%)`,
-                                    boxShadow: '0 4px 12px rgba(203,138,0,0.1)'
+                                    background: `linear-gradient(135deg, ${goldLight} 0%, rgba(255,255,255,0.4) 100%)`,
+                                    boxShadow: '0 4px 10px rgba(203,138,0,0.18)'
                                 }}
                             >
-                                <Lightbulb className="w-10 h-10" style={{ color: goldColor, opacity: 0.7 }} />
+                                <Lightbulb className="w-7 h-7" style={{ color: goldColor }} />
                             </div>
-                            <p className="text-lg font-bold text-gray-800 mb-2">{getTranslation('No suggestions yet', selectedLanguage)}</p>
-                            <p className="text-sm text-gray-500 max-w-xs">
-                                {getTranslation('Be the first to share a creative idea and help shape this content!', selectedLanguage)}
+                            <p className="text-base font-semibold text-gray-800 mb-2">
+                                What should the creator include in this video?
+                            </p>
+                            <p className="text-sm text-gray-500 max-w-xs leading-relaxed mb-2">
+                                Attach an amount to support it. Minimum $2.
+                            </p>
+                            <p className="text-xs text-gray-400 max-w-xs">
+                                Your suggestion becomes visible once funded.
                             </p>
                         </div>
                     ) : (
@@ -1075,6 +1105,9 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
                                             <p className="text-xs font-semibold text-gray-800">{s.userName}</p>
                                             <p className="text-[10px] text-gray-400">{getTranslation('Just now', selectedLanguage)}</p>
                                         </div>
+                                        <div className="ml-auto text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                            ${(Number(s.fundedAmount || 0)).toFixed(2)}
+                                        </div>
                                     </div>
                                     <p className="text-sm text-gray-700 leading-relaxed pl-9">{s.text}</p>
                                 </div>
@@ -1092,15 +1125,18 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
                         paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))'
                     }}
                 >
+                    <div className="mb-2 text-xs text-gray-500">
+                        {getTranslation('Your suggestion becomes visible once funded.', selectedLanguage)}
+                    </div>
                     <div className="flex items-center space-x-3">
                         <input
                             ref={inputRef}
                             type="text"
-                            placeholder={getTranslation('What would make this video amazing?', selectedLanguage)}
+                            placeholder={'What should the creator include in this video?'}
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyPress={(e) => {
-                                if (e.key === 'Enter' && isActive) {
+                                if (e.key === 'Enter' && isActive && !isProcessingPayment) {
                                     handleSendSuggestion();
                                 }
                             }}
@@ -1112,22 +1148,39 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
                         />
                         <button
                             onClick={handleSendSuggestion}
-                            disabled={!isActive}
-                            className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all shadow-md ${isActive ? 'hover:scale-105 active:scale-95' : 'cursor-not-allowed opacity-50'
+                            disabled={!isActive || isProcessingPayment}
+                            className={`h-12 px-4 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all shadow-md font-semibold text-sm ${isActive && !isProcessingPayment ? 'hover:scale-105 active:scale-95' : 'cursor-not-allowed opacity-50'
                                 }`}
                             style={{
-                                background: isActive
+                                background: isActive && !isProcessingPayment
                                     ? `linear-gradient(135deg, ${goldColor}, ${goldLight})`
                                     : '#e5e7eb',
-                                boxShadow: isActive
+                                color: isActive && !isProcessingPayment ? '#ffffff' : '#6b7280',
+                                boxShadow: isActive && !isProcessingPayment
                                     ? '0 4px 12px rgba(203,138,0,0.3)'
                                     : 'none'
                             }}
                         >
-                            <Send className="w-5 h-5 text-white" />
+                            {isProcessingPayment ? getTranslation('Processing...', selectedLanguage) : getTranslation('Send', selectedLanguage)}
                         </button>
                     </div>
+                    <div className="mt-2 text-[11px] text-gray-500">
+                        {getTranslation('After tapping Send, choose your payment amount in PayPal.', selectedLanguage)}
+                    </div>
+                    {paymentError && (
+                        <div className="mt-2 text-xs text-red-500">
+                            {paymentError}
+                        </div>
+                    )}
                 </footer>
+
+                <SuggestionPaymentModal
+                    isOpen={showPaymentModal}
+                    onClose={() => setShowPaymentModal(false)}
+                    requestId={requestId}
+                    suggestionText={pendingSuggestionText}
+                    selectedLanguage={selectedLanguage}
+                />
             </div>
         </div>
     );
@@ -1447,6 +1500,17 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
     useEffect(() => {
         setCurrentInfluence(detailedRank.totalInfluence);
     }, [detailedRank.totalInfluence]);
+
+    useEffect(() => {
+        try {
+            const params = new URLSearchParams(window.location.search || '');
+            const suggestPay = params.get('suggestPay');
+            const returnedRequestId = params.get('requestId');
+            if ((suggestPay === '1' || suggestPay === 'cancel') && String(returnedRequestId || '') === String(request.id || '')) {
+                setShowSuggestionsModal(true);
+            }
+        } catch (e) { }
+    }, [request.id]);
 
     // Load persisted likes/dislikes for this request if present
     useEffect(() => {

@@ -4115,7 +4115,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} navigate={navigate} onFocusChange={setIsSearchActive} selectedLanguage={selectedLanguage} />
                 <TabPills activeTab={selectedTab} setActiveTab={setSelectedTab} selectedLanguage={selectedLanguage} />
 
-                {/* Conditional Rendering: If search term is active and no results, show 404 screen */}
+                {/* Conditional Rendering: Videos, 404 (search no results), or empty state */}
                 {displayedVideos.length > 0 ? (
                     displayedVideos.map(video => (
                         <ContentCard
@@ -4224,7 +4224,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                             }} // <-- pass video click handler with video data
                         />
                     ))
-                ) : (searchTerm.length > 0 && (
+                ) : searchTerm.length > 0 ? (
                     <div className="flex flex-col items-center justify-center text-center px-8 pt-0" style={{ marginTop: '-18px' }}>
                         <p
                             className="text-8xl font-light mb-4"
@@ -4308,7 +4308,78 @@ const App = ({ overrideMiniPlayerData = null }) => {
 
                         <div className="mt-12 w-1/2 h-0.5 bg-gray-300 opacity-50 shadow-inner"></div>
                     </div>
-                ))}
+                ) : (
+                    <div className="flex flex-col items-center justify-center text-center px-8 py-12">
+                        {/* Empty state icon */}
+                        <div className="mb-6 flex items-center justify-center">
+                            <div aria-hidden="true" className="w-32 h-32 flex items-center justify-center">
+                                <svg viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full opacity-60">
+                                    <defs>
+                                        <linearGradient id="empty-gradient" x1="0" x2="1" y1="0" y2="1">
+                                            <stop offset="0" stopColor="rgba(124,58,237,0.12)" />
+                                            <stop offset="1" stopColor="rgba(34,197,94,0.12)" />
+                                        </linearGradient>
+                                    </defs>
+                                    <circle cx="80" cy="80" r="75" fill="url(#empty-gradient)" strokeWidth="2" stroke="rgba(124,58,237,0.2)" />
+                                    <g opacity="0.8">
+                                        <path d="M60 60 L80 80 L100 60" stroke="rgba(124,58,237,0.4)" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                        <circle cx="80" cy="100" r="3" fill="rgba(124,58,237,0.4)" />
+                                        <circle cx="70" cy="105" r="2" fill="rgba(34,197,94,0.3)" />
+                                        <circle cx="90" cy="105" r="2" fill="rgba(34,197,94,0.3)" />
+                                    </g>
+                                </svg>
+                            </div>
+                        </div>
+
+                        {/* Empty state heading */}
+                        <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+                            No requests yet
+                        </h2>
+
+                        {/* Empty state description */}
+                        <p className="text-sm text-gray-600 mb-8 max-w-xs leading-relaxed">
+                            You haven't made any requests. Start by exploring content or searching for your favorite creator.
+                        </p>
+
+                        {/* Action buttons */}
+                        <div className="w-full flex flex-col gap-3 max-w-xs">
+                            <button
+                                className="w-full py-3 px-4 rounded-xl text-base font-semibold text-white transition-all duration-200 hover:shadow-lg active:scale-95"
+                                style={{
+                                    background: 'var(--color-final, #7C3AED)',
+                                    boxShadow: '0 4px 12px rgba(124,58,237,0.3)'
+                                }}
+                                onClick={() => {
+                                    try {
+                                        navigate('/requests');
+                                    } catch (e) {
+                                        console.warn('Navigation failed', e);
+                                    }
+                                }}
+                            >
+                                Explore Requests
+                            </button>
+
+                            <button
+                                className="w-full py-3 px-4 rounded-xl text-base font-semibold text-gray-700 transition-all duration-200 hover:bg-gray-100 active:scale-95"
+                                style={{
+                                    backgroundColor: 'rgba(124,58,237,0.08)',
+                                    border: '1px solid rgba(124,58,237,0.2)'
+                                }}
+                                onClick={() => {
+                                    setIsSearchActive(true);
+                                    // Small delay to ensure search focus
+                                    setTimeout(() => {
+                                        const searchInput = document.querySelector('[placeholder*="Search"]');
+                                        if (searchInput) searchInput.focus();
+                                    }, 50);
+                                }}
+                            >
+                                Search Creators
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {!(isSearchActive || (searchTerm && searchTerm.length > 0)) && (
