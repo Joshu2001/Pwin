@@ -7,6 +7,8 @@ const SuggestionPaymentModal = ({
     isOpen,
     onClose,
     requestId,
+    targetCreatorId,
+    targetCreatorHandle,
     suggestionText,
     selectedLanguage = 'English'
 }) => {
@@ -120,6 +122,8 @@ const SuggestionPaymentModal = ({
                 },
                 body: JSON.stringify({
                     requestId,
+                    targetCreatorId: targetCreatorId || null,
+                    targetCreatorHandle: targetCreatorHandle || null,
                     text: trimmedText,
                     amount: numericAmount,
                     payerLabel: String(payerLabel || '').trim(),

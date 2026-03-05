@@ -2368,20 +2368,53 @@ const getPayPalAccessToken = async () => {
   return data.access_token;
 };
 
-const resolveSuggestionTargetCreatorId = ({ requestId, targetCreatorId, targetCreatorHandle, fromUserId, type }) => {
+const getRequestByIdForSuggestion = async (requestId) => {
+  if (!requestId) return null;
+
+  if (DB_ENABLED) {
+    try {
+      const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1 LIMIT 1', [String(requestId)]);
+      if (rows[0]) return mapRequestRow(rows[0]);
+    } catch (e) {}
+  }
+
+  try {
+    const reqs = readRequests();
+    return reqs.find((x) => String(x.id) === String(requestId)) || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+const getCreatorIdFromRequest = ({ request, fromUserId }) => {
+  if (!request) return null;
+
+  const creatorId =
+    request.targetCreatorId
+    || request.creatorId
+    || request.creator_id
+    || (request.creator && request.creator.id)
+    || null;
+
+  const createdBy = request.createdBy || request.created_by || null;
+
+  if (creatorId) {
+    if (fromUserId && String(creatorId) === String(fromUserId) && createdBy) {
+      return createdBy;
+    }
+    return creatorId;
+  }
+
+  return createdBy || null;
+};
+
+const resolveSuggestionTargetCreatorId = async ({ requestId, targetCreatorId, targetCreatorHandle, fromUserId, type }) => {
   let toId = targetCreatorId || null;
 
   try {
     if (!toId && requestId) {
-      const reqs = readRequests();
-      const found = reqs.find((x) => String(x.id) === String(requestId));
-      if (found && found.creator && found.creator.id) {
-        if (found.creator.id === fromUserId && found.createdBy) {
-          toId = found.createdBy;
-        } else {
-          toId = found.creator.id;
-        }
-      }
+      const found = await getRequestByIdForSuggestion(requestId);
+      toId = getCreatorIdFromRequest({ request: found, fromUserId }) || null;
     }
   } catch (e) {}
 
@@ -2391,15 +2424,30 @@ const resolveSuggestionTargetCreatorId = ({ requestId, targetCreatorId, targetCr
 
   try {
     if (!toId && targetCreatorHandle) {
-      const users = readUsers();
       const h = String(targetCreatorHandle).trim().toLowerCase();
-      const foundUser = users.find((x) =>
-        (x.handle && String(x.handle).toLowerCase() === h)
-        || (x.tag && String(x.tag).toLowerCase() === h)
-        || (x.name && String(x.name).toLowerCase() === h)
-        || (x.email && String(x.email).split('@')[0].toLowerCase() === h)
-      );
-      if (foundUser) toId = foundUser.id;
+      if (DB_ENABLED) {
+        const { rows } = await dbQuery(
+          `SELECT id FROM users
+           WHERE LOWER(COALESCE(handle, '')) = $1
+              OR LOWER(COALESCE(tag, '')) = $1
+              OR LOWER(COALESCE(name, '')) = $1
+              OR LOWER(split_part(COALESCE(email, ''), '@', 1)) = $1
+           LIMIT 1`,
+          [h]
+        );
+        if (rows[0] && rows[0].id) toId = rows[0].id;
+      }
+
+      if (!toId) {
+        const users = readUsers();
+        const foundUser = users.find((x) =>
+          (x.handle && String(x.handle).toLowerCase() === h)
+          || (x.tag && String(x.tag).toLowerCase() === h)
+          || (x.name && String(x.name).toLowerCase() === h)
+          || (x.email && String(x.email).split('@')[0].toLowerCase() === h)
+        );
+        if (foundUser) toId = foundUser.id;
+      }
     }
   } catch (e) {}
 
@@ -2418,7 +2466,7 @@ const buildSuggestionSortTimestamp = (s) => {
         const { requestId, text, targetCreatorId, targetCreatorHandle, videoUrl, videoTitle, type, parentId } = req.body || {};
         if (!text) return res.status(400).json({ error: 'Missing text' });
     
-        const toId = resolveSuggestionTargetCreatorId({
+        const toId = await resolveSuggestionTargetCreatorId({
           requestId,
           targetCreatorId,
           targetCreatorHandle,
@@ -2461,7 +2509,7 @@ const buildSuggestionSortTimestamp = (s) => {
           return res.status(400).json({ error: 'Minimum funded suggestion amount is $2.00' });
         }
 
-        const toId = resolveSuggestionTargetCreatorId({
+        const toId = await resolveSuggestionTargetCreatorId({
           requestId,
           targetCreatorId,
           targetCreatorHandle,
@@ -2470,6 +2518,16 @@ const buildSuggestionSortTimestamp = (s) => {
         });
 
         if (!toId) {
+          const reqForDebug = await getRequestByIdForSuggestion(requestId);
+          const debugCreatorId = reqForDebug ? getCreatorIdFromRequest({ request: reqForDebug, fromUserId: req.user.id }) : null;
+          console.warn('[funded-suggestion] Could not resolve creator', {
+            requestId,
+            fromUserId: req.user.id,
+            targetCreatorId: targetCreatorId || null,
+            targetCreatorHandle: targetCreatorHandle || null,
+            requestFound: Boolean(reqForDebug),
+            requestCreatorId: debugCreatorId || null
+          });
           return res.status(400).json({ error: 'Could not resolve creator for this suggestion' });
         }
 

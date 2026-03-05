@@ -805,7 +805,14 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
 
 
 // --- Creative Suggestions Modal Component (REVAMPED) ---
-const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English' }) => {
+const CreativeSuggestionsModal = ({
+    isOpen,
+    onClose,
+    requestId,
+    targetCreatorId = null,
+    targetCreatorHandle = null,
+    selectedLanguage = 'English'
+}) => {
     const modalRef = useRef(null);
     const contentRef = useRef(null);
     const inputRef = useRef(null);
@@ -1178,6 +1185,8 @@ const CreativeSuggestionsModal = ({ isOpen, onClose, requestId, selectedLanguage
                     isOpen={showPaymentModal}
                     onClose={() => setShowPaymentModal(false)}
                     requestId={requestId}
+                    targetCreatorId={targetCreatorId}
+                    targetCreatorHandle={targetCreatorHandle}
                     suggestionText={pendingSuggestionText}
                     selectedLanguage={selectedLanguage}
                 />
@@ -2987,6 +2996,8 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                 isOpen={showSuggestionsModal}
                 onClose={handleCloseSuggestions}
                 requestId={request.id}
+                targetCreatorId={request?.creator?.id || request?.creatorId || request?.creator_id || request?.createdBy || request?.created_by || null}
+                targetCreatorHandle={request?.creator?.handle || request?.creator?.tag || null}
                 selectedLanguage={selectedLanguage}
             />
 
