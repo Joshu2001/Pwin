@@ -2312,45 +2312,119 @@ app.delete('/bookmarks/requests', async (req, res) => {
   } catch (err) { console.error('DELETE /bookmarks/requests error', err); return res.status(500).json({ error: 'Server error' }); }
 });
 
+const PAYPAL_API_BASE = (
+  process.env.PAYPAL_API_BASE
+  || (String(process.env.PAYPAL_ENV || '').toLowerCase() === 'sandbox'
+    ? 'https://api-m.sandbox.paypal.com'
+    : 'https://api-m.paypal.com')
+).replace(/\/$/, '');
+
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || '';
+const PAYPAL_SECRET = process.env.PAYPAL_SECRET || '';
+
+const parseUsdAmount = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return NaN;
+  return Math.round(n * 100) / 100;
+};
+
+const toUsdString = (value) => {
+  const n = parseUsdAmount(value);
+  if (!Number.isFinite(n)) return '';
+  return n.toFixed(2);
+};
+
+const getPayPalAccessToken = async () => {
+  if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) {
+    const err = new Error('PayPal credentials not configured');
+    err.status = 500;
+    err.details = { missing: ['PAYPAL_CLIENT_ID', 'PAYPAL_SECRET'] };
+    throw err;
+  }
+
+  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString('base64');
+  const resp = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'grant_type=client_credentials'
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.access_token) {
+    const details = {
+      error: data.error || null,
+      error_description: data.error_description || null,
+      status: resp.status
+    };
+    const err = new Error(data.error_description || data.error || 'PayPal auth failed');
+    err.status = 502;
+    err.details = details;
+    throw err;
+  }
+
+  return data.access_token;
+};
+
+const resolveSuggestionTargetCreatorId = ({ requestId, targetCreatorId, targetCreatorHandle, fromUserId, type }) => {
+  let toId = targetCreatorId || null;
+
+  try {
+    if (!toId && requestId) {
+      const reqs = readRequests();
+      const found = reqs.find((x) => String(x.id) === String(requestId));
+      if (found && found.creator && found.creator.id) {
+        if (found.creator.id === fromUserId && found.createdBy) {
+          toId = found.createdBy;
+        } else {
+          toId = found.creator.id;
+        }
+      }
+    }
+  } catch (e) {}
+
+  if (type === 'reply' && targetCreatorId) {
+    toId = targetCreatorId;
+  }
+
+  try {
+    if (!toId && targetCreatorHandle) {
+      const users = readUsers();
+      const h = String(targetCreatorHandle).trim().toLowerCase();
+      const foundUser = users.find((x) =>
+        (x.handle && String(x.handle).toLowerCase() === h)
+        || (x.tag && String(x.tag).toLowerCase() === h)
+        || (x.name && String(x.name).toLowerCase() === h)
+        || (x.email && String(x.email).split('@')[0].toLowerCase() === h)
+      );
+      if (foundUser) toId = foundUser.id;
+    }
+  } catch (e) {}
+
+  return toId || null;
+};
+
+const buildSuggestionSortTimestamp = (s) => {
+  const raw = s.fundedAt || s.createdAt;
+  const d = new Date(raw || 0);
+  return Number.isFinite(d.getTime()) ? d.getTime() : 0;
+};
+
 // Suggestion endpoint: requires authentication (persisted for notifications)
     app.post('/suggestion', authMiddleware, async (req, res) => {
       try {
         const { requestId, text, targetCreatorId, targetCreatorHandle, videoUrl, videoTitle, type, parentId } = req.body || {};
         if (!text) return res.status(400).json({ error: 'Missing text' });
     
-        // Resolve target creator id: prefer explicit, else derive from requestId or handle/name
-        let toId = targetCreatorId || null;
-        try {
-          if (!toId && requestId) {
-            const reqs = readRequests();
-            const r = reqs.find(x => String(x.id) === String(requestId));
-            if (r && r.creator && r.creator.id) {
-                // If the current user is the creator, send to the requester (if known)
-                if (r.creator.id === req.user.id && r.createdBy) {
-                    toId = r.createdBy;
-                } else {
-                    toId = r.creator.id;
-                }
-            }
-          }
-        } catch {}
-        
-        // If type is reply, we might want to ensure we reply to the 'from' of the parent or target specific user
-        if (type === 'reply' && targetCreatorId) {
-            toId = targetCreatorId;
-        }
-    
-        try {
-          if (!toId && targetCreatorHandle) {
-            const users = readUsers();
-            const h = String(targetCreatorHandle).trim().toLowerCase();
-            const u = users.find(x => (x.handle && String(x.handle).toLowerCase() === h)
-              || (x.tag && String(x.tag).toLowerCase() === h)
-              || (x.name && String(x.name).toLowerCase() === h)
-              || (x.email && String(x.email).split('@')[0].toLowerCase() === h));
-            if (u) toId = u.id;
-          }
-        } catch {}
+        const toId = resolveSuggestionTargetCreatorId({
+          requestId,
+          targetCreatorId,
+          targetCreatorHandle,
+          fromUserId: req.user.id,
+          type
+        });
     
         const suggestion = {
           id: `s-${Date.now()}`,
@@ -2374,6 +2448,202 @@ app.delete('/bookmarks/requests', async (req, res) => {
         return res.status(500).json({ error: 'Server error' });
       }
     });
+
+    app.post('/suggestions/funded/paypal/create-order', authMiddleware, async (req, res) => {
+      try {
+        const { requestId, text, amount, targetCreatorId, targetCreatorHandle, returnBaseUrl } = req.body || {};
+        const trimmedText = String(text || '').trim();
+        const parsedAmount = parseUsdAmount(amount);
+
+        if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
+        if (!trimmedText) return res.status(400).json({ error: 'Missing text' });
+        if (!Number.isFinite(parsedAmount) || parsedAmount < 2) {
+          return res.status(400).json({ error: 'Minimum funded suggestion amount is $2.00' });
+        }
+
+        const toId = resolveSuggestionTargetCreatorId({
+          requestId,
+          targetCreatorId,
+          targetCreatorHandle,
+          fromUserId: req.user.id,
+          type: 'suggestion'
+        });
+
+        if (!toId) {
+          return res.status(400).json({ error: 'Could not resolve creator for this suggestion' });
+        }
+
+        const nowIso = new Date().toISOString();
+        const suggestionId = `s-funded-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        const fallbackBase = (WEB_URL || '').replace(/\/$/, '') || 'https://regaarder.com';
+        const requestedBase = String(returnBaseUrl || '').trim();
+        const safeBase = /^https?:\/\//i.test(requestedBase) ? requestedBase.replace(/\/$/, '') : fallbackBase;
+        const returnUrl = `${safeBase}/requests?suggestPay=1&requestId=${encodeURIComponent(String(requestId))}&suggestionId=${encodeURIComponent(suggestionId)}`;
+        const cancelUrl = `${safeBase}/requests?suggestPay=cancel&requestId=${encodeURIComponent(String(requestId))}`;
+
+        const token = await getPayPalAccessToken();
+        const orderResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            intent: 'CAPTURE',
+            purchase_units: [
+              {
+                reference_id: suggestionId,
+                description: `Creative suggestion funding for request ${String(requestId)}`,
+                amount: {
+                  currency_code: 'USD',
+                  value: toUsdString(parsedAmount)
+                }
+              }
+            ],
+            application_context: {
+              user_action: 'PAY_NOW',
+              return_url: returnUrl,
+              cancel_url: cancelUrl
+            }
+          })
+        });
+
+        const orderData = await orderResp.json().catch(() => ({}));
+        if (!orderResp.ok || !orderData.id) {
+          return res.status(502).json({ error: 'Failed to create PayPal order', details: orderData });
+        }
+
+        const approveLink = Array.isArray(orderData.links)
+          ? orderData.links.find((l) => l && l.rel === 'approve')
+          : null;
+        if (!approveLink || !approveLink.href) {
+          return res.status(502).json({ error: 'PayPal approval link missing' });
+        }
+
+        const suggestion = {
+          id: suggestionId,
+          requestId: requestId || null,
+          text: trimmedText,
+          from: { id: req.user.id, name: req.user.name || req.user.email },
+          to: toId ? { id: toId } : null,
+          video: { url: null, title: null },
+          type: 'funded_suggestion',
+          parentId: null,
+          createdAt: nowIso,
+          fundedAmount: parsedAmount,
+          fundedCurrency: 'USD',
+          paymentStatus: 'pending',
+          paymentProvider: 'paypal',
+          paypalOrderId: orderData.id,
+          visibleAfterFunding: true,
+          rejectedByCreator: false,
+          fundedAt: null
+        };
+
+        const arr = await loadNotifications();
+        arr.unshift(suggestion);
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          suggestionId,
+          orderId: orderData.id,
+          approveUrl: approveLink.href
+        });
+      } catch (err) {
+        console.error('create funded suggestion order error', err);
+        return res.status(err.status || 500).json({
+          error: 'Unable to start PayPal payment',
+          details: err.details || err.message || 'Server error'
+        });
+      }
+    });
+
+    app.post('/suggestions/funded/paypal/capture-order', authMiddleware, async (req, res) => {
+      try {
+        const { suggestionId, orderId } = req.body || {};
+        if (!suggestionId || !orderId) {
+          return res.status(400).json({ error: 'Missing suggestionId or orderId' });
+        }
+
+        const arr = await loadNotifications();
+        const idx = arr.findIndex((s) => String(s.id) === String(suggestionId));
+        if (idx === -1) return res.status(404).json({ error: 'Suggestion not found' });
+
+        const suggestion = arr[idx];
+        if (!suggestion || !suggestion.from || String(suggestion.from.id) !== String(req.user.id)) {
+          return res.status(403).json({ error: 'Not allowed for this suggestion' });
+        }
+        if (suggestion.paymentStatus === 'paid') {
+          return res.json({ success: true, suggestion, alreadyCaptured: true });
+        }
+        if (String(suggestion.paypalOrderId || '') !== String(orderId)) {
+          return res.status(400).json({ error: 'Order mismatch' });
+        }
+
+        const token = await getPayPalAccessToken();
+        const captureResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders/${encodeURIComponent(String(orderId))}/capture`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        const captureData = await captureResp.json().catch(() => ({}));
+
+        if (!captureResp.ok) {
+          return res.status(502).json({ error: 'PayPal capture failed', details: captureData });
+        }
+
+        const status = String(captureData.status || '').toUpperCase();
+        const purchaseUnit = Array.isArray(captureData.purchase_units) ? captureData.purchase_units[0] : null;
+        const capture = purchaseUnit && purchaseUnit.payments && Array.isArray(purchaseUnit.payments.captures)
+          ? purchaseUnit.payments.captures[0]
+          : null;
+        const paidValue = parseUsdAmount(capture && capture.amount ? capture.amount.value : NaN);
+
+        if (status !== 'COMPLETED' || !Number.isFinite(paidValue)) {
+          return res.status(400).json({ error: 'Payment not completed' });
+        }
+
+        const expected = parseUsdAmount(suggestion.fundedAmount);
+        if (!Number.isFinite(expected) || paidValue < expected) {
+          suggestion.paymentStatus = 'amount_mismatch';
+          suggestion.captureAttemptedAt = new Date().toISOString();
+          arr[idx] = suggestion;
+          await saveNotifications(arr);
+          return res.status(400).json({ error: 'Captured amount does not match requested amount' });
+        }
+
+        suggestion.paymentStatus = 'paid';
+        suggestion.fundedAmount = paidValue;
+        suggestion.fundedCurrency = (capture && capture.amount && capture.amount.currency_code) || 'USD';
+        suggestion.paymentCaptureId = capture && capture.id ? capture.id : null;
+        suggestion.fundedAt = new Date().toISOString();
+        suggestion.updatedAt = suggestion.fundedAt;
+        suggestion.visibleAfterFunding = true;
+
+        arr[idx] = suggestion;
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          suggestion: {
+            id: suggestion.id,
+            requestId: suggestion.requestId,
+            text: suggestion.text,
+            fundedAmount: suggestion.fundedAmount,
+            fundedCurrency: suggestion.fundedCurrency,
+            fundedAt: suggestion.fundedAt,
+            userName: suggestion.from ? suggestion.from.name : 'Anonymous'
+          }
+        });
+      } catch (err) {
+        console.error('capture funded suggestion order error', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Server error' });
+      }
+    });
     
     // Get suggestions for a specific request
     app.get('/requests/:id/suggestions', async (req, res) => {
@@ -2385,18 +2655,92 @@ app.delete('/bookmarks/requests', async (req, res) => {
         // Also map to match frontend expectation (userName, timestamp)
         const suggestions = arr
             .filter(s => String(s.requestId) === String(requestId))
+            .filter(s => String(s.paymentStatus || '') === 'paid')
+            .filter(s => !s.rejectedByCreator)
             .map(s => ({
                 id: s.id,
                 text: s.text,
                 userName: s.from ? s.from.name : 'Anonymous',
                 timestamp: s.createdAt,
-                userId: s.from ? s.from.id : null // helpful for UI to identify own suggestions
+                userId: s.from ? s.from.id : null,
+                fundedAmount: Number(s.fundedAmount || 0),
+                fundedCurrency: s.fundedCurrency || 'USD',
+                fundedAt: s.fundedAt || s.createdAt
             }))
-            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            .sort((a, b) => {
+              const amountDiff = Number(b.fundedAmount || 0) - Number(a.fundedAmount || 0);
+              if (amountDiff !== 0) return amountDiff;
+              return new Date(a.fundedAt || a.timestamp) - new Date(b.fundedAt || b.timestamp);
+            });
 
         return res.json({ success: true, suggestions });
       } catch (err) {
         console.error('get request suggestions error', err);
+        return res.status(500).json({ error: 'Server error' });
+      }
+    });
+
+    app.get('/requests/:id/top-suggestions', authMiddleware, async (req, res) => {
+      try {
+        const requestId = req.params.id;
+        const arr = await loadNotifications();
+
+        const suggestions = arr
+          .filter((s) => String(s.requestId) === String(requestId))
+          .filter((s) => String(s.paymentStatus || '') === 'paid')
+          .filter((s) => !s.rejectedByCreator)
+          .filter((s) => s.to && String(s.to.id) === String(req.user.id))
+          .map((s) => ({
+            id: s.id,
+            text: s.text,
+            userName: s.from ? s.from.name : 'Anonymous',
+            userId: s.from ? s.from.id : null,
+            fundedAmount: Number(s.fundedAmount || 0),
+            fundedCurrency: s.fundedCurrency || 'USD',
+            fundedAt: s.fundedAt || s.createdAt,
+            createdAt: s.createdAt
+          }))
+          .sort((a, b) => {
+            const amountDiff = Number(b.fundedAmount || 0) - Number(a.fundedAmount || 0);
+            if (amountDiff !== 0) return amountDiff;
+            return buildSuggestionSortTimestamp(a) - buildSuggestionSortTimestamp(b);
+          });
+
+        return res.json({ success: true, suggestions });
+      } catch (err) {
+        console.error('get top suggestions error', err);
+        return res.status(500).json({ error: 'Server error' });
+      }
+    });
+
+    app.post('/suggestions/:id/reject', authMiddleware, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { reason } = req.body || {};
+        const arr = await loadNotifications();
+        const idx = arr.findIndex((s) => String(s.id) === String(id));
+        if (idx === -1) return res.status(404).json({ error: 'Suggestion not found' });
+
+        const suggestion = arr[idx];
+        if (!suggestion.to || String(suggestion.to.id) !== String(req.user.id)) {
+          return res.status(403).json({ error: 'Only tagged creator can reject this suggestion' });
+        }
+        if (String(suggestion.paymentStatus || '') !== 'paid') {
+          return res.status(400).json({ error: 'Only paid suggestions can be rejected' });
+        }
+
+        suggestion.rejectedByCreator = true;
+        suggestion.rejectedAt = new Date().toISOString();
+        suggestion.rejectedBy = req.user.id;
+        suggestion.rejectionReason = String(reason || '').trim().slice(0, 280);
+        suggestion.updatedAt = suggestion.rejectedAt;
+
+        arr[idx] = suggestion;
+        await saveNotifications(arr);
+
+        return res.json({ success: true, suggestion });
+      } catch (err) {
+        console.error('reject suggestion error', err);
         return res.status(500).json({ error: 'Server error' });
       }
     });
@@ -3557,10 +3901,131 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
   }
 });
 
+const normalizeCategoryTokens = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((x) => String(x || '').trim().toLowerCase())
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return [];
+    try {
+      if (raw.startsWith('[')) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return normalizeCategoryTokens(parsed);
+      }
+    } catch {}
+    return raw
+      .split(',')
+      .map((x) => x.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const normalizeRequestTargeting = (body = {}) => {
+  const fromMeta = (body.meta && typeof body.meta === 'object' && body.meta.targeting) || null;
+  const source = (fromMeta && typeof fromMeta === 'object') ? fromMeta : ((body.targeting && typeof body.targeting === 'object') ? body.targeting : {});
+
+  const modeRaw = String(source.mode || '').trim().toLowerCase();
+  const creatorId = source.creatorId != null ? String(source.creatorId).trim() : (body.selectedCreator != null ? String(body.selectedCreator).trim() : '');
+  const category = String(source.category || body.targetCategory || body.category || '').trim();
+
+  if (creatorId && creatorId !== '@anycreators') {
+    return { mode: 'specific', creatorId, category: null };
+  }
+  if (modeRaw === 'category' && category) {
+    return { mode: 'category', creatorId: null, category };
+  }
+  if (category) {
+    return { mode: 'category', creatorId: null, category };
+  }
+  if (modeRaw === 'specific' && creatorId && creatorId !== '@anycreators') {
+    return { mode: 'specific', creatorId, category: null };
+  }
+  return { mode: 'anycreators', creatorId: null, category: null };
+};
+
+const loadCreatorsForTargeting = async () => {
+  if (DB_ENABLED) {
+    const { rows } = await dbQuery('SELECT id, name, email, is_creator, categories FROM users WHERE is_creator = true');
+    return rows.map((row) => mapUserRow(row));
+  }
+  const users = readUsers();
+  return users.filter((u) => u && (u.isCreator === true || u.is_creator === true));
+};
+
+const resolveTargetCreatorIds = async (targeting, requesterId) => {
+  const t = targeting || { mode: 'anycreators', creatorId: null, category: null };
+  if (t.mode === 'specific' && t.creatorId && t.creatorId !== '@anycreators') {
+    return [String(t.creatorId)];
+  }
+
+  const creators = await loadCreatorsForTargeting();
+  let matches = creators;
+
+  if (t.mode === 'category' && t.category) {
+    const wanted = String(t.category).trim().toLowerCase();
+    matches = creators.filter((creator) => {
+      const tokens = normalizeCategoryTokens(creator?.categories);
+      return tokens.includes(wanted);
+    });
+  }
+
+  return Array.from(new Set(
+    matches
+      .map((creator) => (creator?.id != null ? String(creator.id) : null))
+      .filter((id) => !!id && id !== String(requesterId || ''))
+  ));
+};
+
+const createRequestAssignedNotifications = async (targetCreatorIds, requestData, sender) => {
+  try {
+    if (!Array.isArray(targetCreatorIds) || targetCreatorIds.length === 0) return 0;
+
+    const arr = await loadNotifications();
+    const createdAt = new Date().toISOString();
+    const created = [];
+
+    targetCreatorIds.forEach((recipientId) => {
+      const notif = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        to: { id: String(recipientId) },
+        from: {
+          id: String((sender && sender.id) || 'system'),
+          name: (sender && (sender.name || sender.email)) || 'System'
+        },
+        type: 'request_assigned',
+        title: `New Request Assigned: ${requestData.title}`,
+        message: `You have a new request assigned to you: "${requestData.title}"${requestData.description ? ' - ' + String(requestData.description).substring(0, 50) : ''}...`,
+        requestId: requestData.id || null,
+        read: false,
+        createdAt
+      };
+      created.push(notif);
+    });
+
+    arr.unshift(...created);
+    await saveNotifications(arr);
+    return created.length;
+  } catch (err) {
+    console.error('createRequestAssignedNotifications error', err);
+    return 0;
+  }
+};
+
 app.post('/requests', authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
     if (!body.title || !body.description) return res.status(400).json({ error: 'Missing title or description' });
+
+    const targeting = normalizeRequestTargeting(body);
+    const metaPayload = {
+      ...((body.meta && typeof body.meta === 'object') ? body.meta : {}),
+      targeting
+    };
 
     const parsedAmount = (typeof body.amount === 'number') ? body.amount : (body.amount ? Number(body.amount) : 0);
     const id = (body.id && String(body.id).startsWith('req_')) ? body.id : `req_${Date.now()}`;
@@ -3601,11 +4066,17 @@ app.post('/requests', authMiddleware, async (req, res) => {
           req.user.email,
           req.user.id,
           createdAt,
-          body.meta || null
+          metaPayload
         ]
       );
 
       const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1', [id]);
+      try {
+        const targetCreatorIds = await resolveTargetCreatorIds(targeting, req.user?.id);
+        await createRequestAssignedNotifications(targetCreatorIds, { id, title: body.title, description: body.description }, req.user);
+      } catch (notifyErr) {
+        console.error('request notify error', notifyErr);
+      }
       refreshRequestCache().catch(() => {});
       return res.json({ success: true, request: rows[0] });
     }
@@ -3644,10 +4115,16 @@ app.post('/requests', authMiddleware, async (req, res) => {
       },
       createdBy: req.user.id,
       createdAt: new Date().toISOString(),
-      ...body.meta && { meta: body.meta }
+      meta: metaPayload
     };
     requests.unshift(newReq);
     writeRequests(requests);
+    try {
+      const targetCreatorIds = await resolveTargetCreatorIds(targeting, req.user?.id);
+      await createRequestAssignedNotifications(targetCreatorIds, newReq, req.user);
+    } catch (notifyErr) {
+      console.error('request notify error', notifyErr);
+    }
     updateStreak(req.user.id);
     return res.json({ success: true, request: newReq });
   } catch (err) {
@@ -3662,6 +4139,11 @@ app.post('/requests/public', (req, res) => {
   try {
     const body = req.body || {};
     if (!body.title || !body.description) return res.status(400).json({ error: 'Missing title or description' });
+    const targeting = normalizeRequestTargeting(body);
+    const metaPayload = {
+      ...((body.meta && typeof body.meta === 'object') ? body.meta : {}),
+      targeting
+    };
     const requests = readRequests();
     
     // Use client-provided ID or generate
@@ -3698,11 +4180,18 @@ app.post('/requests/public', (req, res) => {
       creator: creator,
       createdBy: creator.id || null, // Important: try to preserve the user ID if sent
       createdAt: new Date().toISOString(),
-      ...body.meta && { meta: body.meta }
+      meta: metaPayload
     };
     
     requests.unshift(newReq);
     writeRequests(requests);
+    try {
+      resolveTargetCreatorIds(targeting, creator.id || null)
+        .then((targetCreatorIds) => createRequestAssignedNotifications(targetCreatorIds, newReq, creator))
+        .catch((notifyErr) => console.error('public request notify error', notifyErr));
+    } catch (notifyErr) {
+      console.error('public request notify error', notifyErr);
+    }
     return res.json({ success: true, request: newReq });
   } catch (err) {
     console.error('create public request error', err);
