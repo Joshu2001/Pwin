@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { getTranslation } from './translations';
+import { WEB_URL, getBackendBaseUrl } from './config.js';
 
 // New revamped BoostsModal with experiential messaging focused on VISIBILITY & DISCOVERY
 // Keeping shape and drag bar, completely new content and messaging approach
 const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveLikeFree, selectedLanguage = 'English' }) => {
     const modalRef = useRef(null);
+    const captureHandledRef = useRef(false);
     const minHeight = window.innerHeight * 0.5;
     const maxHeight = window.innerHeight * 0.95;
 
@@ -37,9 +39,13 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
     const influenceMultiplier = 2;
     const boostValue = selectedAmount * influenceMultiplier;
 
-    // Payment providers state
-    const [selectedProvider, setSelectedProvider] = useState('wise');
     const [processingPayment, setProcessingPayment] = useState(false);
+    const [error, setError] = useState('');
+    const [paypalSdkReady, setPaypalSdkReady] = useState(false);
+
+    const paypalClientId =
+        (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PAYPAL_CLIENT_ID)
+        || 'AUhb8uHt0gFlWH_vJdLf7M4soE91VyQuy5NHDPvLumnynuAFQj4mMuXdXHi9Vzy6nlRpaD0d2VGKpHtC';
 
     const goldStyle = { color: 'var(--color-gold)' };
 
@@ -112,6 +118,9 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
             setCurrentHeight(window.innerHeight * 0.9);
             document.body.style.overflow = 'hidden';
             setSelectedAmount(10);
+            setProcessingPayment(false);
+            setError('');
+            captureHandledRef.current = false;
         } else {
             document.body.style.overflow = '';
         }
@@ -127,6 +136,159 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
     }, [isOpen, onClose]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const existing = document.querySelector('script[data-paypal-boost="1"]');
+        if (existing || (typeof window !== 'undefined' && window.paypal)) {
+            setPaypalSdkReady(true);
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(paypalClientId)}&currency=USD&intent=capture`;
+        script.async = true;
+        script.setAttribute('data-paypal-boost', '1');
+        script.onload = () => setPaypalSdkReady(true);
+        script.onerror = () => {
+            setPaypalSdkReady(false);
+            setError('Could not load PayPal. Please check your connection and try again.');
+        };
+        document.body.appendChild(script);
+    }, [isOpen, paypalClientId]);
+
+    useEffect(() => {
+        if (!isOpen || captureHandledRef.current) return;
+
+        const processBoostPayPalReturn = async () => {
+            try {
+                const params = new URLSearchParams(window.location.search || '');
+                const boostPay = params.get('boostPay');
+                const returnedBoostPaymentId = params.get('boostPaymentId');
+                const returnedRequestId = params.get('requestId');
+                const returnedOrderId = params.get('token') || params.get('orderId');
+
+                if (boostPay === 'cancel') {
+                    setError('Payment cancelled. Your boost was not applied.');
+                }
+
+                if (
+                    boostPay === '1'
+                    && returnedBoostPaymentId
+                    && returnedOrderId
+                    && String(returnedRequestId || '') === String(requestId || '')
+                ) {
+                    captureHandledRef.current = true;
+                    setProcessingPayment(true);
+                    setError('');
+
+                    const token = localStorage.getItem('regaarder_token');
+                    if (!token) throw new Error('Sign in required to finalize boost payment.');
+
+                    const captureResponse = await fetch(`${getBackendBaseUrl()}/boosts/paypal/capture-order`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            boostPaymentId: returnedBoostPaymentId,
+                            orderId: returnedOrderId
+                        })
+                    });
+
+                    const capturePayload = await captureResponse.json().catch(() => ({}));
+                    if (!captureResponse.ok) {
+                        throw new Error(capturePayload.error || 'Boost payment capture failed');
+                    }
+
+                    if (capturePayload && capturePayload.request && capturePayload.request.id) {
+                        try {
+                            window.dispatchEvent(new CustomEvent('request:updated', { detail: { request: capturePayload.request } }));
+                        } catch (e) { }
+                    }
+
+                    onClose();
+                }
+
+                const cleanParams = new URLSearchParams(window.location.search || '');
+                ['boostPay', 'boostPaymentId', 'requestId', 'token', 'orderId', 'PayerID'].forEach((k) => cleanParams.delete(k));
+                const next = `${window.location.pathname}${cleanParams.toString() ? `?${cleanParams.toString()}` : ''}${window.location.hash || ''}`;
+                window.history.replaceState({}, '', next);
+            } catch (err) {
+                setError(err.message || 'Unable to complete boost payment. Please try again.');
+            } finally {
+                setProcessingPayment(false);
+            }
+        };
+
+        processBoostPayPalReturn();
+    }, [isOpen, onClose, requestId]);
+
+    const handleCreateBoostOrder = async () => {
+        if (processingPayment) return;
+        if (!paypalSdkReady) {
+            setError('PayPal is still loading. Please wait a moment and try again.');
+            return;
+        }
+
+        if (![10, 25, 50].includes(Number(selectedAmount))) {
+            setError('Please select a valid boost amount.');
+            return;
+        }
+
+        const token = localStorage.getItem('regaarder_token');
+        if (!token) {
+            setError('Please sign in to purchase a boost.');
+            return;
+        }
+
+        setProcessingPayment(true);
+        setError('');
+
+        try {
+            const safeReturnBaseUrl = (() => {
+                try {
+                    const origin = String(window.location.origin || '').trim();
+                    if (/^https?:\/\//i.test(origin)) return origin;
+                } catch (e) { }
+                return WEB_URL;
+            })();
+
+            const safeReturnPath = (() => {
+                try {
+                    const pathname = String(window.location.pathname || '').trim();
+                    return pathname && pathname.startsWith('/') ? pathname : '/requests';
+                } catch (e) { }
+                return '/requests';
+            })();
+
+            const response = await fetch(`${getBackendBaseUrl()}/boosts/paypal/create-order`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    requestId,
+                    amount: Number(selectedAmount),
+                    returnBaseUrl: safeReturnBaseUrl,
+                    returnPath: safeReturnPath
+                })
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.approveUrl) {
+                throw new Error(payload.error || 'Unable to start boost payment');
+            }
+
+            window.location.href = payload.approveUrl;
+        } catch (err) {
+            setError(err.message || 'Boost payment setup failed. Please try again.');
+            setProcessingPayment(false);
+        }
+    };
 
     // Focus management: trap focus inside the modal
     const prevActiveRef = useRef(null);
@@ -263,26 +425,21 @@ const BoostsModalRevamped = ({ isOpen, onClose, requestId, detailedRank, onGiveL
                 <footer className="px-5 pb-6 pt-3 border-t border-gray-100" style={{ paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
                     {/* Primary CTA */}
                     <button
-                        className={`w-full py-3 font-semibold text-sm rounded-2xl transition-all ${processingPayment ? 'opacity-50 pointer-events-none' : 'hover:scale-[1.02] active:scale-[0.98]'}`}
+                        className={`w-full py-3 font-semibold text-sm rounded-2xl transition-all ${(processingPayment || !paypalSdkReady) ? 'opacity-50 pointer-events-none' : 'hover:scale-[1.02] active:scale-[0.98]'}`}
                         style={{
                             backgroundColor: '#111827',
                             color: '#ffffff'
                         }}
-                        onClick={async () => {
-                            setProcessingPayment(true);
-                            try {
-                                // Navigate directly to PayPal payment link
-                                window.location.href = 'https://www.paypal.com/ncp/payment/FAR4N4DZARHBY';
-                                return;
-                            } catch (err) {
-                                console.error('Payment error', err);
-                                setProcessingPayment(false);
-                                alert(getTranslation('Payment failed. Please try again.', selectedLanguage));
-                            }
-                        }}
+                        onClick={handleCreateBoostOrder}
                     >
                         {processingPayment ? getTranslation('Processing...', selectedLanguage) : `${getTranslation('Boost for', selectedLanguage)} $${selectedAmount}`}
                     </button>
+
+                    {error && (
+                        <div className="mt-2 text-xs text-red-500 text-center">
+                            {error}
+                        </div>
+                    )}
 
                     {/* Payment Provider Note */}
                     <div className="text-center pt-2">

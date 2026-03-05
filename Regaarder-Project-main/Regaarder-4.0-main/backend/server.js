@@ -1179,6 +1179,68 @@ function applyRequestAmountPresentation(request) {
   };
 }
 
+async function applyBoostPaymentToRequest(requestId, amountPaid) {
+  const parsedPaid = toNonNegativeNumber(amountPaid, 0);
+  if (!requestId || !Number.isFinite(parsedPaid) || parsedPaid <= 0) return null;
+
+  if (DB_ENABLED) {
+    const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1 LIMIT 1', [String(requestId)]);
+    const row = rows[0];
+    if (!row) return null;
+
+    const current = mapRequestRow(row);
+    const currentMeta = (current.meta && typeof current.meta === 'object') ? current.meta : {};
+    const priorPaid = getPaidAmountFromRequest(current);
+    const nextPaid = toNonNegativeNumber(priorPaid + parsedPaid, priorPaid);
+    const currentBoosts = Number(currentMeta.syntheticBoosts || current.boosts || 0);
+    const nextBoosts = toNonNegativeNumber(currentBoosts + parsedPaid, currentBoosts);
+    const nextMeta = {
+      ...currentMeta,
+      paidAmount: nextPaid,
+      lastPaidAmount: parsedPaid,
+      lastPaidAt: new Date().toISOString(),
+      syntheticBoosts: nextBoosts
+    };
+
+    await dbQuery(
+      'UPDATE requests SET funding = $1, boosts = $2, meta = $3::jsonb, updated_at = NOW() WHERE id = $4',
+      [nextPaid, nextBoosts, JSON.stringify(nextMeta), String(requestId)]
+    );
+    const updated = await dbQuery('SELECT * FROM requests WHERE id = $1 LIMIT 1', [String(requestId)]);
+    refreshRequestCache().catch(() => {});
+    return updated.rows[0] ? mapRequestRow(updated.rows[0]) : null;
+  }
+
+  const requests = readRequests();
+  const idx = requests.findIndex(r => String(r.id) === String(requestId));
+  if (idx === -1) return null;
+
+  const reqItem = requests[idx] || {};
+  const currentMeta = (reqItem.meta && typeof reqItem.meta === 'object') ? reqItem.meta : {};
+  const priorPaid = getPaidAmountFromRequest(reqItem);
+  const nextPaid = toNonNegativeNumber(priorPaid + parsedPaid, priorPaid);
+  const prevBoosts = Number(reqItem.boosts || 0);
+  const nextBoosts = toNonNegativeNumber(prevBoosts + parsedPaid, prevBoosts);
+
+  const updatedRequest = {
+    ...reqItem,
+    boosts: nextBoosts,
+    funding: nextPaid,
+    meta: {
+      ...currentMeta,
+      paidAmount: nextPaid,
+      lastPaidAmount: parsedPaid,
+      lastPaidAt: new Date().toISOString(),
+      syntheticBoosts: nextBoosts
+    },
+    updatedAt: new Date().toISOString()
+  };
+
+  requests[idx] = updatedRequest;
+  writeRequests(requests);
+  return updatedRequest;
+}
+
 // Comments persistence
 const COMMENTS_FILE = path.join(__dirname, 'comments.json');
 function readComments() {
@@ -2699,6 +2761,197 @@ const buildSuggestionSortTimestamp = (s) => {
         });
       } catch (err) {
         console.error('capture funded suggestion order error', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Server error' });
+      }
+    });
+
+    app.post('/boosts/paypal/create-order', authMiddleware, async (req, res) => {
+      try {
+        const { requestId, amount, returnBaseUrl, returnPath } = req.body || {};
+        const parsedAmount = parseUsdAmount(amount);
+        const allowedAmounts = new Set([10, 25, 50]);
+
+        if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
+        if (!Number.isFinite(parsedAmount) || !allowedAmounts.has(parsedAmount)) {
+          return res.status(400).json({ error: 'Boost amount must be one of: 10, 25, 50' });
+        }
+
+        const foundRequest = await getRequestByIdForSuggestion(requestId);
+        if (!foundRequest) return res.status(404).json({ error: 'Request not found' });
+
+        const nowIso = new Date().toISOString();
+        const boostPaymentId = `b-funded-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        const fallbackBase = (WEB_URL || '').replace(/\/$/, '') || 'https://regaarder.com';
+        const requestedBase = String(returnBaseUrl || '').trim();
+        const safeBase = /^https?:\/\//i.test(requestedBase) ? requestedBase.replace(/\/$/, '') : fallbackBase;
+        const requestedPath = String(returnPath || '').trim();
+        const safePath = requestedPath.startsWith('/') ? requestedPath : '/requests';
+        const returnUrl = `${safeBase}${safePath}?boostPay=1&requestId=${encodeURIComponent(String(requestId))}&boostPaymentId=${encodeURIComponent(boostPaymentId)}`;
+        const cancelUrl = `${safeBase}${safePath}?boostPay=cancel&requestId=${encodeURIComponent(String(requestId))}`;
+
+        const token = await getPayPalAccessToken();
+        const orderResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            intent: 'CAPTURE',
+            purchase_units: [
+              {
+                reference_id: boostPaymentId,
+                description: `Request boost payment for request ${String(requestId)}`,
+                amount: {
+                  currency_code: 'USD',
+                  value: toUsdString(parsedAmount)
+                }
+              }
+            ],
+            application_context: {
+              user_action: 'PAY_NOW',
+              return_url: returnUrl,
+              cancel_url: cancelUrl
+            }
+          })
+        });
+
+        const orderData = await orderResp.json().catch(() => ({}));
+        if (!orderResp.ok || !orderData.id) {
+          return res.status(502).json({ error: 'Failed to create PayPal order', details: orderData });
+        }
+
+        const approveLink = Array.isArray(orderData.links)
+          ? orderData.links.find((l) => l && l.rel === 'approve')
+          : null;
+        if (!approveLink || !approveLink.href) {
+          return res.status(502).json({ error: 'PayPal approval link missing' });
+        }
+
+        const boostPayment = {
+          id: boostPaymentId,
+          type: 'funded_boost',
+          requestId: requestId || null,
+          from: { id: req.user.id, name: req.user.name || req.user.email },
+          createdAt: nowIso,
+          boostAmount: parsedAmount,
+          fundedAmount: parsedAmount,
+          fundedCurrency: 'USD',
+          paymentStatus: 'pending',
+          paymentProvider: 'paypal',
+          paypalOrderId: orderData.id,
+          fundedAt: null
+        };
+
+        const arr = await loadNotifications();
+        arr.unshift(boostPayment);
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          boostPaymentId,
+          orderId: orderData.id,
+          approveUrl: approveLink.href
+        });
+      } catch (err) {
+        console.error('create boost PayPal order error', err);
+        return res.status(err.status || 500).json({
+          error: 'Unable to start boost PayPal payment',
+          details: err.details || err.message || 'Server error'
+        });
+      }
+    });
+
+    app.post('/boosts/paypal/capture-order', authMiddleware, async (req, res) => {
+      try {
+        const { boostPaymentId, orderId } = req.body || {};
+        if (!boostPaymentId || !orderId) {
+          return res.status(400).json({ error: 'Missing boostPaymentId or orderId' });
+        }
+
+        const arr = await loadNotifications();
+        const idx = arr.findIndex((s) => String(s.id) === String(boostPaymentId));
+        if (idx === -1) return res.status(404).json({ error: 'Boost payment not found' });
+
+        const boostPayment = arr[idx];
+        if (String(boostPayment.type || '') !== 'funded_boost') {
+          return res.status(400).json({ error: 'Invalid boost payment record' });
+        }
+        if (!boostPayment || !boostPayment.from || String(boostPayment.from.id) !== String(req.user.id)) {
+          return res.status(403).json({ error: 'Not allowed for this boost payment' });
+        }
+        if (boostPayment.paymentStatus === 'captured') {
+          return res.json({ success: true, boostPayment, alreadyCaptured: true });
+        }
+        if (String(boostPayment.paypalOrderId || '') !== String(orderId)) {
+          return res.status(400).json({ error: 'Order mismatch' });
+        }
+
+        const token = await getPayPalAccessToken();
+        const captureResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders/${encodeURIComponent(String(orderId))}/capture`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        const captureData = await captureResp.json().catch(() => ({}));
+
+        if (!captureResp.ok) {
+          return res.status(502).json({ error: 'PayPal capture failed', details: captureData });
+        }
+
+        const status = String(captureData.status || '').toUpperCase();
+        const purchaseUnit = Array.isArray(captureData.purchase_units) ? captureData.purchase_units[0] : null;
+        const capture = purchaseUnit && purchaseUnit.payments && Array.isArray(purchaseUnit.payments.captures)
+          ? purchaseUnit.payments.captures[0]
+          : null;
+        const paidValue = parseUsdAmount(capture && capture.amount ? capture.amount.value : NaN);
+
+        if (status !== 'COMPLETED' || !Number.isFinite(paidValue)) {
+          return res.status(400).json({ error: 'Payment not completed' });
+        }
+
+        const expected = parseUsdAmount(boostPayment.boostAmount);
+        if (!Number.isFinite(expected) || paidValue < expected) {
+          boostPayment.paymentStatus = 'amount_mismatch';
+          boostPayment.captureAttemptedAt = new Date().toISOString();
+          arr[idx] = boostPayment;
+          await saveNotifications(arr);
+          return res.status(400).json({ error: 'Captured amount does not match requested amount' });
+        }
+
+        const updatedRequest = await applyBoostPaymentToRequest(boostPayment.requestId, paidValue);
+        if (!updatedRequest) {
+          return res.status(404).json({ error: 'Request not found for boost crediting' });
+        }
+
+        boostPayment.paymentStatus = 'captured';
+        boostPayment.boostAmount = paidValue;
+        boostPayment.fundedAmount = paidValue;
+        boostPayment.fundedCurrency = (capture && capture.amount && capture.amount.currency_code) || 'USD';
+        boostPayment.paymentCaptureId = capture && capture.id ? capture.id : null;
+        boostPayment.fundedAt = new Date().toISOString();
+        boostPayment.updatedAt = boostPayment.fundedAt;
+
+        arr[idx] = boostPayment;
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          boostPayment: {
+            id: boostPayment.id,
+            requestId: boostPayment.requestId,
+            boostAmount: boostPayment.boostAmount,
+            fundedCurrency: boostPayment.fundedCurrency,
+            fundedAt: boostPayment.fundedAt,
+            userName: boostPayment.from ? boostPayment.from.name : 'Anonymous'
+          },
+          request: updatedRequest
+        });
+      } catch (err) {
+        console.error('capture boost PayPal order error', err);
         return res.status(err.status || 500).json({ error: err.message || 'Server error' });
       }
     });

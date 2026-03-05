@@ -1514,9 +1514,13 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
         try {
             const params = new URLSearchParams(window.location.search || '');
             const suggestPay = params.get('suggestPay');
+            const boostPay = params.get('boostPay');
             const returnedRequestId = params.get('requestId');
             if ((suggestPay === '1' || suggestPay === 'cancel') && String(returnedRequestId || '') === String(request.id || '')) {
                 setShowSuggestionsModal(true);
+            }
+            if ((boostPay === '1' || boostPay === 'cancel') && String(returnedRequestId || '') === String(request.id || '')) {
+                setShowBoostsModal(true);
             }
         } catch (e) { }
     }, [request.id]);

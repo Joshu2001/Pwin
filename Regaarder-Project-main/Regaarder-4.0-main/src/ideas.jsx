@@ -2634,6 +2634,18 @@ const App = () => {
   const [hasPaidPlan, setHasPaidPlan] = useState(false);
 
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const boostPay = params.get('boostPay');
+      const returnedRequestId = params.get('requestId');
+      if ((boostPay === '1' || boostPay === 'cancel') && returnedRequestId) {
+        setCurrentRequestIdForBoost(returnedRequestId);
+        setShowBoostsModal(true);
+      }
+    } catch (e) { }
+  }, []);
+
+  useEffect(() => {
     const readPaidPlan = () => {
       try {
         const rawUser = localStorage.getItem('regaarder_user');
