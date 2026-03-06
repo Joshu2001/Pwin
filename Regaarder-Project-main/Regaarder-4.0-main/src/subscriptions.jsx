@@ -97,7 +97,7 @@ const Subscriptions = () => {
 
     const handleUpgrade = () => {
         try {
-            window.location.href = '/sponsorship.jsx';
+            window.location.href = '/sponsorship';
         } catch (e) {
             console.warn('Navigation failed', e);
         }

@@ -2955,6 +2955,444 @@ const buildSuggestionSortTimestamp = (s) => {
         return res.status(err.status || 500).json({ error: err.message || 'Server error' });
       }
     });
+
+    app.post('/ideas/paypal/create-order', authMiddleware, async (req, res) => {
+      try {
+        const {
+          requestId,
+          flow,
+          amount,
+          baseAmount,
+          episodes,
+          returnBaseUrl,
+          returnPath
+        } = req.body || {};
+
+        const rawFlow = String(flow || '').trim().toLowerCase();
+        const normalizedFlow = rawFlow === 'recurrent' ? 'recurring' : rawFlow;
+        const parsedAmount = parseUsdAmount(amount);
+        const parsedBaseAmount = parseUsdAmount(baseAmount);
+        const parsedEpisodes = Number.parseInt(episodes, 10);
+
+        if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
+        if (!['one-time', 'series', 'recurring', 'catalogue'].includes(normalizedFlow)) {
+          return res.status(400).json({ error: 'Invalid flow type' });
+        }
+        if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+          return res.status(400).json({ error: 'Invalid amount' });
+        }
+
+        let requiredBaseAmount = 15;
+        if (normalizedFlow === 'one-time') {
+          requiredBaseAmount = 15;
+        } else if (normalizedFlow === 'series') {
+          if (!Number.isFinite(parsedEpisodes) || parsedEpisodes < 1) {
+            return res.status(400).json({ error: 'Series flow requires episodes >= 1' });
+          }
+          requiredBaseAmount = parsedEpisodes * 12;
+        } else if (normalizedFlow === 'recurring') {
+          requiredBaseAmount = 8;
+        } else if (normalizedFlow === 'catalogue') {
+          requiredBaseAmount = 4;
+        }
+
+        if (Number.isFinite(parsedBaseAmount)) {
+          if (parsedBaseAmount < requiredBaseAmount) {
+            return res.status(400).json({ error: 'Base amount is below required minimum for selected flow' });
+          }
+        }
+
+        if (parsedAmount < requiredBaseAmount) {
+          return res.status(400).json({ error: 'Amount is below required minimum for selected flow' });
+        }
+
+        const foundRequest = await getRequestByIdForSuggestion(requestId);
+        if (!foundRequest) return res.status(404).json({ error: 'Request not found' });
+
+        const nowIso = new Date().toISOString();
+        const ideaPaymentId = `idea-funded-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        const fallbackBase = (WEB_URL || '').replace(/\/$/, '') || 'https://regaarder.com';
+        const requestedBase = String(returnBaseUrl || '').trim();
+        const safeBase = /^https?:\/\//i.test(requestedBase) ? requestedBase.replace(/\/$/, '') : fallbackBase;
+        const requestedPath = String(returnPath || '').trim();
+        const safePath = requestedPath.startsWith('/') ? requestedPath : '/ideas';
+        const returnUrl = `${safeBase}${safePath}?ideasPay=1&requestId=${encodeURIComponent(String(requestId))}&ideaPaymentId=${encodeURIComponent(ideaPaymentId)}`;
+        const cancelUrl = `${safeBase}${safePath}?ideasPay=cancel&requestId=${encodeURIComponent(String(requestId))}`;
+
+        const token = await getPayPalAccessToken();
+        const orderResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            intent: 'CAPTURE',
+            purchase_units: [
+              {
+                reference_id: ideaPaymentId,
+                description: `Ideas payment for request ${String(requestId)} (${normalizedFlow})`,
+                amount: {
+                  currency_code: 'USD',
+                  value: toUsdString(parsedAmount)
+                }
+              }
+            ],
+            application_context: {
+              user_action: 'PAY_NOW',
+              return_url: returnUrl,
+              cancel_url: cancelUrl
+            }
+          })
+        });
+
+        const orderData = await orderResp.json().catch(() => ({}));
+        if (!orderResp.ok || !orderData.id) {
+          return res.status(502).json({ error: 'Failed to create PayPal order', details: orderData });
+        }
+
+        const approveLink = Array.isArray(orderData.links)
+          ? orderData.links.find((l) => l && l.rel === 'approve')
+          : null;
+        if (!approveLink || !approveLink.href) {
+          return res.status(502).json({ error: 'PayPal approval link missing' });
+        }
+
+        const ideaPayment = {
+          id: ideaPaymentId,
+          type: 'funded_idea_payment',
+          requestId: requestId || null,
+          flow: normalizedFlow,
+          episodes: Number.isFinite(parsedEpisodes) ? parsedEpisodes : null,
+          from: { id: req.user.id, name: req.user.name || req.user.email },
+          createdAt: nowIso,
+          expectedAmount: parsedAmount,
+          baseAmount: Number.isFinite(parsedBaseAmount) ? parsedBaseAmount : requiredBaseAmount,
+          fundedAmount: parsedAmount,
+          fundedCurrency: 'USD',
+          paymentStatus: 'pending',
+          paymentProvider: 'paypal',
+          paypalOrderId: orderData.id,
+          fundedAt: null
+        };
+
+        const arr = await loadNotifications();
+        arr.unshift(ideaPayment);
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          ideaPaymentId,
+          orderId: orderData.id,
+          approveUrl: approveLink.href
+        });
+      } catch (err) {
+        console.error('create ideas PayPal order error', err);
+        return res.status(err.status || 500).json({
+          error: 'Unable to start ideas PayPal payment',
+          details: err.details || err.message || 'Server error'
+        });
+      }
+    });
+
+    app.post('/ideas/paypal/capture-order', authMiddleware, async (req, res) => {
+      try {
+        const { ideaPaymentId, orderId } = req.body || {};
+        if (!ideaPaymentId || !orderId) {
+          return res.status(400).json({ error: 'Missing ideaPaymentId or orderId' });
+        }
+
+        const arr = await loadNotifications();
+        const idx = arr.findIndex((s) => String(s.id) === String(ideaPaymentId));
+        if (idx === -1) return res.status(404).json({ error: 'Ideas payment not found' });
+
+        const ideaPayment = arr[idx];
+        if (String(ideaPayment.type || '') !== 'funded_idea_payment') {
+          return res.status(400).json({ error: 'Invalid ideas payment record' });
+        }
+        if (!ideaPayment || !ideaPayment.from || String(ideaPayment.from.id) !== String(req.user.id)) {
+          return res.status(403).json({ error: 'Not allowed for this ideas payment' });
+        }
+        if (ideaPayment.paymentStatus === 'captured') {
+          return res.json({ success: true, ideaPayment, alreadyCaptured: true });
+        }
+        if (String(ideaPayment.paypalOrderId || '') !== String(orderId)) {
+          return res.status(400).json({ error: 'Order mismatch' });
+        }
+
+        const token = await getPayPalAccessToken();
+        const captureResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders/${encodeURIComponent(String(orderId))}/capture`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        const captureData = await captureResp.json().catch(() => ({}));
+
+        if (!captureResp.ok) {
+          return res.status(502).json({ error: 'PayPal capture failed', details: captureData });
+        }
+
+        const status = String(captureData.status || '').toUpperCase();
+        const purchaseUnit = Array.isArray(captureData.purchase_units) ? captureData.purchase_units[0] : null;
+        const capture = purchaseUnit && purchaseUnit.payments && Array.isArray(purchaseUnit.payments.captures)
+          ? purchaseUnit.payments.captures[0]
+          : null;
+        const paidValue = parseUsdAmount(capture && capture.amount ? capture.amount.value : NaN);
+
+        if (status !== 'COMPLETED' || !Number.isFinite(paidValue)) {
+          return res.status(400).json({ error: 'Payment not completed' });
+        }
+
+        const expected = parseUsdAmount(ideaPayment.expectedAmount || ideaPayment.fundedAmount);
+        if (!Number.isFinite(expected) || paidValue < expected) {
+          ideaPayment.paymentStatus = 'amount_mismatch';
+          ideaPayment.captureAttemptedAt = new Date().toISOString();
+          arr[idx] = ideaPayment;
+          await saveNotifications(arr);
+          return res.status(400).json({ error: 'Captured amount does not match requested amount' });
+        }
+
+        ideaPayment.paymentStatus = 'captured';
+        ideaPayment.fundedAmount = paidValue;
+        ideaPayment.fundedCurrency = (capture && capture.amount && capture.amount.currency_code) || 'USD';
+        ideaPayment.paymentCaptureId = capture && capture.id ? capture.id : null;
+        ideaPayment.fundedAt = new Date().toISOString();
+        ideaPayment.updatedAt = ideaPayment.fundedAt;
+
+        arr[idx] = ideaPayment;
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          ideaPayment: {
+            id: ideaPayment.id,
+            requestId: ideaPayment.requestId,
+            flow: ideaPayment.flow,
+            fundedAmount: ideaPayment.fundedAmount,
+            fundedCurrency: ideaPayment.fundedCurrency,
+            fundedAt: ideaPayment.fundedAt,
+            userName: ideaPayment.from ? ideaPayment.from.name : 'Anonymous'
+          }
+        });
+      } catch (err) {
+        console.error('capture ideas PayPal order error', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Server error' });
+      }
+    });
+
+    app.post('/sponsorships/paypal/create-order', authMiddleware, async (req, res) => {
+      try {
+        const {
+          amount,
+          purchaseType,
+          chargeMode,
+          itemKey,
+          itemTitle,
+          planType,
+          returnBaseUrl,
+          returnPath
+        } = req.body || {};
+
+        const parsedAmount = parseUsdAmount(amount);
+        const normalizedPurchaseType = String(purchaseType || '').trim().toLowerCase();
+        const normalizedChargeMode = String(chargeMode || '').trim().toLowerCase();
+
+        if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+          return res.status(400).json({ error: 'Invalid amount' });
+        }
+        if (!['subscription', 'ala_carte'].includes(normalizedPurchaseType)) {
+          return res.status(400).json({ error: 'Invalid purchaseType' });
+        }
+        if (!['monthly', 'one-time'].includes(normalizedChargeMode)) {
+          return res.status(400).json({ error: 'Invalid chargeMode' });
+        }
+        if (normalizedPurchaseType === 'subscription' && normalizedChargeMode !== 'monthly') {
+          return res.status(400).json({ error: 'Subscriptions must use monthly chargeMode' });
+        }
+        if (normalizedPurchaseType === 'ala_carte' && normalizedChargeMode !== 'one-time') {
+          return res.status(400).json({ error: 'À la carte purchases must use one-time chargeMode' });
+        }
+
+        const nowIso = new Date().toISOString();
+        const sponsorPaymentId = `sponsor-funded-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        const fallbackBase = (WEB_URL || '').replace(/\/$/, '') || 'https://regaarder.com';
+        const requestedBase = String(returnBaseUrl || '').trim();
+        const safeBase = /^https?:\/\//i.test(requestedBase) ? requestedBase.replace(/\/$/, '') : fallbackBase;
+        const requestedPath = String(returnPath || '').trim();
+        const safePath = requestedPath.startsWith('/') ? requestedPath : '/sponsorship';
+        const returnUrl = `${safeBase}${safePath}?sponsorPay=1&sponsorPaymentId=${encodeURIComponent(sponsorPaymentId)}`;
+        const cancelUrl = `${safeBase}${safePath}?sponsorPay=cancel`;
+
+        const token = await getPayPalAccessToken();
+        const orderResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            intent: 'CAPTURE',
+            purchase_units: [
+              {
+                reference_id: sponsorPaymentId,
+                description: `Sponsorship payment (${normalizedPurchaseType}) ${String(itemTitle || itemKey || '').trim() || ''}`.trim(),
+                amount: {
+                  currency_code: 'USD',
+                  value: toUsdString(parsedAmount)
+                }
+              }
+            ],
+            application_context: {
+              user_action: 'PAY_NOW',
+              return_url: returnUrl,
+              cancel_url: cancelUrl
+            }
+          })
+        });
+
+        const orderData = await orderResp.json().catch(() => ({}));
+        if (!orderResp.ok || !orderData.id) {
+          return res.status(502).json({ error: 'Failed to create PayPal order', details: orderData });
+        }
+
+        const approveLink = Array.isArray(orderData.links)
+          ? orderData.links.find((l) => l && l.rel === 'approve')
+          : null;
+        if (!approveLink || !approveLink.href) {
+          return res.status(502).json({ error: 'PayPal approval link missing' });
+        }
+
+        const sponsorshipPayment = {
+          id: sponsorPaymentId,
+          type: 'funded_sponsorship_payment',
+          purchaseType: normalizedPurchaseType,
+          chargeMode: normalizedChargeMode,
+          itemKey: itemKey || null,
+          itemTitle: itemTitle || null,
+          planType: planType || null,
+          from: { id: req.user.id, name: req.user.name || req.user.email },
+          createdAt: nowIso,
+          expectedAmount: parsedAmount,
+          fundedAmount: parsedAmount,
+          fundedCurrency: 'USD',
+          paymentStatus: 'pending',
+          paymentProvider: 'paypal',
+          paypalOrderId: orderData.id,
+          fundedAt: null
+        };
+
+        const arr = await loadNotifications();
+        arr.unshift(sponsorshipPayment);
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          sponsorPaymentId,
+          orderId: orderData.id,
+          approveUrl: approveLink.href
+        });
+      } catch (err) {
+        console.error('create sponsorship PayPal order error', err);
+        return res.status(err.status || 500).json({
+          error: 'Unable to start sponsorship PayPal payment',
+          details: err.details || err.message || 'Server error'
+        });
+      }
+    });
+
+    app.post('/sponsorships/paypal/capture-order', authMiddleware, async (req, res) => {
+      try {
+        const { sponsorPaymentId, orderId } = req.body || {};
+        if (!sponsorPaymentId || !orderId) {
+          return res.status(400).json({ error: 'Missing sponsorPaymentId or orderId' });
+        }
+
+        const arr = await loadNotifications();
+        const idx = arr.findIndex((s) => String(s.id) === String(sponsorPaymentId));
+        if (idx === -1) return res.status(404).json({ error: 'Sponsorship payment not found' });
+
+        const sponsorshipPayment = arr[idx];
+        if (String(sponsorshipPayment.type || '') !== 'funded_sponsorship_payment') {
+          return res.status(400).json({ error: 'Invalid sponsorship payment record' });
+        }
+        if (!sponsorshipPayment || !sponsorshipPayment.from || String(sponsorshipPayment.from.id) !== String(req.user.id)) {
+          return res.status(403).json({ error: 'Not allowed for this sponsorship payment' });
+        }
+        if (sponsorshipPayment.paymentStatus === 'captured') {
+          return res.json({ success: true, sponsorshipPayment, alreadyCaptured: true });
+        }
+        if (String(sponsorshipPayment.paypalOrderId || '') !== String(orderId)) {
+          return res.status(400).json({ error: 'Order mismatch' });
+        }
+
+        const token = await getPayPalAccessToken();
+        const captureResp = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders/${encodeURIComponent(String(orderId))}/capture`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        const captureData = await captureResp.json().catch(() => ({}));
+
+        if (!captureResp.ok) {
+          return res.status(502).json({ error: 'PayPal capture failed', details: captureData });
+        }
+
+        const status = String(captureData.status || '').toUpperCase();
+        const purchaseUnit = Array.isArray(captureData.purchase_units) ? captureData.purchase_units[0] : null;
+        const capture = purchaseUnit && purchaseUnit.payments && Array.isArray(purchaseUnit.payments.captures)
+          ? purchaseUnit.payments.captures[0]
+          : null;
+        const paidValue = parseUsdAmount(capture && capture.amount ? capture.amount.value : NaN);
+
+        if (status !== 'COMPLETED' || !Number.isFinite(paidValue)) {
+          return res.status(400).json({ error: 'Payment not completed' });
+        }
+
+        const expected = parseUsdAmount(sponsorshipPayment.expectedAmount || sponsorshipPayment.fundedAmount);
+        if (!Number.isFinite(expected) || paidValue < expected) {
+          sponsorshipPayment.paymentStatus = 'amount_mismatch';
+          sponsorshipPayment.captureAttemptedAt = new Date().toISOString();
+          arr[idx] = sponsorshipPayment;
+          await saveNotifications(arr);
+          return res.status(400).json({ error: 'Captured amount does not match requested amount' });
+        }
+
+        sponsorshipPayment.paymentStatus = 'captured';
+        sponsorshipPayment.fundedAmount = paidValue;
+        sponsorshipPayment.fundedCurrency = (capture && capture.amount && capture.amount.currency_code) || 'USD';
+        sponsorshipPayment.paymentCaptureId = capture && capture.id ? capture.id : null;
+        sponsorshipPayment.fundedAt = new Date().toISOString();
+        sponsorshipPayment.updatedAt = sponsorshipPayment.fundedAt;
+
+        arr[idx] = sponsorshipPayment;
+        await saveNotifications(arr);
+
+        return res.json({
+          success: true,
+          sponsorshipPayment: {
+            id: sponsorshipPayment.id,
+            purchaseType: sponsorshipPayment.purchaseType,
+            chargeMode: sponsorshipPayment.chargeMode,
+            itemKey: sponsorshipPayment.itemKey,
+            itemTitle: sponsorshipPayment.itemTitle,
+            planType: sponsorshipPayment.planType,
+            fundedAmount: sponsorshipPayment.fundedAmount,
+            fundedCurrency: sponsorshipPayment.fundedCurrency,
+            fundedAt: sponsorshipPayment.fundedAt,
+            userName: sponsorshipPayment.from ? sponsorshipPayment.from.name : 'Anonymous'
+          }
+        });
+      } catch (err) {
+        console.error('capture sponsorship PayPal order error', err);
+        return res.status(err.status || 500).json({ error: err.message || 'Server error' });
+      }
+    });
     
     // Get suggestions for a specific request
     app.get('/requests/:id/suggestions', async (req, res) => {

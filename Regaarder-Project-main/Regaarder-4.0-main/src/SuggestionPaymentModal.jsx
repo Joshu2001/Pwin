@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, DollarSign, CreditCard } from 'lucide-react';
 import { getTranslation } from './translations.js';
 import { WEB_URL, getBackendBaseUrl } from './config.js';
+import { getSafeReturnBaseUrl, startPayPalCheckout } from './utils/paypalCheckout.js';
 
 const SuggestionPaymentModal = ({
     isOpen,
@@ -65,21 +66,6 @@ const SuggestionPaymentModal = ({
     const numericAmount = Number(amount || 0);
     const isAmountValid = Number.isFinite(numericAmount) && numericAmount >= 2;
 
-    const normalizeErrorDetails = (value) => {
-        if (!value) return '';
-        if (typeof value === 'string') return value;
-        if (typeof value === 'object') {
-            if (value.error_description) return String(value.error_description);
-            if (value.error) return String(value.error);
-            try {
-                return JSON.stringify(value);
-            } catch (e) {
-                return 'Unknown payment error details';
-            }
-        }
-        return String(value);
-    };
-
     const handleCreatePayPalOrder = async () => {
         if (processing) return;
         if (!paypalSdkReady) {
@@ -106,36 +92,21 @@ const SuggestionPaymentModal = ({
         setError('');
 
         try {
-            const safeReturnBaseUrl = (() => {
-                try {
-                    const origin = String(window.location.origin || '').trim();
-                    if (/^https?:\/\//i.test(origin)) return origin;
-                } catch (e) { }
-                return WEB_URL;
-            })();
-
-            const response = await fetch(`${getBackendBaseUrl()}/suggestions/funded/paypal/create-order`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({
+            const payload = await startPayPalCheckout({
+                endpoint: '/suggestions/funded/paypal/create-order',
+                token,
+                body: {
                     requestId,
                     targetCreatorId: targetCreatorId || null,
                     targetCreatorHandle: targetCreatorHandle || null,
                     text: trimmedText,
                     amount: numericAmount,
                     payerLabel: String(payerLabel || '').trim(),
-                    returnBaseUrl: safeReturnBaseUrl
-                })
+                    returnBaseUrl: getSafeReturnBaseUrl(WEB_URL)
+                },
+                fallbackError: 'Unable to start PayPal payment',
+                backendBaseUrl: getBackendBaseUrl()
             });
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload.approveUrl) {
-                const details = normalizeErrorDetails(payload.details);
-                throw new Error(details || payload.error || 'Unable to start PayPal payment');
-            }
 
             window.location.href = payload.approveUrl;
         } catch (err) {

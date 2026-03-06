@@ -10,6 +10,8 @@ import { useLanguage } from './LanguageContext.jsx';
 import FreeRequestSubmittedModal from './FreeRequestSubmittedModal.jsx';
 import BoostsModal from './BoostsModal.jsx';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
+import { getBackendBaseUrl } from './config.js';
+import { getSafeReturnBaseUrl, getSafeReturnPath, startPayPalCheckout } from './utils/paypalCheckout.js';
 import {
   Home,
   Pencil,
@@ -2616,6 +2618,11 @@ const App = () => {
   const [paymentRole, setPaymentRole] = useState("creator"); // 'creator' or 'expert'
   const [privacyCost, setPrivacyCost] = useState(0); // Additional cost for private/unlisted video ($5.99 for unlisted, $7.99 for private)
   const PAYMENT_PRESETS = [15, 25, 50, 100];
+  const IDEAS_PAYMENT_QUERY_KEYS = ['ideasPay', 'ideaPaymentId', 'requestId', 'token', 'orderId', 'PayerID'];
+  const ideasCaptureHandledRef = useRef(false);
+  const [processingIdeaPayment, setProcessingIdeaPayment] = useState(false);
+  const [ideaPaymentError, setIdeaPaymentError] = useState('');
+  const [paypalSdkReady, setPaypalSdkReady] = useState(false);
   const [selectedCreator, setSelectedCreator] = useState(null);
   const [selectedCreatorImage, setSelectedCreatorImage] = useState(null); // Separate state for creator image
   const [creatorSearch, setCreatorSearch] = useState("");
@@ -2633,6 +2640,58 @@ const App = () => {
   const [showUpgradeUploadModal, setShowUpgradeUploadModal] = useState(false);
   const [hasPaidPlan, setHasPaidPlan] = useState(false);
 
+  const normalizeIdeasFlow = (flow) => {
+    const raw = String(flow || '').toLowerCase();
+    if (raw === 'recurrent') return 'recurring';
+    return raw;
+  };
+
+  const getIdeasBaseAmount = (flow) => {
+    const normalizedFlow = normalizeIdeasFlow(flow || pendingSubmission?.flow || selectedDeliveryType || 'one-time');
+    if (normalizedFlow === 'series') {
+      const episodes = Math.max(1, Number(numberOfEpisodes || 1));
+      return episodes * 12;
+    }
+    if (normalizedFlow === 'recurring') return 8;
+    if (normalizedFlow === 'catalogue') return 4;
+    return 15;
+  };
+
+  const getIdeasEffectiveBaseAmount = () => {
+    const normalizedFlow = normalizeIdeasFlow(pendingSubmission?.flow || selectedDeliveryType || 'one-time');
+    const required = getIdeasBaseAmount(normalizedFlow);
+    return Math.max(required, Number(paymentAmount || 0));
+  };
+
+  const roundMoney = (value) => Math.round(Number(value || 0) * 100) / 100;
+  const getIdeasTotalCharge = () => {
+    const base = getIdeasEffectiveBaseAmount();
+    const withRole = paymentRole === 'expert' ? base * 1.3 : base;
+    return roundMoney(withRole + Number(privacyCost || 0));
+  };
+
+  const getIdeasFlowHint = () => {
+    const normalizedFlow = normalizeIdeasFlow(pendingSubmission?.flow || selectedDeliveryType || 'one-time');
+    if (normalizedFlow === 'series') {
+      const episodes = Math.max(1, Number(numberOfEpisodes || 1));
+      return `$12 × ${episodes} episodes`;
+    }
+    if (normalizedFlow === 'recurring') return 'Minimum $8/mo';
+    if (normalizedFlow === 'catalogue') return 'Minimum $4/mo';
+    return 'Minimum $15';
+  };
+
+  const ideasFlowIsFixed = () => {
+    return false;
+  };
+
+  useEffect(() => {
+    if (!paymentModalOpen) return;
+    const normalizedFlow = normalizeIdeasFlow(pendingSubmission?.flow || selectedDeliveryType || 'one-time');
+    const requiredBase = getIdeasBaseAmount(normalizedFlow);
+    setPaymentAmount((prev) => Math.max(requiredBase, Number(prev || 0)));
+  }, [paymentModalOpen, pendingSubmission?.flow, selectedDeliveryType, numberOfEpisodes]);
+
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search || '');
@@ -2644,6 +2703,36 @@ const App = () => {
       }
     } catch (e) { }
   }, []);
+
+  useEffect(() => {
+    if (!paymentModalOpen) {
+      setProcessingIdeaPayment(false);
+      setIdeaPaymentError('');
+      ideasCaptureHandledRef.current = false;
+      return;
+    }
+
+    const paypalClientId =
+      (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PAYPAL_CLIENT_ID)
+      || 'AUhb8uHt0gFlWH_vJdLf7M4soE91VyQuy5NHDPvLumnynuAFQj4mMuXdXHi9Vzy6nlRpaD0d2VGKpHtC';
+
+    const existing = document.querySelector('script[data-paypal-ideas="1"]');
+    if (existing || (typeof window !== 'undefined' && window.paypal)) {
+      setPaypalSdkReady(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(paypalClientId)}&currency=USD&intent=capture`;
+    script.async = true;
+    script.setAttribute('data-paypal-ideas', '1');
+    script.onload = () => setPaypalSdkReady(true);
+    script.onerror = () => {
+      setPaypalSdkReady(false);
+      setIdeaPaymentError('Could not load PayPal. Please check your connection and try again.');
+    };
+    document.body.appendChild(script);
+  }, [paymentModalOpen]);
 
   useEffect(() => {
     const readPaidPlan = () => {
@@ -2923,10 +3012,7 @@ const App = () => {
   const CREATORS_SAMPLE = [];
 
   const [creatorsList, setCreatorsList] = useState([]);
-  const BACKEND = (function() {
-      if (window && window.__BACKEND_URL__) return window.__BACKEND_URL__;
-      return 'https://pwin-copy-production.up.railway.app';
-  })();
+  const BACKEND = getBackendBaseUrl();
 
   // Helper: normalize image URLs (uploaded: prefix → full backend URL, http→https)
   const normalizeCreatorImage = (url) => {
@@ -3074,17 +3160,99 @@ const App = () => {
   // Handle return from payment provider
   useEffect(() => {
     try {
-        const params = new URLSearchParams(window.location.search);
+        const params = new URLSearchParams(window.location.search || '');
+        const ideasPay = params.get('ideasPay');
+        const ideaPaymentId = params.get('ideaPaymentId');
+        const returnedRequestId = params.get('requestId');
+        const returnedOrderId = params.get('token') || params.get('orderId');
+
+        if (!ideasCaptureHandledRef.current && (ideasPay === '1' || ideasPay === 'cancel')) {
+          ideasCaptureHandledRef.current = true;
+
+          if (ideasPay === 'cancel') {
+            setIdeaPaymentError('Payment cancelled. Your request was not submitted.');
+            setPaymentModalOpen(true);
+          }
+
+          if (ideasPay === '1' && ideaPaymentId && returnedOrderId) {
+            const token = localStorage.getItem('regaarder_token');
+            if (token) {
+              setProcessingIdeaPayment(true);
+
+              fetch(`${BACKEND}/ideas/paypal/capture-order`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  ideaPaymentId,
+                  orderId: returnedOrderId
+                })
+              })
+                .then(async (captureResponse) => {
+                  const capturePayload = await captureResponse.json().catch(() => ({}));
+                  if (!captureResponse.ok) {
+                    throw new Error(capturePayload.error || 'Ideas payment capture failed');
+                  }
+
+                  const raw = localStorage.getItem('pending_payment_data');
+                  if (raw) {
+                    try {
+                      const data = JSON.parse(raw);
+                      const flow = normalizeIdeasFlow(data.flow || selectedDeliveryType || 'one-time');
+                      const requiredBase = getIdeasBaseAmount(flow);
+                      const effectivePaidAmount = Number(capturePayload?.ideaPayment?.fundedAmount || data.amount || 0);
+                      const nextData = {
+                        ...data,
+                        requestId: returnedRequestId || data.requestId || data.id,
+                        flow,
+                        amount: Math.max(requiredBase, effectivePaidAmount)
+                      };
+                      await continuePendingSubmission(nextData.amount, nextData);
+                      localStorage.removeItem('pending_payment_data');
+                      return;
+                    } catch (e) {
+                      localStorage.removeItem('pending_payment_data');
+                    }
+                  }
+
+                  setTimeout(() => {
+                    try {
+                      navigate('/requests?filter=For You');
+                    } catch (e) {
+                      window.location.href = '/requests?filter=For You';
+                    }
+                  }, 100);
+                })
+                .catch((err) => {
+                  setIdeaPaymentError(err.message || 'Unable to finalize payment. Please try again.');
+                  setPaymentModalOpen(true);
+                })
+                .finally(() => {
+                  setProcessingIdeaPayment(false);
+                });
+            } else {
+              setIdeaPaymentError('Please sign in to finalize your payment.');
+              setPaymentModalOpen(true);
+            }
+          }
+
+          const cleanParams = new URLSearchParams(window.location.search || '');
+          IDEAS_PAYMENT_QUERY_KEYS.forEach((k) => cleanParams.delete(k));
+          const next = `${window.location.pathname}${cleanParams.toString() ? `?${cleanParams.toString()}` : ''}${window.location.hash || ''}`;
+          window.history.replaceState({}, '', next);
+          return;
+        }
+
         if (params.get('payment_success') === 'true') {
             const raw = localStorage.getItem('pending_payment_data');
-            
-            // Clean URL first
+
             const url = new URL(window.location.href);
             url.searchParams.delete('payment_success');
             url.searchParams.delete('session_id');
             window.history.replaceState({}, '', url);
 
-            // If we have pending data that wasn't synced to backend, try to sync it now
             if (raw) {
               try {
                 const data = JSON.parse(raw);
@@ -3093,7 +3261,6 @@ const App = () => {
                    continuePendingSubmission(data.amount || 0, data).then(() => {
                       console.log('[payment_success] Sync complete');
                       localStorage.removeItem('pending_payment_data');
-                      // CRITICAL FIX #3: Ensure navigation happens after sync with error handling
                       setTimeout(() => {
                         try {
                            navigate('/requests?filter=For You');
@@ -3112,14 +3279,12 @@ const App = () => {
                         }
                       }, 150);
                    });
-                   return; 
+                   return;
                 }
               } catch(e) {}
-              // cleanup storage
               localStorage.removeItem('pending_payment_data');
             }
 
-            // Redirect to requests page immediately (fallback if no pending data found)
             setTimeout(() => {
                 try {
                    navigate('/requests?filter=For You');
@@ -3976,7 +4141,7 @@ const App = () => {
       else if (seriesStep === 6) {
         // Open payment modal before final success
         setPendingSubmission({ flow: "series", nextStep: 7 });
-        setPaymentAmount(Math.max(15, displayPrice || 35));
+        setPaymentAmount(getIdeasBaseAmount('series'));
         setPaymentModalOpen(true);
       }
     } else if (isRecurrent) {
@@ -3987,7 +4152,7 @@ const App = () => {
       else if (recurrentStep === 5) setRecurrentStep(6); // To Review
       else if (recurrentStep === 6) {
         setPendingSubmission({ flow: "recurrent", nextStep: 7 });
-        setPaymentAmount(Math.max(15, displayPrice || 35));
+        setPaymentAmount(getIdeasBaseAmount('recurrent'));
         setPaymentModalOpen(true);
       }
     } else if (isCatalogue) {
@@ -3998,7 +4163,7 @@ const App = () => {
       else if (catalogueStep === 5) setCatalogueStep(6); // To Review
       else if (catalogueStep === 6) {
         setPendingSubmission({ flow: "catalogue", nextStep: 7 });
-        setPaymentAmount(Math.max(15, displayPrice || 50));
+        setPaymentAmount(getIdeasBaseAmount('catalogue'));
         setPaymentModalOpen(true);
       }
     } else {
@@ -4009,7 +4174,7 @@ const App = () => {
       else if (oneTimeStep === 4) setOneTimeStep(5); // To Review
       else if (oneTimeStep === 5) {
         setPendingSubmission({ flow: "one-time", nextStep: 6 });
-        setPaymentAmount(Math.max(15, displayPrice || 25));
+        setPaymentAmount(getIdeasBaseAmount('one-time'));
         setPaymentModalOpen(true);
       }
     }
@@ -4151,6 +4316,140 @@ const App = () => {
     } catch (e) {
       console.error('Failed to send notification:', e);
       // Don't fail the request submission if notification fails
+    }
+  };
+
+  const startIdeasPayPalCheckout = async () => {
+    if (processingIdeaPayment) return;
+
+    const token = localStorage.getItem('regaarder_token');
+    if (!token) {
+      setIdeaPaymentError('Please sign in to complete payment.');
+      return;
+    }
+
+    if (!paypalSdkReady) {
+      setIdeaPaymentError('PayPal is still loading. Please wait a moment and try again.');
+      return;
+    }
+
+    const flow = normalizeIdeasFlow(pendingSubmission?.flow || selectedDeliveryType || 'one-time');
+    const requiredBaseAmount = getIdeasBaseAmount(flow);
+    const effectiveBaseAmount = getIdeasEffectiveBaseAmount();
+    const totalCharge = getIdeasTotalCharge();
+    const episodes = flow === 'series' ? Math.max(1, Number(numberOfEpisodes || 1)) : null;
+
+    if (effectiveBaseAmount < requiredBaseAmount) {
+      setIdeaPaymentError(`Amount must be at least $${requiredBaseAmount.toFixed(2)} for this flow.`);
+      return;
+    }
+
+    let rawPending = {
+      id: `req_${Date.now()}`,
+      title,
+      description,
+      deliveryType: selectedDeliveryType,
+      privacy: selectedPrivacy,
+      videoLength: selectedVideoLength === 'custom' ? customVideoLength : selectedVideoLength,
+      tones: selectedTones,
+      ...(selectedDeliveryType === 'series' ? { episodes: numberOfEpisodes, schedule: selectedReleaseSchedule, customDates: customSeriesDates } : {}),
+      ...(selectedDeliveryType === 'recurrent' ? { frequency: selectedFrequency, customDates: customRecurrentDates } : {}),
+      ...(selectedDeliveryType === 'catalogue' ? { targetVideos, themes } : {}),
+      selectedCreator: (selectedCreator && selectedCreator.id && selectedCreator.id !== '@anycreators') ? selectedCreator.id : null,
+      targetCategory: String(targetCategory || '').trim() || null,
+      targeting: getRequestTargeting(),
+      flow,
+      nextStep: pendingSubmission?.nextStep || 1,
+      amount: totalCharge,
+      baseAmount: effectiveBaseAmount,
+      currency: 'usd',
+      role: paymentRole,
+      privacyCost: Number(privacyCost || 0)
+    };
+
+    setProcessingIdeaPayment(true);
+    setIdeaPaymentError('');
+
+    try {
+      const requestPayload = (() => {
+        let requester = { id: 'anonymous', name: 'Anonymous User' };
+        try {
+          const u = JSON.parse(localStorage.getItem('regaarder_user') || '{}');
+          if (u && u.id) {
+            requester = {
+              id: u.id,
+              name: u.name || u.email || 'User',
+              ...(u.image ? { image: u.image } : {})
+            };
+          }
+        } catch (e) { }
+
+        return {
+          id: rawPending.id,
+          title: String(rawPending.title || '').trim() || 'Untitled request',
+          description: String(rawPending.description || '').trim() || 'No description provided',
+          creator: requester,
+          createdBy: requester.id,
+          amount: totalCharge,
+          funding: totalCharge,
+          meta: {
+            selectedTones: rawPending.tones || [],
+            selectedVideoLength: rawPending.videoLength || null,
+            selectedPrivacy: rawPending.privacy || null,
+            targetCategory: rawPending.targetCategory,
+            targeting: rawPending.targeting,
+            flow,
+            role: rawPending.role,
+            episodes: episodes,
+            selectedCreator: rawPending.selectedCreator || null
+          }
+        };
+      })();
+
+      const requestRes = await fetch(`${BACKEND}/requests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(requestPayload)
+      });
+
+      const requestJson = await requestRes.json().catch(() => ({}));
+      if (!requestRes.ok || !requestJson?.request?.id) {
+        throw new Error(requestJson.error || 'Unable to prepare request for payment');
+      }
+
+      const syncedRequestId = String(requestJson.request.id);
+      rawPending = {
+        ...rawPending,
+        id: syncedRequestId,
+        requestId: syncedRequestId,
+        backendSynced: true
+      };
+
+      localStorage.setItem('pending_payment_data', JSON.stringify(rawPending));
+
+      const payload = await startPayPalCheckout({
+        endpoint: '/ideas/paypal/create-order',
+        token,
+        body: {
+          requestId: syncedRequestId,
+          flow,
+          episodes,
+          amount: totalCharge,
+          baseAmount: effectiveBaseAmount,
+          returnBaseUrl: getSafeReturnBaseUrl(BACKEND),
+          returnPath: getSafeReturnPath('/ideas')
+        },
+        fallbackError: 'Unable to start ideas payment',
+        backendBaseUrl: BACKEND
+      });
+
+      window.location.href = payload.approveUrl;
+    } catch (err) {
+      setIdeaPaymentError(err.message || 'Unable to start payment. Please try again.');
+      setProcessingIdeaPayment(false);
     }
   };
 
@@ -5953,10 +6252,11 @@ const App = () => {
                     >
                      <span className="shrink-0">$</span>
                      <span className="min-w-0 max-w-full truncate tabular-nums">
-                      {Number((paymentAmount * (paymentRole === 'expert' ? 1.3 : 1)) + privacyCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                     {Number(getIdeasTotalCharge()).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                      </span>
                     </div>
                   </div>
+                  <div className="text-xs text-gray-500 font-semibold">{getIdeasFlowHint()}</div>
                  {paymentRole === 'expert' && (
                     <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-purple-50 to-blue-50 text-purple-700 text-xs font-bold uppercase tracking-wide">
                        <Crown size={12} /> Expert multiplier active (1.3x)
@@ -5970,11 +6270,15 @@ const App = () => {
                     <button
                       key={p}
                       onClick={() => {
-                        setPaymentAmount(p);
+                        if (ideasFlowIsFixed()) return;
+                        const minimum = getIdeasBaseAmount();
+                        const next = Math.max(minimum, p);
+                        setPaymentAmount(next);
                         trackEvent("preset_selected", { preset: p });
                       }}
+                      disabled={ideasFlowIsFixed()}
                       className={`relative group flex flex-col items-center justify-center py-8 px-4 rounded-3xl transition-all duration-300 ${
-                        paymentAmount === p 
+                        Number(getIdeasEffectiveBaseAmount()) === Number(p)
                           ? 'bg-gradient-to-br from-blue-500 to-purple-500 text-white shadow-2xl shadow-blue-500/40 scale-110' 
                           : 'bg-white/40 backdrop-blur-md border border-white/60 hover:shadow-xl hover:shadow-gray-200/50'
                       }`}
@@ -5994,26 +6298,25 @@ const App = () => {
               {/* Custom Amount - Ghost style input */}
                <div className="w-full mb-14">
                   {(() => {
-                    // Calculate minimum based on creator's price or fallback to $15
-                    const creatorMinimum = (selectedCreator && selectedCreator.price && Number(selectedCreator.price) > 0) 
-                      ? Math.max(15, Number(selectedCreator.price)) 
-                      : 15;
+                    const flowMinimum = getIdeasBaseAmount();
+                    const fixedFlow = ideasFlowIsFixed();
                     return (
                       <div className="flex items-center gap-2 border-b-2 border-gray-200 hover:border-gray-300 focus-within:border-blue-500 transition-all">
                         <span className="pl-2 text-gray-400 text-lg font-bold shrink-0">$</span>
                         <input
                           type="number"
-                          min={creatorMinimum}
-                          value={paymentAmount}
+                          min={flowMinimum}
+                          value={fixedFlow ? flowMinimum : getIdeasEffectiveBaseAmount()}
+                          disabled={fixedFlow}
                           onChange={(e) => {
-                            const v = Math.max(creatorMinimum, Number(e.target.value || 0));
+                            const v = Math.max(flowMinimum, Number(e.target.value || 0));
                             setPaymentAmount(v);
                             trackEvent("custom_amount_input", { amount: v });
                           }}
                           className="flex-1 min-w-0 py-4 bg-transparent font-semibold text-gray-900 focus:outline-none transition-all text-lg placeholder-gray-300 text-right tabular-nums"
                           placeholder="Custom amount"
                         />
-                        <div className="pr-2 text-xs text-gray-400 shrink-0">Min ${creatorMinimum}</div>
+                        <div className="pr-2 text-xs text-gray-400 shrink-0">{fixedFlow ? `Fixed $${flowMinimum}` : `Min $${flowMinimum}`}</div>
                       </div>
                     );
                   })()}
@@ -6148,24 +6451,29 @@ const App = () => {
 
               {/* Footer Actions */}
               <div className="w-full mt-auto space-y-4">
-                 <a
-                    href="https://www.paypal.com/ncp/payment/L7D8KYJEZM35L"
+                  <button
+                    type="button"
+                    disabled={processingIdeaPayment}
                     onClick={() => {
-                        const base = paymentAmount;
-                        const withRole = paymentRole === "expert" ? Math.round(base * 1.3 * 100) / 100 : base;
+                      const withRole = getIdeasTotalCharge();
                         trackEvent("payment_confirmed", {
                            amount: withRole,
                            role: paymentRole,
                            creator: selectedCreator ? selectedCreator.id : null,
                         });
+                      startIdeasPayPalCheckout();
                     }}
-                    className="block w-full py-5 rounded-2xl bg-black text-white text-center font-black text-lg hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl hover:shadow-3xl flex items-center justify-center gap-3 relative overflow-hidden group"
+                    className="block w-full py-5 rounded-2xl bg-black text-white text-center font-black text-lg hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl hover:shadow-3xl flex items-center justify-center gap-3 relative overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100"
                  >
                     <div className="absolute inset-0 bg-gradient-to-r from-gray-800 to-black opacity-0 group-hover:opacity-100 transition-opacity" />
                     <span className="relative flex items-center gap-2 tracking-tight">
-                       Pay with PayPal <ArrowRight size={20} />
+                      {processingIdeaPayment ? 'Redirecting to PayPal...' : 'Pay with PayPal'} <ArrowRight size={20} />
                     </span>
-                 </a>
+                  </button>
+
+                  {!!ideaPaymentError && (
+                    <div className="text-sm text-red-600 font-medium text-center">{ideaPaymentError}</div>
+                  )}
 
                  <div className="text-center">
                     <button

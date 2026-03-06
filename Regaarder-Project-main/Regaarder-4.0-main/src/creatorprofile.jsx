@@ -6,6 +6,7 @@ import { getTranslation } from './translations';
 import { WEB_URL, getBackendBaseUrl } from './config';
 import { resolveMediaUrl } from './utils/media.js';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
+import { getSafeReturnBaseUrl, startPayPalCheckout } from './utils/paypalCheckout';
 
 // Utility function to format numbers as 1k, 1m, etc.
 const formatNumber = (num) => {
@@ -2044,7 +2045,8 @@ const SendTipPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
     const quickAmounts = [5, 10, 25, 50, 100];
     const [customAmount, setCustomAmount] = useState('');
     const [selectedAmount, setSelectedAmount] = useState(null);
-    const [showPayPal, setShowPayPal] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [paymentError, setPaymentError] = useState(null);
     const [selectedFormat, setSelectedFormat] = useState('One Time');
     const [showFormatDropdown, setShowFormatDropdown] = useState(false);
     
@@ -2063,12 +2065,46 @@ const SendTipPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
 
     const isActive = !!amountSelected();
 
-    // If showing PayPal, navigate to the payment page
-    if (showPayPal) {
-        // Redirect to PayPal payment page in the same window
-        window.location.href = "https://www.paypal.com/ncp/payment/LABFRAJUV5B9J";
-        return null;
-    }
+    const startTipCheckout = async () => {
+        const amount = Number(amountSelected());
+        if (!Number.isFinite(amount) || amount <= 0) return;
+
+        setIsProcessing(true);
+        setPaymentError(null);
+
+        try {
+            const token = localStorage.getItem('regaarder_token') || localStorage.getItem('authToken');
+            if (!token) {
+                throw new Error(getTranslation('Please sign in to continue', selectedLanguage));
+            }
+
+            const isMonthly = selectedFormat === 'Monthly';
+            const payload = {
+                amount,
+                purchaseType: isMonthly ? 'subscription' : 'ala_carte',
+                chargeMode: isMonthly ? 'monthly' : 'one-time',
+                itemKey: isMonthly ? 'creator_tip_monthly' : 'creator_tip_onetime',
+                itemTitle: isMonthly
+                    ? `Monthly tip for ${profile?.name || 'creator'}`
+                    : `One-time tip for ${profile?.name || 'creator'}`,
+                returnBaseUrl: getSafeReturnBaseUrl(WEB_URL),
+                returnPath: '/sponsorship'
+            };
+
+            const data = await startPayPalCheckout({
+                endpoint: '/sponsorships/paypal/create-order',
+                token,
+                body: payload,
+                fallbackError: getTranslation('Unable to start payment. Please try again.', selectedLanguage),
+                backendBaseUrl: getBackendBaseUrl()
+            });
+
+            window.location.href = data.approveUrl;
+        } catch (error) {
+            setPaymentError(error.message || getTranslation('Payment failed. Please try again.', selectedLanguage));
+            setIsProcessing(false);
+        }
+    };
 
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4">
@@ -2192,16 +2228,23 @@ const SendTipPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
                     {/* Primary CTA */}
                     <div className="sticky bottom-0 pt-3 bg-white border-t border-gray-100">
                         <button
-                            onClick={() => {
-                                const amt = amountSelected();
-                                if (!amt) return;
-                                setShowPayPal(true);
-                            }}
-                            disabled={!isActive}
-                            className={`w-full px-4 py-3 rounded-2xl text-base font-semibold transition-colors focus:outline-none ${isActive ? 'bg-gray-900 text-white hover:bg-gray-800' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
-                            {isActive ? `${getTranslation('Continue', selectedLanguage)} \u2014 $${amountSelected() || '0'} / ${selectedFormat}` : getTranslation('Select an amount', selectedLanguage)}
+                            onClick={startTipCheckout}
+                            disabled={!isActive || isProcessing}
+                            className={`w-full px-4 py-3 rounded-2xl text-base font-semibold transition-colors focus:outline-none ${isActive && !isProcessing ? 'bg-gray-900 text-white hover:bg-gray-800' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                            {isProcessing
+                                ? `${getTranslation('Processing', selectedLanguage)}...`
+                                : (isActive
+                                    ? `${getTranslation('Continue', selectedLanguage)} \u2014 $${amountSelected() || '0'} / ${selectedFormat}`
+                                    : getTranslation('Select an amount', selectedLanguage))}
                         </button>
                     </div>
+
+                    {paymentError && (
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-3">
+                            <Icon name="alert-circle" size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
+                            <p className="text-red-700 text-sm">{paymentError}</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -2494,12 +2537,6 @@ const SponsorPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
     const isMonthlyActive = !!selectedTier || Number(customMonthlyAmount) > 0;
     const selectedPrice = selectedTier ? (tiers.find(t => t.name === selectedTier)?.price || null) : (Number(customMonthlyAmount) > 0 ? customMonthlyAmount : null);
 
-    // Get backend URL dynamically
-    const getBackendUrl = () => {
-        if (window && window.__BACKEND_URL__) return window.__BACKEND_URL__;
-        return 'https://pwin-copy-production.up.railway.app';
-    };
-
     // Process payment and redirect to PayPal
     const processPayment = async (mode, amount) => {
         if (!amount || Number(amount) <= 0) return;
@@ -2507,8 +2544,7 @@ const SponsorPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
         setPaymentError(null);
 
         try {
-            const backendUrl = getBackendUrl();
-            const token = localStorage.getItem('authToken');
+            const token = localStorage.getItem('regaarder_token') || localStorage.getItem('authToken');
 
             if (!token) {
                 setPaymentError(getTranslation('Please log in to continue', selectedLanguage));
@@ -2516,43 +2552,29 @@ const SponsorPopup = ({ isOpen, onClose, profile, isPreview = false, selectedLan
                 return;
             }
 
-            // Initialize payment session with backend
-            const initResponse = await fetch(`${backendUrl}/payment/init`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    amount: Number(amount),
-                    paymentType: 'subscription',
-                    subscriptionTier: selectedTier || 'custom',
-                    paymentMode: mode === 'monthly' ? 'monthly' : 'one-time'
-                })
+            const parsedAmount = Number(amount);
+            const normalizedMode = mode === 'monthly' ? 'monthly' : 'one-time';
+            const payload = {
+                amount: parsedAmount,
+                purchaseType: normalizedMode === 'monthly' ? 'subscription' : 'ala_carte',
+                chargeMode: normalizedMode,
+                itemKey: normalizedMode === 'monthly' ? 'creator_sponsor_monthly' : 'creator_sponsor_onetime',
+                itemTitle: normalizedMode === 'monthly'
+                    ? `Monthly sponsor support for ${profile?.name || 'creator'}`
+                    : `One-time sponsor support for ${profile?.name || 'creator'}`,
+                returnBaseUrl: getSafeReturnBaseUrl(WEB_URL),
+                returnPath: '/sponsorship'
+            };
+
+            const initData = await startPayPalCheckout({
+                endpoint: '/sponsorships/paypal/create-order',
+                token,
+                body: payload,
+                fallbackError: getTranslation('Failed to initialize payment session', selectedLanguage),
+                backendBaseUrl: getBackendBaseUrl()
             });
 
-            if (!initResponse.ok) {
-                throw new Error('Failed to initialize payment session');
-            }
-
-            const initData = await initResponse.json();
-            const sessionId = initData.sessionId;
-
-            // Store payment session data in localStorage for callback handling
-            localStorage.setItem('pending_payment_session', JSON.stringify({
-                sessionId,
-                amount: Number(amount),
-                tier: selectedTier || 'custom',
-                mode: mode === 'monthly' ? 'monthly' : 'one-time',
-                timestamp: Date.now()
-            }));
-
-            console.log('✅ Payment session initialized:', sessionId);
-
-            // Redirect to PayPal payment page
-            // In production, this would be dynamic based on actual PayPal setup
-            // For now, this is the static PayPal payment link
-            window.location.href = "https://www.paypal.com/ncp/payment/XWKNU42XM5ZPQ";
+            window.location.href = initData.approveUrl;
         } catch (error) {
             console.error('Payment initialization error:', error);
             setPaymentError(error.message || getTranslation('Payment failed. Please try again.', selectedLanguage));
