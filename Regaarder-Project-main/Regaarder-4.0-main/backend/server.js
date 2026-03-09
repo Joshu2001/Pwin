@@ -568,6 +568,18 @@ const toPublicUser = (user) => {
   return rest;
 };
 
+// Convert DB date values to ISO strings (pg may return Date objects or non-standard objects)
+const toISODate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return new Date(val).toISOString();
+  // pg sometimes returns date objects that aren't instanceof Date
+  if (typeof val.toISOString === 'function') return val.toISOString();
+  if (typeof val.toString === 'function' && val.toString() !== '[object Object]') return val.toString();
+  return null;
+};
+
 const mapUserRow = (row) => {
   if (!row) return null;
   const meta = (row.meta && typeof row.meta === 'object') ? row.meta : {};
@@ -581,8 +593,8 @@ const mapUserRow = (row) => {
     referral_code: row.referral_code,
     referrer_id: row.referrer_id,
     referral_count: row.referral_count,
-    created_at: row.created_at,
-    password_changed_at: row.password_changed_at,
+    created_at: toISODate(row.created_at),
+    password_changed_at: toISODate(row.password_changed_at),
     handle: row.handle,
     tag: row.tag,
     bio: row.bio,
@@ -590,7 +602,7 @@ const mapUserRow = (row) => {
     image: row.image,
     social: row.social,
     is_creator: row.is_creator,
-    creator_since: row.creator_since,
+    creator_since: toISODate(row.creator_since),
     introVideo: row.intro_video,
     document: row.document,
     price: row.price,
@@ -599,19 +611,19 @@ const mapUserRow = (row) => {
     categories: row.categories,
     userPlan: row.user_plan,
     creatorPlan: row.creator_plan,
-    creatorPlanUpgradedAt: row.creator_plan_upgraded_at,
+    creatorPlanUpgradedAt: toISODate(row.creator_plan_upgraded_at),
     streak: row.streak,
-    lastStreakDate: row.last_streak_date,
+    lastStreakDate: toISODate(row.last_streak_date),
     meta: row.meta,
     // camelCase aliases (legacy JSON convention – many endpoints rely on these)
     passwordHash: row.password_hash,
     referralCode: row.referral_code,
     referrerId: row.referrer_id,
     referralCount: row.referral_count,
-    createdAt: row.created_at,
-    passwordChangedAt: row.password_changed_at,
+    createdAt: toISODate(row.created_at),
+    passwordChangedAt: toISODate(row.password_changed_at),
     isCreator: row.is_creator,
-    creatorSince: row.creator_since,
+    creatorSince: toISODate(row.creator_since),
     intro_video: row.intro_video,
     // Moderation fields (persisted in meta JSONB)
     status: meta.status || null,
