@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Search, Users, Clock, Trash, Trash2, Ban, Crown, Gift, Megaphone, Filter, Plus, Copy, Home, Image as ImageIcon, AlertCircle, Maximize2, CheckCircle, AlertTriangle, Star, DollarSign } from 'lucide-react';
 import SupportTicketPanel from './SupportTicketPanel.jsx';
 
@@ -348,6 +349,7 @@ function BottomAdPreviewBar({ profileName, profileAvatar, textItems, textInterva
 }
 
 export default function StaffDashboard() {
+  const navigate = useNavigate();
   const [staffSession, setStaffSession] = useState(null);
   const [staffNotifications, setStaffNotifications] = useState([]);
   const [supportTickets, setSupportTickets] = useState([]);
@@ -11234,7 +11236,16 @@ export default function StaffDashboard() {
       minHeight: '70px'
     }}>
       <button
-        onClick={() => window.location.href = '/'}
+        onClick={() => {
+          try {
+            if (typeof window !== 'undefined') {
+              window.currentFooterTab = 'home';
+            }
+            navigate('/home', { replace: true });
+          } catch {
+            window.location.href = '/home';
+          }
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
