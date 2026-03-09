@@ -457,6 +457,15 @@ async function cleanupTestUsers() {
   }
 }
 
+const isBogusTestUser = (u) => {
+  const testPattern = /(@example\.com|img\s*fix|img\s*test|imgfix|imgtest)/i;
+  const email = String(u?.email || '');
+  const name = String(u?.name || '');
+  const handle = String(u?.handle || '');
+  const tag = String(u?.tag || '');
+  return testPattern.test(email) || testPattern.test(name) || testPattern.test(handle) || testPattern.test(tag);
+};
+
 const resolveUserIdentifier = (value) => String(value || '').trim().toLowerCase();
 
 const findUserIndexByIdentifier = (users, identifier) => {
@@ -7805,14 +7814,17 @@ app.get('/staff/users', (req, res) => {
     }
     if (DB_ENABLED) {
       return dbQuery('SELECT * FROM users ORDER BY created_at DESC')
-        .then(({ rows }) => res.json({ users: rows.map(mapUserRow) }))
+        .then(({ rows }) => {
+          const users = rows.map(mapUserRow).filter((u) => !isBogusTestUser(u));
+          return res.json({ users });
+        })
         .catch((err) => {
           console.error('Get users db error:', err);
           return res.status(500).json({ error: 'Server error' });
         });
     }
 
-    const users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')).filter((u) => !isBogusTestUser(u));
     return res.json({ users });
   } catch (err) {
     console.error('Get users error:', err);
@@ -8469,10 +8481,12 @@ app.post('/staff/user-action/:userId', async (req, res) => {
 
     const staff = readStaff();
     const actor = (staff.employees || []).find((e) => String(e.id) === String(employeeId));
-    const canModerateUsers = !!actor && actor.status !== 'blocked' && (
-      parseInt(employeeId) === 1000 ||
-      !!actor.approvalAuthority ||
-      !!(actor.permissions && actor.permissions.users)
+    const isAdmin1000 = parseInt(employeeId) === 1000;
+    const canModerateUsers = isAdmin1000 || (
+      !!actor && actor.status !== 'blocked' && (
+        !!actor.approvalAuthority ||
+        !!(actor.permissions && actor.permissions.users)
+      )
     );
     if (!canModerateUsers) {
       return res.status(403).json({ error: 'Unauthorized' });
