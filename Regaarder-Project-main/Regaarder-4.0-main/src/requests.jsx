@@ -2020,8 +2020,10 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                 claimedAt: body.claimedAt || new Date().toISOString()
             };
 
-            // Persist locally so dashboard picks it up on navigation
-            const existingClaimsStr = localStorage.getItem('claimedRequests');
+            // Persist locally (user-scoped) so dashboard picks it up on navigation.
+            const claimOwnerId = String(body?.claimedBy?.id || auth?.user?.id || 'anon');
+            const claimedCacheKey = `claimedRequests:${claimOwnerId}`;
+            const existingClaimsStr = localStorage.getItem(claimedCacheKey);
             let existingClaims = [];
             try {
                 existingClaims = existingClaimsStr ? JSON.parse(existingClaimsStr) : [];
@@ -2032,12 +2034,12 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
             const exists = existingClaims.some(c => c.id === claimData.id);
             if (!exists) {
                 existingClaims.push(claimData);
-                localStorage.setItem('claimedRequests', JSON.stringify(existingClaims));
+                localStorage.setItem(claimedCacheKey, JSON.stringify(existingClaims));
             } else {
                 // if exists, update it
                 const idx = existingClaims.findIndex(c => c.id === claimData.id);
                 if (idx !== -1) existingClaims[idx] = claimData;
-                localStorage.setItem('claimedRequests', JSON.stringify(existingClaims));
+                localStorage.setItem(claimedCacheKey, JSON.stringify(existingClaims));
             }
 
             window.dispatchEvent(new CustomEvent('request:claimed', {
@@ -2796,7 +2798,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                         {/* Action Icons Group (Edit, Bookmark, Lightbulb) */}
                         <div className="flex space-x-2" style={{ marginRight: '-28px' }}>
                             {/* Edit button: only the request creator can edit and only if not claimed */}
-                            {auth.user && request.createdBy && String(auth.user.id) === String(request.createdBy) && !isClaimed && (
+                            {auth.user && (request.createdBy || request.created_by) && String(auth.user.id) === String(request.createdBy || request.created_by) && !isClaimed && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setShowEditModal(true); }}
                                     className="flex items-center justify-center p-2.5 h-9 w-9 rounded-full bg-white hover:bg-gray-100 transition-colors ring-1 ring-gray-200 hover:shadow-md text-gray-600"
@@ -3905,7 +3907,7 @@ export default function RequestsFeed() {
                                                    description: req.description,
                                                    creator: req.creator,
                                                    // Ensure creator is valid object not null
-                                                   createdBy: req.createdBy || (req.creator ? req.creator.id : null),
+                                                   createdBy: req.createdBy || (auth.user && auth.user.id) || (req.creator ? req.creator.id : null),
                                                    meta: req.meta,
                                                    amount: req.amount || req.funding || 0
                                                };
@@ -4106,7 +4108,7 @@ export default function RequestsFeed() {
             }
         })();
         return () => { cancelled = true; };
-    }, [activeFilter, selectedCategory, selectedType, selectedStatus, location.search]); // Re-fetch on URL query change
+    }, [activeFilter, selectedCategory, selectedType, selectedStatus, location.search, auth.user && auth.user.id]); // Re-fetch on URL query and account change
 
     // Listen for local events when a new request is created in Ideas page
     useEffect(() => {

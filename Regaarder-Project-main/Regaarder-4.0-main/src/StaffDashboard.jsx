@@ -27,6 +27,17 @@ const STAFF_BACKEND_FALLBACKS = [
 ];
 
 const REQUEST_AMOUNT_OVERRIDES_KEY = 'staff_request_amount_overrides_v1';
+const WITHDRAWAL_REQUESTS_KEY = 'staff_withdrawal_requests_v1';
+
+const readWithdrawalRequests = () => {
+  try {
+    const raw = localStorage.getItem(WITHDRAWAL_REQUESTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 const readPersistedRequestAmountOverrides = () => {
   try {
@@ -130,6 +141,31 @@ function hexToRgba(hex, alpha = 1) {
   const b = bigint & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+const formatStaffDate = (value) => {
+  if (!value) return 'N/A';
+  let candidate = value;
+  if (typeof candidate === 'string') {
+    const trimmed = candidate.trim();
+    if (!trimmed) return 'N/A';
+    if (/^\d+$/.test(trimmed)) {
+      const num = Number(trimmed);
+      candidate = trimmed.length <= 10 ? num * 1000 : num;
+    } else {
+      candidate = trimmed;
+    }
+  } else if (typeof candidate === 'number') {
+    candidate = candidate < 1e12 ? candidate * 1000 : candidate;
+  }
+  const d = new Date(candidate);
+  if (Number.isNaN(d.getTime())) return 'N/A';
+  return d.toLocaleDateString();
+};
+
+const resolveModerationTargetId = (record) => {
+  if (!record || typeof record !== 'object') return null;
+  return record.id || record.userId || record.email || record.handle || record.tag || null;
+};
 
 // Beautiful Dropdown Component with Icons/Emojis
 function BeautifulDropdown({ value, onChange, options, label }) {
@@ -317,6 +353,7 @@ export default function StaffDashboard() {
   const [supportTickets, setSupportTickets] = useState([]);
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [activeTab, setActiveTab] = useState('videos'); // 'videos', 'requests', 'comments', 'reports', 'users', 'creators', 'shadowDeleted', 'approvals', 'promotions', 'templates', 'ads', 'feedback', 'support', 'myProfile', 'onboarding'
+  const [withdrawalRequests, setWithdrawalRequests] = useState(() => readWithdrawalRequests());
   const [onboardingList, setOnboardingList] = useState([]);
   const [adAssets, setAdAssets] = useState([]);
   const [selectedAdVideo, setSelectedAdVideo] = useState(null);
@@ -881,6 +918,20 @@ export default function StaffDashboard() {
             const data = await requestsRes.json();
             setRequests(data.requests || []);
           }
+
+          // Refresh withdrawal requests if endpoint exists
+          const withdrawalsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/withdrawals?employeeId=${parsed.id}`);
+          if (withdrawalsRes.ok) {
+            const data = await withdrawalsRes.json();
+            const backendWithdrawals = Array.isArray(data.withdrawals) ? data.withdrawals : [];
+            const localWithdrawals = readWithdrawalRequests();
+            const merged = [...backendWithdrawals, ...localWithdrawals].filter((item, index, arr) => {
+              const id = item && item.id ? String(item.id) : null;
+              if (!id) return true;
+              return arr.findIndex((x) => String(x && x.id ? x.id : '')) === index;
+            });
+            setWithdrawalRequests(merged);
+          }
         } catch (e) {
           console.warn('[StaffSync] Periodic sync error', e);
         }
@@ -888,6 +939,26 @@ export default function StaffDashboard() {
 
       return () => clearInterval(syncInterval);
     }
+  }, []);
+
+  useEffect(() => {
+    const sync = () => {
+      setWithdrawalRequests(readWithdrawalRequests());
+    };
+
+    const onStorage = (e) => {
+      if (e.key === WITHDRAWAL_REQUESTS_KEY) sync();
+    };
+
+    const onCustomUpdate = () => sync();
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('withdrawalRequestsUpdated', onCustomUpdate);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('withdrawalRequestsUpdated', onCustomUpdate);
+    };
   }, []);
 
 
@@ -1074,6 +1145,26 @@ export default function StaffDashboard() {
       } else {
         const errorText = await supportRes.text();
         console.error('Support tickets fetch failed:', supportRes.status, errorText);
+      }
+
+      // Load withdrawal requests (with local fallback)
+      try {
+        const withdrawalsRes = await fetch(`${getStaffBackendBaseUrl()}/staff/withdrawals?employeeId=${employee.id}`);
+        if (withdrawalsRes.ok) {
+          const data = await withdrawalsRes.json();
+          const backendWithdrawals = Array.isArray(data.withdrawals) ? data.withdrawals : [];
+          const localWithdrawals = readWithdrawalRequests();
+          const merged = [...backendWithdrawals, ...localWithdrawals].filter((item, index, arr) => {
+            const id = item && item.id ? String(item.id) : null;
+            if (!id) return true;
+            return arr.findIndex((x) => String(x && x.id ? x.id : '')) === index;
+          });
+          setWithdrawalRequests(merged);
+        } else {
+          setWithdrawalRequests(readWithdrawalRequests());
+        }
+      } catch (e) {
+        setWithdrawalRequests(readWithdrawalRequests());
       }
 
       // Load onboarding info
@@ -1337,7 +1428,7 @@ export default function StaffDashboard() {
 
     try {
       const res = await fetch(`${getStaffBackendBaseUrl()}/staff/delete-video/${videoId}`, {
-        method: 'POST',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId: staffSession.id,
@@ -1346,8 +1437,8 @@ export default function StaffDashboard() {
       });
 
       if (res.ok) {
-        // Keep video in list but mark it as deleted for undo display
-        setVideos(videos.map(v => v.id === videoId ? { ...v, deleted: true, deletedReason: reason, deletedBy: staffSession.id, deletedAt: new Date().toISOString() } : v));
+        // Hard-delete UX: remove item after backend confirms deletion.
+        setVideos(prev => prev.filter(v => String(v.id) !== String(videoId)));
         setReasonModal({ isOpen: false, action: null, itemId: null, itemType: null, reason: '' });
         setError('');
         setToast({ type: 'success', message: 'Video deleted' });
@@ -1412,8 +1503,8 @@ export default function StaffDashboard() {
       });
 
       if (res.ok) {
-        // Keep request in list but mark it as deleted for undo display
-        setRequests(requests.map(r => r.id === requestId ? { ...r, deleted: true, deletedReason: reason, deletedBy: staffSession.id, deletedAt: new Date().toISOString() } : r));
+        // Hard-delete UX: remove item after backend confirms deletion.
+        setRequests(prev => prev.filter(r => String(r.id) !== String(requestId)));
         setReasonModal({ isOpen: false, action: null, itemId: null, itemType: null, reason: '' });
         setError('');
         setToast({ type: 'success', message: 'Request deleted' });
@@ -1803,6 +1894,13 @@ export default function StaffDashboard() {
   };
 
   const handleUserAction = async (action) => {
+    const targetId = userActionModal.userId;
+    if (!targetId) {
+      setError('Unable to resolve target user');
+      setToast({ type: 'error', message: 'Unable to resolve target user' });
+      return;
+    }
+
     const reason = reasonModal.reason.trim();
     if (!reason) {
       setError('Please enter a reason');
@@ -1821,11 +1919,11 @@ export default function StaffDashboard() {
       };
       
       console.log('Sending user action request:', {
-        url: `${getStaffBackendBaseUrl()}/staff/user-action/${userActionModal.userId}`,
+        url: `${getStaffBackendBaseUrl()}/staff/user-action/${targetId}`,
         payload
       });
 
-      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/user-action/${userActionModal.userId}`, {
+      const res = await fetch(`${getStaffBackendBaseUrl()}/staff/user-action/${targetId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1840,7 +1938,7 @@ export default function StaffDashboard() {
         // Show immediate feedback card
         setUserActionFeedback({
           isVisible: true,
-          userId: userActionModal.userId,
+          userId: targetId,
           userName: actionedUser.name,
           action: action,
           reason: reason,
@@ -1864,10 +1962,11 @@ export default function StaffDashboard() {
           setUserActionFeedback({ isVisible: false, userId: null, userName: null, action: null, reason: null, timestamp: null });
         }, 8000);
       } else {
-        const errorData = await res.json();
+        const errorData = await res.json().catch(() => ({}));
+        const message = errorData?.error || errorData?.details || 'Failed to apply user action';
         console.error('User action error response:', errorData);
-        setError('Failed to apply user action');
-        setToast({ type: 'error', message: 'Failed to apply user action' });
+        setError(message);
+        setToast({ type: 'error', message });
       }
     } catch (err) {
       console.error('User action failed:', err);
@@ -2277,6 +2376,7 @@ export default function StaffDashboard() {
             {activeTab === 'creators' && `Creators (${creators.length})`}
             {activeTab === 'shadowDeleted' && `Shadow Deleted (${shadowDeleted.length})`}
             {activeTab === 'approvals' && `Account Approvals (${pendingAccounts.length})`}
+            {activeTab === 'withdrawals' && `Withdrawals (${withdrawalRequests.length})`}
           </span>
           <ChevronDown 
             size={20} 
@@ -2428,6 +2528,29 @@ export default function StaffDashboard() {
               onMouseLeave={(e) => e.target.style.backgroundColor = activeTab === 'creators' ? '#eff6ff' : (!hasPermission('creators') ? '#fef2f2' : 'white')}
             >
               {!hasPermission('creators') && '🚫 '}Creators ({creators.length})
+            </button>
+            <button
+              onClick={() => navigateToTab('withdrawals', 'requests', 'Withdrawals')}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                textAlign: 'left',
+                backgroundColor: activeTab === 'withdrawals' ? '#eff6ff' : 'white',
+                color: activeTab === 'withdrawals' ? '#1e40af' : '#374151',
+                border: 'none',
+                borderBottom: '1px solid #e5e7eb',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: activeTab === 'withdrawals' ? 'bold' : 'normal',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#f0f9ff'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = activeTab === 'withdrawals' ? '#eff6ff' : 'white'}
+            >
+              <DollarSign size={16} /> Withdrawals ({withdrawalRequests.length})
             </button>
             <button
               onClick={() => navigateToTab('feedback', 'reports')}
@@ -4045,7 +4168,7 @@ export default function StaffDashboard() {
                               {/* Joined Date in Collapsed Header */}
                               {isCollapsed && (
                                 <p style={{ margin: '6px 0 0 0', color: '#666', fontSize: '12px' }}>
-                                  Joined {new Date(user.createdAt).toLocaleDateString()}
+                                  Joined {formatStaffDate(user.createdAt || user.created_at)}
                                 </p>
                               )}
                             </div>
@@ -4120,8 +4243,10 @@ export default function StaffDashboard() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setUserActionModal({ isOpen: true, userId: user.id, action: null });
-                                    setReasonModal({ isOpen: true, action: 'user', itemId: null, itemType: null, reason: '' });
+                                    setUserActionModal({ isOpen: true, userId: resolveModerationTargetId(user), action: null });
+                                    setSelectedActionType(null);
+                                    setReasonModal({ isOpen: false, action: 'user', itemId: null, itemType: null, reason: '' });
+                                    setError('');
                                   }}
                                   style={{
                                     padding: '8px 16px',
@@ -4169,14 +4294,14 @@ export default function StaffDashboard() {
                                 <div style={{ padding: '10px', backgroundColor: 'rgba(59, 130, 246, 0.05)', borderRadius: '6px' }}>
                                   <span style={{ color: '#999', fontSize: '11px', fontWeight: '600' }}>JOINED</span>
                                   <p style={{ margin: '4px 0 0', color: '#666', fontSize: '13px' }}>
-                                    {new Date(user.createdAt).toLocaleDateString()}
+                                    {formatStaffDate(user.createdAt || user.created_at)}
                                   </p>
                                 </div>
                                 {user.isCreator && (
                                   <div style={{ padding: '10px', backgroundColor: 'rgba(245, 158, 11, 0.05)', borderRadius: '6px' }}>
                                     <span style={{ color: '#999', fontSize: '11px', fontWeight: '600' }}>CREATOR SINCE</span>
                                     <p style={{ margin: '4px 0 0', color: '#666', fontSize: '13px' }}>
-                                      {new Date(user.creatorSince).toLocaleDateString()}
+                                      {formatStaffDate(user.creatorSince || user.creator_since)}
                                     </p>
                                   </div>
                                 )}
@@ -4565,8 +4690,10 @@ export default function StaffDashboard() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setUserActionModal({ isOpen: true, userId: creator.id, action: null });
-                                  setReasonModal({ isOpen: true, action: 'user', itemId: null, itemType: null, reason: '' });
+                                  setUserActionModal({ isOpen: true, userId: resolveModerationTargetId(creator), action: null });
+                                  setSelectedActionType(null);
+                                  setReasonModal({ isOpen: false, action: 'user', itemId: null, itemType: null, reason: '' });
+                                  setError('');
                                 }}
                                 style={{
                                   padding: '8px 16px',
@@ -4620,7 +4747,7 @@ export default function StaffDashboard() {
                               <div style={{ padding: '10px', backgroundColor: 'rgba(245, 158, 11, 0.05)', borderRadius: '6px' }}>
                                 <span style={{ color: '#999', fontSize: '11px', fontWeight: '600' }}>CREATOR SINCE</span>
                                 <p style={{ margin: '4px 0 0', color: '#666', fontSize: '13px' }}>
-                                  {new Date(creator.creatorSince).toLocaleDateString()}
+                                  {formatStaffDate(creator.creatorSince || creator.creator_since || creator.createdAt || creator.created_at)}
                                 </p>
                               </div>
                               <div style={{ padding: '10px', backgroundColor: 'rgba(245, 158, 11, 0.05)', borderRadius: '6px' }}>
@@ -4955,7 +5082,7 @@ export default function StaffDashboard() {
                               <div style={{ padding: '10px', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderRadius: '6px' }}>
                                 <span style={{ color: '#999', fontSize: '11px', fontWeight: '600' }}>REPORT DATE</span>
                                 <p style={{ margin: '4px 0 0', color: '#666', fontSize: '13px' }}>
-                                  {new Date(report.createdAt).toLocaleDateString()}
+                                  {formatStaffDate(report.createdAt)}
                                 </p>
                               </div>
                               {reportedVideo && (
@@ -7051,6 +7178,74 @@ export default function StaffDashboard() {
             </div>
           )}
 
+          {activeTab === 'withdrawals' && (
+            <div style={{ padding: '0 0 40px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+                <div>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <DollarSign style={{ color: '#16a34a' }} /> Creator Withdrawal Requests
+                  </h2>
+                  <p style={{ color: '#6b7280', marginTop: 6 }}>Creators request payout amounts here. New requests appear immediately.</p>
+                </div>
+              </div>
+
+              {withdrawalRequests.length === 0 ? (
+                <div style={{ padding: 56, textAlign: 'center', background: '#f9fafb', borderRadius: 16, border: '1px solid #e5e7eb' }}>
+                  <div style={{ marginBottom: 14, display: 'inline-flex', padding: 16, background: '#dcfce7', borderRadius: '50%' }}>
+                    <DollarSign size={28} color="#16a34a" />
+                  </div>
+                  <h3 style={{ fontSize: 18, fontWeight: 600, color: '#374151', marginBottom: 8 }}>No withdrawal requests yet</h3>
+                  <p style={{ color: '#6b7280' }}>Requests will appear here as soon as creators submit them.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+                  {withdrawalRequests
+                    .slice()
+                    .sort((a, b) => Number(b?.requestedAt || 0) - Number(a?.requestedAt || 0))
+                    .map((item) => {
+                      const amount = Number(item?.amount) || 0;
+                      const status = String(item?.status || 'pending');
+                      const statusLower = status.toLowerCase();
+                      const statusStyle = statusLower === 'approved'
+                        ? { bg: '#dcfce7', color: '#166534' }
+                        : statusLower === 'rejected' || statusLower === 'declined'
+                          ? { bg: '#fee2e2', color: '#991b1b' }
+                          : { bg: '#fef3c7', color: '#92400e' };
+
+                      return (
+                        <div
+                          key={item?.id || `${item?.creatorName || 'creator'}-${item?.requestedAt || Math.random()}`}
+                          style={{
+                            background: '#fff',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: 14,
+                            padding: 16,
+                            boxShadow: '0 2px 10px rgba(0,0,0,0.05)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{item?.creatorName || 'Creator'}</div>
+                            <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: statusStyle.bg, color: statusStyle.color }}>
+                              {status.toUpperCase()}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 13, color: '#4b5563', marginBottom: 6 }}>
+                            {item?.creatorHandle ? `@${item.creatorHandle}` : 'Handle not provided'}
+                          </div>
+                          <div style={{ fontSize: 24, fontWeight: 800, color: '#111827', marginBottom: 8 }}>
+                            ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#6b7280' }}>
+                            Requested: {new Date(Number(item?.requestedAt) || Date.now()).toLocaleString()}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Support Tickets Tab */}
           {activeTab === 'support' && (
             <SupportTicketPanel selectedLanguage={selectedLanguage} />
@@ -7149,7 +7344,7 @@ export default function StaffDashboard() {
                         <div>
                           <label style={{ fontSize: '11px', color: '#6b7280', fontWeight: '600', textTransform: 'uppercase' }}>Onboarded At</label>
                           <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#374151' }}>
-                            {onboarding.completedAt ? new Date(onboarding.completedAt).toLocaleDateString() : 'N/A'}
+                            {formatStaffDate(onboarding.completedAt)}
                           </p>
                         </div>
                         <div>

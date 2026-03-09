@@ -3888,6 +3888,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
         displayedVideos.sort((a, b) => getVideoTimestamp(b) - getVideoTimestamp(a));
     }
 
+    const isHomeEmptyState = displayedVideos.length === 0 && searchTerm.length === 0;
+
     const scrollableHeightStyle = {
         height: 'calc(100vh - 160px)',
     };
@@ -4113,7 +4115,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
             {/* Main scrollable content area */}
             <div className="overflow-y-auto" style={scrollableHeightStyle}>
                 <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} navigate={navigate} onFocusChange={setIsSearchActive} selectedLanguage={selectedLanguage} />
-                <TabPills activeTab={selectedTab} setActiveTab={setSelectedTab} selectedLanguage={selectedLanguage} />
+                <TabPills activeTab={selectedTab} setActiveTab={setSelectedTab} selectedLanguage={selectedLanguage} emptyStateMode={isHomeEmptyState} />
 
                 {/* Conditional Rendering: Videos, 404 (search no results), or empty state */}
                 {displayedVideos.length > 0 ? (
@@ -4333,12 +4335,12 @@ const App = ({ overrideMiniPlayerData = null }) => {
 
                         {/* Empty state heading */}
                         <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-                            No requests yet
+                            {getTranslation('No requests yet', selectedLanguage)}
                         </h2>
 
                         {/* Empty state description */}
                         <p className="text-sm text-gray-600 mb-8 max-w-xs leading-relaxed">
-                            You haven't made any requests. Start by exploring content or searching for your favorite creator.
+                            {getTranslation('Try adjusting your search or filters', selectedLanguage)}
                         </p>
 
                         {/* Action buttons */}
@@ -4351,13 +4353,16 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 }}
                                 onClick={() => {
                                     try {
+                                        if (window.setFooterTab) window.setFooterTab('requests');
                                         navigate('/requests');
                                     } catch (e) {
+                                        try { if (window.setFooterTab) window.setFooterTab('requests'); } catch (_) { }
+                                        try { window.location.href = '/requests'; } catch (_) { }
                                         console.warn('Navigation failed', e);
                                     }
                                 }}
                             >
-                                Explore Requests
+                                {getTranslation('Start Request', selectedLanguage)}
                             </button>
 
                             <button
@@ -4375,7 +4380,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     }, 50);
                                 }}
                             >
-                                Search Creators
+                                {getTranslation('Search creators', selectedLanguage)}
                             </button>
                         </div>
                     </div>
@@ -5623,7 +5628,7 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
     );
 };
 
-const TabPills = ({ activeTab, setActiveTab, selectedLanguage = 'English' }) => {
+const TabPills = ({ activeTab, setActiveTab, selectedLanguage = 'English', emptyStateMode = false }) => {
     // Use parent-controlled tab state when provided, otherwise fall back to internal defaults
     const currentTab = activeTab || 'Recommended';
     const setTab = setActiveTab || (() => { });
@@ -5696,13 +5701,22 @@ const TabPills = ({ activeTab, setActiveTab, selectedLanguage = 'English' }) => 
                 };
 
                 if (isSelected) {
-                    className += " text-black font-bold";
-                    buttonStyle.backgroundColor = 'var(--color-gold)';
-                    buttonStyle.boxShadow = `
-                        0 4px 10px rgba(0, 0, 0, 0.3), 
-                        0 0 10px var(--color-gold-light), 
-                        inset 0 1px 0 rgba(255, 255, 255, 0.6) 
-                    `;
+                    if (emptyStateMode) {
+                        className += " bg-white font-semibold";
+                        buttonStyle.border = '1px solid rgba(124,58,237,0.35)';
+                        buttonStyle.boxShadow = `
+                            0 1px 4px rgba(124,58,237,0.12),
+                            inset 0 1px 0 #ffffff
+                        `;
+                    } else {
+                        className += " text-black font-bold";
+                        buttonStyle.backgroundColor = 'var(--color-gold)';
+                        buttonStyle.boxShadow = `
+                            0 4px 10px rgba(0, 0, 0, 0.3), 
+                            0 0 10px var(--color-gold-light), 
+                            inset 0 1px 0 rgba(255, 255, 255, 0.6) 
+                        `;
+                    }
                 } else {
                     className += " bg-white text-gray-600 font-medium shadow-sm shadow-gray-200 hover:bg-gray-50";
                     buttonStyle.boxShadow = `
@@ -5723,10 +5737,12 @@ const TabPills = ({ activeTab, setActiveTab, selectedLanguage = 'English' }) => 
                                 name={tab.icon}
                                 size={16}
                                 className="mr-2"
-                                style={{ color: isSelected ? 'black' : '#71717A' }}
+                                style={{ color: isSelected ? (emptyStateMode ? 'var(--color-final, #7C3AED)' : 'black') : '#71717A' }}
                             />
                         )}
-                        {getTranslation(tab.name, selectedLanguage)}
+                        <span style={isSelected && emptyStateMode ? { color: 'var(--color-final, #7C3AED)' } : undefined}>
+                            {getTranslation(tab.name, selectedLanguage)}
+                        </span>
                     </button>
                 );
             })}

@@ -329,10 +329,95 @@ const loadStaffStateFromDb = async () => {
   }
 };
 
+// Cleanup test/dummy users on startup
+async function cleanupTestUsers() {
+  try {
+    if (DB_ENABLED) {
+      // Remove users whose email matches test patterns
+      const { rows: testUsers } = await dbQuery(
+        `SELECT id, email, name FROM users
+         WHERE LOWER(COALESCE(email, '')) LIKE '%@example.com%'
+            OR LOWER(COALESCE(name, '')) LIKE '%img fix%'
+            OR LOWER(COALESCE(name, '')) LIKE '%img test%'
+            OR LOWER(COALESCE(name, '')) LIKE '%imgfix%'
+            OR LOWER(COALESCE(name, '')) LIKE '%imgtest%'
+            OR LOWER(COALESCE(email, '')) LIKE '%imgfix%'
+            OR LOWER(COALESCE(email, '')) LIKE '%imgtest%'
+            OR LOWER(COALESCE(handle, '')) LIKE '%imgfix%'
+            OR LOWER(COALESCE(handle, '')) LIKE '%imgtest%'
+            OR LOWER(COALESCE(tag, '')) LIKE '%imgfix%'
+            OR LOWER(COALESCE(tag, '')) LIKE '%imgtest%'`
+      );
+      if (testUsers.length > 0) {
+        const ids = testUsers.map(u => u.id);
+        console.log(`[cleanup] Removing ${testUsers.length} test user(s):`, testUsers.map(u => `${u.name} <${u.email}>`));
+        // Delete from users table
+        await dbQuery(`DELETE FROM users WHERE id = ANY($1::text[])`, [ids]);
+        // Delete their notifications
+        await dbQuery(`DELETE FROM notifications WHERE to_id = ANY($1::text[]) OR from_id = ANY($1::text[])`, [ids]);
+        // Delete their support tickets
+        await dbQuery(`DELETE FROM support_tickets WHERE user_id = ANY($1::text[])`, [ids]);
+        // Refresh cache
+        await refreshUserCache();
+        console.log('[cleanup] Test users removed successfully');
+      }
+    } else {
+      // File-based: remove from users.json
+      const users = readUsers();
+      const testPattern = /(@example\.com|img\s*fix|img\s*test|imgfix|imgtest)/i;
+      const cleaned = users.filter(u => {
+        const email = String(u.email || '');
+        const name = String(u.name || '');
+        const handle = String(u.handle || '');
+        const tag = String(u.tag || '');
+        return !testPattern.test(email) && !testPattern.test(name) && !testPattern.test(handle) && !testPattern.test(tag);
+      });
+      if (cleaned.length < users.length) {
+        console.log(`[cleanup] Removing ${users.length - cleaned.length} test user(s)`);
+        writeUsers(cleaned);
+      }
+    }
+    // Clean staff reports/support tickets that reference test data
+    const staff = readStaff();
+    let staffDirty = false;
+    if (Array.isArray(staff.reports)) {
+      const before = staff.reports.length;
+      staff.reports = staff.reports.filter(r => {
+        const email = String(r?.reportedBy || r?.email || '').toLowerCase();
+        return !/@example\.com$/.test(email) && !/^imgfix/.test(email) && !/^imgtest/.test(email);
+      });
+      if (staff.reports.length < before) staffDirty = true;
+    }
+    if (staffDirty) {
+      writeStaff(staff);
+      console.log('[cleanup] Cleaned staff reports referencing test data');
+    }
+  } catch (err) {
+    console.error('[cleanup] Error cleaning test users:', err);
+  }
+}
+
+const resolveUserIdentifier = (value) => String(value || '').trim().toLowerCase();
+
+const findUserIndexByIdentifier = (users, identifier) => {
+  const needleRaw = String(identifier || '').trim();
+  const needle = resolveUserIdentifier(identifier);
+  if (!needleRaw || !needle) return -1;
+
+  return users.findIndex((u) => {
+    const id = String(u?.id || '').trim();
+    const email = resolveUserIdentifier(u?.email);
+    const name = resolveUserIdentifier(u?.name);
+    const handle = resolveUserIdentifier(u?.handle || u?.tag);
+    return id === needleRaw || email === needle || name === needle || handle === needle;
+  });
+};
+
 initDb()
   .then(() => refreshUserCache())
   .then(() => refreshRequestCache())
   .then(() => loadStaffStateFromDb())
+  .then(() => cleanupTestUsers())
   .catch((err) => {
     console.error('Database init error', err);
   });
@@ -485,6 +570,7 @@ const toPublicUser = (user) => {
 
 const mapUserRow = (row) => {
   if (!row) return null;
+  const meta = (row.meta && typeof row.meta === 'object') ? row.meta : {};
   return {
     id: row.id,
     email: row.email,
@@ -526,7 +612,18 @@ const mapUserRow = (row) => {
     passwordChangedAt: row.password_changed_at,
     isCreator: row.is_creator,
     creatorSince: row.creator_since,
-    intro_video: row.intro_video
+    intro_video: row.intro_video,
+    // Moderation fields (persisted in meta JSONB)
+    status: meta.status || null,
+    shadowBanned: meta.shadowBanned || false,
+    shadowBannedAt: meta.shadowBannedAt || null,
+    shadowBanReason: meta.shadowBanReason || null,
+    bannedAt: meta.bannedAt || null,
+    bannedReason: meta.bannedReason || null,
+    banType: meta.banType || null,
+    bannedUntil: meta.bannedUntil || null,
+    warnings: meta.warnings || 0,
+    lastWarning: meta.lastWarning || null
   };
 };
 
@@ -764,6 +861,28 @@ async function refreshUserCache() {
  * an array of DB column values, in the exact order the upsert SQL expects.
  */
 function userToDbParams(u) {
+  // Merge moderation fields into meta JSONB for DB persistence
+  const baseMeta = (u.meta && typeof u.meta === 'object') ? { ...u.meta } : {};
+  if (u.status) baseMeta.status = u.status;
+  else delete baseMeta.status;
+  baseMeta.shadowBanned = u.shadowBanned || false;
+  if (u.shadowBannedAt) baseMeta.shadowBannedAt = u.shadowBannedAt;
+  else delete baseMeta.shadowBannedAt;
+  if (u.shadowBanReason) baseMeta.shadowBanReason = u.shadowBanReason;
+  else delete baseMeta.shadowBanReason;
+  if (u.bannedAt) baseMeta.bannedAt = u.bannedAt;
+  else delete baseMeta.bannedAt;
+  if (u.bannedReason) baseMeta.bannedReason = u.bannedReason;
+  else delete baseMeta.bannedReason;
+  if (u.banType) baseMeta.banType = u.banType;
+  else delete baseMeta.banType;
+  if (u.bannedUntil) baseMeta.bannedUntil = u.bannedUntil;
+  else delete baseMeta.bannedUntil;
+  baseMeta.warnings = u.warnings || 0;
+  if (u.lastWarning) baseMeta.lastWarning = u.lastWarning;
+  else delete baseMeta.lastWarning;
+  const metaJson = Object.keys(baseMeta).length ? JSON.stringify(baseMeta) : null;
+
   return [
     u.id,
     u.email,
@@ -794,7 +913,7 @@ function userToDbParams(u) {
     u.creatorPlanUpgradedAt || u.creator_plan_upgraded_at || null,
     u.streak != null ? Number(u.streak) : null,
     u.lastStreakDate || u.last_streak_date || null,
-    u.meta ? (typeof u.meta === 'string' ? u.meta : JSON.stringify(u.meta)) : null
+    metaJson
   ];
 }
 
@@ -3539,7 +3658,7 @@ const buildSuggestionSortTimestamp = (s) => {
         arr = arr.filter(s => {
             if (String(s.id) !== String(id)) return true;
             // Check ownership
-            const isMine = (s.to && s.to.id === req.user.id) || (s.from && s.from.id === req.user.id);
+            const isMine = (s.to && String(s.to.id) === String(req.user.id)) || (s.from && String(s.from.id) === String(req.user.id));
             return !isMine; // Keep if not mine (i.e. remove if mine)
         });
         
@@ -4608,8 +4727,21 @@ app.delete('/requests/:id/comments/:cid', authMiddleware, async (req, res) => {
 // Get requests created by the logged-in user
 app.get('/requests/my', authMiddleware, async (req, res) => {
   try {
+    const includeClaimed = String(req.query.includeClaimed || '').toLowerCase() === '1' || String(req.query.includeClaimed || '').toLowerCase() === 'true';
+    const uid = String(req.user.id);
+
     if (DB_ENABLED) {
-      const { rows } = await dbQuery('SELECT * FROM requests WHERE created_by = $1 ORDER BY created_at DESC', [req.user.id]);
+      const sql = includeClaimed
+        ? `SELECT *
+           FROM requests
+           WHERE created_by = $1
+              OR (claimed_by ->> 'id') = $1
+           ORDER BY created_at DESC`
+        : `SELECT *
+           FROM requests
+           WHERE created_by = $1
+           ORDER BY created_at DESC`;
+      const { rows } = await dbQuery(sql, [uid]);
       const mapped = rows.map((row) => applyRequestAmountPresentation({
         id: row.id,
         title: row.title,
@@ -4641,7 +4773,14 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
 
     const allRequests = readRequests();
     const userRequests = allRequests
-      .filter(r => r.createdBy === req.user.id)
+      .filter((r) => {
+        const createdBy = r.createdBy || r.created_by;
+        const claimedById = r.claimedBy?.id || r.claimed_by?.id;
+        if (includeClaimed) {
+          return String(createdBy || '') === uid || String(claimedById || '') === uid;
+        }
+        return String(createdBy || '') === uid;
+      })
       .map((request) => applyRequestAmountPresentation(request));
     return res.json({ requests: userRequests });
   } catch (err) {
@@ -4927,7 +5066,7 @@ app.post('/requests/public', (req, res) => {
       companyColor: body.companyColor || 'bg-gray-400',
       imageUrl: body.imageUrl || '',
       creator: creator,
-      createdBy: creator.id || null, // Important: try to preserve the user ID if sent
+      createdBy: body.createdBy || creator.id || null,
       createdAt: new Date().toISOString(),
       meta: metaPayload
     };
@@ -4958,8 +5097,9 @@ app.put('/requests/:id', authMiddleware, (req, res) => {
     if (idx === -1) return res.status(404).json({ error: 'Request not found' });
 
     const existing = requests[idx];
-    // Only the creating user may edit
-    if (!existing.createdBy || existing.createdBy !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    // Only the creating user may edit.
+    const requestOwnerId = existing.createdBy || existing.created_by || null;
+    if (!requestOwnerId || String(requestOwnerId) !== String(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
     // Do not allow edits once claimed
     if (existing.claimed) return res.status(400).json({ error: 'Cannot edit a claimed request' });
 
@@ -4985,8 +5125,9 @@ app.delete('/requests/:id', authMiddleware, (req, res) => {
     if (idx === -1) return res.status(404).json({ error: 'Request not found' });
 
     const existing = requests[idx];
-    // Only the creating user may delete
-    if (!existing.createdBy || existing.createdBy !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    // Only the creating user may delete.
+    const requestOwnerId = existing.createdBy || existing.created_by || null;
+    if (!requestOwnerId || String(requestOwnerId) !== String(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
     
     // Constraint: Cannot delete if claimed/in-progress
     // We check both specific 'claimed' flag and if there is a 'creator' object that is not the requester themselves (which shouldn't happen for claimed requests usually, but just in case)
@@ -7938,6 +8079,8 @@ app.delete('/staff/delete-request/:requestId', (req, res) => {
         .then(({ rowCount }) => {
           if (!rowCount) return res.status(404).json({ error: 'Request not found' });
 
+          refreshRequestCache().catch(() => {});
+
           const staff = readStaff();
           if (!staff.deletionLog) staff.deletionLog = [];
           staff.deletionLog.push({
@@ -8196,17 +8339,33 @@ app.put('/staff/videos/:videoId', async (req, res) => {
 // Apply user action (warn, ban, shadow ban, delete) - admin only
 app.post('/staff/user-action/:userId', async (req, res) => {
   try {
-    const { employeeId, action, reason } = req.body;
+    const { employeeId, action, reason, banType, banDuration } = req.body;
     const userId = req.params.userId;
 
     console.log(`User action request: userId=${userId}, action=${action}, employeeId=${employeeId}`);
 
-    if (parseInt(employeeId) !== 1000) {
+    const staff = readStaff();
+    const actor = (staff.employees || []).find((e) => String(e.id) === String(employeeId));
+    const canModerateUsers = !!actor && actor.status !== 'blocked' && (
+      parseInt(employeeId) === 1000 ||
+      !!actor.approvalAuthority ||
+      !!(actor.permissions && actor.permissions.users)
+    );
+    if (!canModerateUsers) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    const userIndex = users.findIndex(u => u.id === userId);
+    if (DB_ENABLED) {
+      await refreshUserCache();
+    }
+    let users = readUsers();
+    let userIndex = findUserIndexByIdentifier(users, userId);
+
+    if (userIndex === -1 && DB_ENABLED) {
+      await refreshUserCache();
+      users = readUsers();
+      userIndex = findUserIndexByIdentifier(users, userId);
+    }
 
     if (userIndex === -1) {
       console.log(`User not found: ${userId}`);
@@ -8216,7 +8375,7 @@ app.post('/staff/user-action/:userId', async (req, res) => {
     const user = users[userIndex];
 
     // Apply action based on type
-    switch(action) {
+    switch (action) {
       case 'warn':
         user.warnings = (user.warnings || 0) + 1;
         user.lastWarning = new Date().toISOString();
@@ -8225,6 +8384,19 @@ app.post('/staff/user-action/:userId', async (req, res) => {
         user.status = 'banned';
         user.bannedAt = new Date().toISOString();
         user.bannedReason = reason;
+        user.banType = banType || 'permanent';
+        if (banType === 'temporary' && banDuration && Number(banDuration.value) > 0) {
+          const next = new Date();
+          const value = Number(banDuration.value);
+          const unit = String(banDuration.unit || 'days').toLowerCase();
+          if (unit === 'hours') next.setHours(next.getHours() + value);
+          else if (unit === 'weeks') next.setDate(next.getDate() + (value * 7));
+          else if (unit === 'months') next.setMonth(next.getMonth() + value);
+          else next.setDate(next.getDate() + value);
+          user.bannedUntil = next.toISOString();
+        } else {
+          user.bannedUntil = null;
+        }
         break;
       case 'shadowban':
         user.shadowBanned = true;
@@ -8232,23 +8404,35 @@ app.post('/staff/user-action/:userId', async (req, res) => {
         user.shadowBanReason = reason;
         break;
       case 'delete':
-        // Mark for deletion instead of permanently deleting
-        user.status = 'deleted';
-        user.deletedAt = new Date().toISOString();
-        user.deletedReason = reason;
+        users.splice(userIndex, 1);
+
+        // Also remove support tickets owned by the deleted user.
+        {
+          const allTickets = await loadSupportTickets();
+          const nextTickets = allTickets.filter((t) => {
+            const emailMatch = String(t?.userInfo?.email || '').toLowerCase() === String(user.email || '').toLowerCase();
+            const idMatch = String(t?.userInfo?.id || '') === String(userId);
+            return !(emailMatch || idMatch);
+          });
+          if (nextTickets.length !== allTickets.length) {
+            await saveSupportTickets(nextTickets);
+          }
+        }
         break;
       default:
         console.log(`Unknown action: ${action}`);
         return res.status(400).json({ error: 'Invalid action type' });
     }
 
-    users[userIndex] = user;
-    fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2));
+    if (action !== 'delete') {
+      users[userIndex] = user;
+    }
+    writeUsers(users);
 
     // Log action
-    const staff = readStaff();
-    if (!staff.userActions) staff.userActions = [];
-    staff.userActions.push({
+    const staffForLog = readStaff();
+    if (!staffForLog.userActions) staffForLog.userActions = [];
+    staffForLog.userActions.push({
       type: 'user',
       userId: userId,
       action: action,
@@ -8256,7 +8440,25 @@ app.post('/staff/user-action/:userId', async (req, res) => {
       actionBy: parseInt(employeeId),
       createdAt: new Date().toISOString()
     });
-    writeStaff(staff);
+
+    if (action === 'delete') {
+      if (Array.isArray(staffForLog.reports)) {
+        const loweredEmail = String(user.email || '').toLowerCase();
+        const loweredName = String(user.name || '').toLowerCase();
+        staffForLog.reports = staffForLog.reports.filter((r) => {
+          const reportUserId = r?.reporterId || r?.reportedBy;
+          const reportedBy = String(r?.reportedBy || '').toLowerCase();
+          const matchesId = String(reportUserId || '') === String(userId);
+          const matchesEmail = loweredEmail && reportedBy === loweredEmail;
+          const matchesName = loweredName && reportedBy === loweredName;
+          return !(matchesId || matchesEmail || matchesName);
+        });
+      }
+      if (Array.isArray(staffForLog.notifications)) {
+        staffForLog.notifications = staffForLog.notifications.filter((n) => String(n?.userId || '') !== String(userId));
+      }
+    }
+    writeStaff(staffForLog);
 
     // Create a notification for the user who received the action
     let notifications = await loadNotifications();
@@ -8289,23 +8491,30 @@ app.post('/staff/user-action/:userId', async (req, res) => {
         break;
     }
 
-    // Add notification
-    notifications.push({
-      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      to: { id: userId, name: user.name },
-      from: { id: 'staff', name: 'Moderation Team' },
-      type: 'staff_action',
-      action: action,
-      title: notificationTitle,
-      message: notificationMessage,
-      icon: notificationIcon,
-      reason: reason,
-      createdAt: new Date().toISOString(),
-      read: false,
-      requiresAcknowledgment: true
-    });
-
-    await saveNotifications(notifications);
+    if (action !== 'delete') {
+      notifications.push({
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        to: { id: userId, name: user.name },
+        from: { id: 'staff', name: 'Moderation Team' },
+        type: 'staff_action',
+        action: action,
+        title: notificationTitle,
+        message: notificationMessage,
+        icon: notificationIcon,
+        reason: reason,
+        createdAt: new Date().toISOString(),
+        read: false,
+        requiresAcknowledgment: true
+      });
+      await saveNotifications(notifications);
+    } else {
+      notifications = notifications.filter((n) => {
+        const toUserId = n?.to?.id;
+        const fromUserId = n?.from?.id;
+        return String(toUserId || '') !== String(userId) && String(fromUserId || '') !== String(userId);
+      });
+      await saveNotifications(notifications);
+    }
 
     console.log(`User action applied: ${action} on user ${userId}`);
     return res.json({ success: true, message: `User ${action} applied`, user });
@@ -8321,12 +8530,28 @@ app.post('/staff/undo-user-action/:userId', async (req, res) => {
     const { employeeId, action } = req.body;
     const userId = req.params.userId;
 
-    if (parseInt(employeeId) !== 1000) {
+    const staff = readStaff();
+    const actor = (staff.employees || []).find((e) => String(e.id) === String(employeeId));
+    const canModerateUsers = !!actor && actor.status !== 'blocked' && (
+      parseInt(employeeId) === 1000 ||
+      !!actor.approvalAuthority ||
+      !!(actor.permissions && actor.permissions.users)
+    );
+    if (!canModerateUsers) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    let users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    const userIndex = users.findIndex(u => u.id === userId);
+    if (DB_ENABLED) {
+      await refreshUserCache();
+    }
+    let users = readUsers();
+    let userIndex = findUserIndexByIdentifier(users, userId);
+
+    if (userIndex === -1 && DB_ENABLED) {
+      await refreshUserCache();
+      users = readUsers();
+      userIndex = findUserIndexByIdentifier(users, userId);
+    }
 
     if (userIndex === -1) {
       return res.status(404).json({ error: 'User not found' });
@@ -8346,6 +8571,8 @@ app.post('/staff/undo-user-action/:userId', async (req, res) => {
         user.status = 'active';
         user.bannedAt = null;
         user.bannedReason = null;
+        user.banType = null;
+        user.bannedUntil = null;
         break;
       case 'shadowban':
         user.shadowBanned = false;
@@ -8353,33 +8580,30 @@ app.post('/staff/undo-user-action/:userId', async (req, res) => {
         user.shadowBanReason = null;
         break;
       case 'delete':
-        user.status = 'active';
-        user.deletedAt = null;
-        user.deletedReason = null;
-        break;
+        return res.status(409).json({ error: 'Delete action cannot be undone after hard-delete' });
     }
 
     users[userIndex] = user;
-    fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2));
+    writeUsers(users);
 
     // Log undo action
-    const staff = readStaff();
-    if (!staff.userActions) staff.userActions = [];
-    staff.userActions.push({
+    const staffForLog = readStaff();
+    if (!staffForLog.userActions) staffForLog.userActions = [];
+    staffForLog.userActions.push({
       type: 'user_undo',
       userId: userId,
       action: action,
       undoneBy: parseInt(employeeId),
       createdAt: new Date().toISOString()
     });
-    writeStaff(staff);
+    writeStaff(staffForLog);
 
     // Remove the notification for the user
     let notifications = await loadNotifications();
 
     // Remove notifications for this user action
     notifications = notifications.filter(n => 
-      !(n.to && n.to.id === userId && n.action === action && n.type === 'staff_action')
+      !(n.to && String(n.to.id) === String(userId) && n.action === action && n.type === 'staff_action')
     );
 
     await saveNotifications(notifications);

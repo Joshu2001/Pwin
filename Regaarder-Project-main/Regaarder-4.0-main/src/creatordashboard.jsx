@@ -1,7 +1,7 @@
 /* eslint-disable no-empty */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home, FileText, File as FileIcon, Pencil, MoreHorizontal, MoreVertical, Pin, Star, TrendingUp, Trophy, User, Zap, Video, Clock, BarChart, Upload, Lightbulb, Headphones, Copy, LineChart, CheckCircle, Search, Globe, Link2, Image, Lock, Link, Eye, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { Home, FileText, File as FileIcon, Pencil, MoreHorizontal, MoreVertical, Pin, Star, TrendingUp, Trophy, User, Zap, Video, Clock, BarChart, Upload, Lightbulb, Headphones, Copy, LineChart, CheckCircle, Search, Globe, Link2, Image, Lock, Link, Eye, ChevronDown, ChevronUp, AlertCircle, DollarSign } from 'lucide-react';
 import RequestsFeed from './requests.jsx';
 import VideoOverlayEditor from './VideoOverlayEditor.jsx';
 import FeedbackModal from './FeedbackModal.jsx'; // Feedback Modal
@@ -12,6 +12,7 @@ import { WEB_URL } from './config.js';
 
 // No per-page CSS vars here — let the page inherit the global :root variables
 const customStyle = {};
+const WITHDRAWAL_REQUESTS_KEY = 'staff_withdrawal_requests_v1';
 
 // Utility style for clamping long titles to 2 lines (copied from `home.jsx`)
 const clamp2 = {
@@ -2780,6 +2781,7 @@ const App = () => {
     // Track user's creator plan to control feature access
     const [userPlan, setUserPlan] = useState(null);
     const [isProCreator, setIsProCreator] = useState(false);
+    const [currentUserId, setCurrentUserId] = useState(null);
 
     // Category states (moved from ClaimStatusPanel where they were causing errors)
     const [categories, setCategories] = useState(['Travel', 'Education', 'Entertainment', 'Music', 'Sports']);
@@ -2805,6 +2807,7 @@ const App = () => {
                     const data = await response.json();
                     if (data.user) {
                         setUserPlan(data.user.userPlan || null);
+                        setCurrentUserId(data.user.id || null);
                         // Check if user is on Pro Creator plan
                         setIsProCreator((data.user.userPlan || '').toLowerCase() === 'procreator');
                     }
@@ -2884,35 +2887,77 @@ const App = () => {
     };
     const categoryRef = useRef(null);
 
-    const [claimedRequests, setClaimedRequests] = useState(() => {
-        try {
-            const saved = (typeof localStorage !== 'undefined') && localStorage.getItem('claimedRequests');
-            return saved ? JSON.parse(saved) : [];
-        } catch (e) { return []; }
-    });
+    const [claimedRequests, setClaimedRequests] = useState([]);
     // For backward compatibility or reupload, we might use a separate state or just append to list.
     // We will use claimedRequests exclusively for the claims tab.
 
-    useEffect(() => {
+    const fetchClaimedRequests = useCallback(async () => {
+        const claimedCacheKey = `claimedRequests:${String(currentUserId || 'anon')}`;
         try {
-            if (typeof localStorage !== 'undefined') {
-                localStorage.setItem('claimedRequests', JSON.stringify(claimedRequests));
+            const token = localStorage.getItem('regaarder_token');
+            if (!token) {
+                setClaimedRequests([]);
+                return;
             }
-        } catch (e) { }
-    }, [claimedRequests]);
+
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin-copy-production.up.railway.app';
+            const res = await fetch(`${BACKEND}/requests/my?includeClaimed=1`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('Failed to fetch requests');
+
+            const data = await res.json();
+            const all = Array.isArray(data?.requests) ? data.requests : [];
+            const uid = String(currentUserId || '');
+            const claimedOnly = all.filter((r) => {
+                const claimedById = r?.claimedBy?.id || r?.claimed_by?.id;
+                if (!claimedById) return false;
+                return uid ? String(claimedById) === uid : true;
+            });
+
+            setClaimedRequests(claimedOnly);
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    localStorage.setItem(claimedCacheKey, JSON.stringify(claimedOnly));
+                }
+            } catch (e) { }
+        } catch (err) {
+            // Fallback to local cache to keep UX functional offline.
+            try {
+                const saved = (typeof localStorage !== 'undefined') && localStorage.getItem(claimedCacheKey);
+                const parsed = saved ? JSON.parse(saved) : [];
+                setClaimedRequests(Array.isArray(parsed) ? parsed : []);
+            } catch (e) {
+                setClaimedRequests([]);
+            }
+        }
+    }, [currentUserId]);
+
+    useEffect(() => {
+        fetchClaimedRequests();
+    }, [fetchClaimedRequests]);
 
     useEffect(() => {
         const handleStorage = (e) => {
-            if (e.key === 'claimedRequests') {
-                try {
-                    const val = e.newValue;
-                    setClaimedRequests(val ? JSON.parse(val) : []);
-                } catch (err) { }
+            if (e.key && e.key.startsWith('claimedRequests:')) {
+                fetchClaimedRequests();
             }
         };
+        const handleVisibility = () => {
+            if (!document.hidden) fetchClaimedRequests();
+        };
+        const handleFocus = () => fetchClaimedRequests();
+
         window.addEventListener('storage', handleStorage);
-        return () => window.removeEventListener('storage', handleStorage);
-    }, []);
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            window.removeEventListener('focus', handleFocus);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
+    }, [fetchClaimedRequests]);
 
     const [pendingReuploadItem, setPendingReuploadItem] = useState(null);
     const [collapsedRequests, setCollapsedRequests] = useState({}); // Track which requests are collapsed by ID
@@ -3131,6 +3176,7 @@ const App = () => {
                 return [request, ...prev];
             });
         }
+        fetchClaimedRequests();
     };
 
     // Called when the ClaimStatusPanel modal advances the status
@@ -3221,6 +3267,7 @@ const App = () => {
         } catch (e) {
             console.error('Failed to update status on server', e);
         }
+        fetchClaimedRequests();
         // Try to resync published list from localStorage
         try {
             const raw = (typeof localStorage !== 'undefined') && localStorage.getItem('publishedItems');
@@ -3239,6 +3286,19 @@ const App = () => {
     const [showPrivateLinkModal, setShowPrivateLinkModal] = useState(false);
     const [privateLink, setPrivateLink] = useState(null);
     const [privateLinkCopied, setPrivateLinkCopied] = useState(false);
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+    const [withdrawAmount, setWithdrawAmount] = useState('');
+    const [withdrawError, setWithdrawError] = useState('');
+    const [isSubmittingWithdraw, setIsSubmittingWithdraw] = useState(false);
+    const [withdrawalRequests, setWithdrawalRequests] = useState(() => {
+        try {
+            const raw = (typeof localStorage !== 'undefined') && localStorage.getItem(WITHDRAWAL_REQUESTS_KEY);
+            const parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            return [];
+        }
+    });
 
     // First-time user welcome popup
     const [showWelcomePopup, setShowWelcomePopup] = useState(() => {
@@ -3256,6 +3316,102 @@ const App = () => {
             localStorage.setItem('creatorDashboardWelcomeSeen', 'true');
         } catch (e) {
             // ignore
+        }
+    };
+
+    useEffect(() => {
+        try {
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(WITHDRAWAL_REQUESTS_KEY, JSON.stringify(withdrawalRequests || []));
+            }
+        } catch (e) { }
+    }, [withdrawalRequests]);
+
+    useEffect(() => {
+        const onStorage = (e) => {
+            if (e.key !== WITHDRAWAL_REQUESTS_KEY) return;
+            try {
+                const val = e.newValue;
+                const parsed = val ? JSON.parse(val) : [];
+                setWithdrawalRequests(Array.isArray(parsed) ? parsed : []);
+            } catch (err) { }
+        };
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, []);
+
+    const completedEarnings = (publishedList || []).reduce((sum, item) => sum + (Number(item?.funding) || 0), 0);
+    const withdrawnPendingOrApproved = (withdrawalRequests || [])
+        .filter((it) => {
+            const st = String(it?.status || 'pending').toLowerCase();
+            return st !== 'rejected' && st !== 'declined' && st !== 'cancelled';
+        })
+        .reduce((sum, it) => sum + (Number(it?.amount) || 0), 0);
+    const availableToWithdraw = Math.max(0, completedEarnings - withdrawnPendingOrApproved);
+
+    const submitWithdrawRequest = async () => {
+        const amount = Number(withdrawAmount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            setWithdrawError(getTranslation('Please enter a valid amount', selectedLanguage));
+            return;
+        }
+        if (amount > availableToWithdraw) {
+            setWithdrawError(getTranslation('Amount exceeds available earnings', selectedLanguage));
+            return;
+        }
+
+        setIsSubmittingWithdraw(true);
+        setWithdrawError('');
+
+        try {
+            const now = Date.now();
+            const payload = {
+                id: `wd_${now}`,
+                creatorName: creatorName || 'Creator',
+                creatorHandle: creatorHandle || null,
+                amount,
+                status: 'pending',
+                requestedAt: now,
+            };
+
+            let nextRequests = [];
+            setWithdrawalRequests((prev) => {
+                nextRequests = [payload, ...(Array.isArray(prev) ? prev : [])];
+                return nextRequests;
+            });
+
+            try {
+                const current = (() => {
+                    try {
+                        const raw = localStorage.getItem(WITHDRAWAL_REQUESTS_KEY);
+                        const parsed = raw ? JSON.parse(raw) : [];
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch (_) { return []; }
+                })();
+                const merged = [payload, ...current];
+                localStorage.setItem(WITHDRAWAL_REQUESTS_KEY, JSON.stringify(merged));
+                window.dispatchEvent(new CustomEvent('withdrawalRequestsUpdated', { detail: { requests: merged } }));
+            } catch (e) { }
+
+            try {
+                const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+                const token = localStorage.getItem('authToken') || localStorage.getItem('regaarder_token');
+                fetch(`${BACKEND}/staff/withdrawals`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(payload)
+                }).catch(() => { });
+            } catch (e) { }
+
+            setWithdrawAmount('');
+            setShowWithdrawModal(false);
+            setAppToast(getTranslation('Withdrawal request sent', selectedLanguage));
+            setTimeout(() => setAppToast(''), 2200);
+        } finally {
+            setIsSubmittingWithdraw(false);
         }
     };
 
@@ -3278,8 +3434,14 @@ const App = () => {
                             <span className="text-[14px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-purple)' }}>{getTranslation('Total Earnings', selectedLanguage)}</span>
                         </div>
                         <div className="flex-1 flex flex-col justify-center">
-                            <div className="text-[32px] font-bold text-gray-900 mb-2 leading-none tracking-tight">--</div>
-                            <span className="text-[13px] text-gray-600 font-medium">{getTranslation('Start earning today', selectedLanguage)}</span>
+                            <div className="text-[32px] font-bold text-gray-900 mb-2 leading-none tracking-tight">
+                                ${availableToWithdraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[13px] text-gray-600 font-medium">
+                                {completedEarnings > 0
+                                    ? `${getTranslation('Completed earnings', selectedLanguage)}: $${completedEarnings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+                                    : getTranslation('Start earning today', selectedLanguage)}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -3436,6 +3598,16 @@ const App = () => {
                                     {getTranslation(isAvailable ? 'Available' : 'Unavailable', selectedLanguage)}
                                 </button>
                                 <button
+                                    className="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 text-[12px] font-medium flex items-center justify-center shadow-sm flex-shrink-0 bg-white"
+                                    onClick={() => {
+                                        setShowWithdrawModal(true);
+                                        setShowDropdown(false);
+                                    }}
+                                >
+                                    <DollarSign size={14} className="mr-1" />
+                                    {getTranslation('Withdraw Earnings', selectedLanguage)}
+                                </button>
+                                <button
                                     className={`px-3 py-2 rounded-lg border border-gray-200 text-gray-700 text-[12px] font-medium flex items-center justify-center shadow-sm flex-shrink-0 ${settingsActive ? 'bg-white' : 'bg-white'}`}
                                     onClick={() => {
                                         try {
@@ -3582,6 +3754,63 @@ const App = () => {
                         >
                             {getTranslation('Get Started', selectedLanguage)}
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {showWithdrawModal && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center px-5" style={{ background: 'rgba(0,0,0,0.5)' }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-lg font-semibold text-gray-900">{getTranslation('Withdraw Earnings', selectedLanguage)}</h3>
+                            <button
+                                className="text-gray-500 hover:text-gray-800"
+                                onClick={() => { setShowWithdrawModal(false); setWithdrawError(''); }}
+                                aria-label="Close"
+                            >✕</button>
+                        </div>
+                        <div className="text-sm text-gray-600 mb-3">
+                            {getTranslation('Available amount', selectedLanguage)}:
+                            <span className="font-semibold text-gray-900 ml-1">
+                                ${availableToWithdraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                            </span>
+                        </div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{getTranslation('Enter amount', selectedLanguage)}</label>
+                        <div className="relative mb-3">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={withdrawAmount}
+                                onChange={(e) => {
+                                    setWithdrawAmount(e.target.value);
+                                    setWithdrawError('');
+                                }}
+                                className="w-full border border-gray-300 rounded-lg py-2 pl-7 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+                                placeholder="0.00"
+                            />
+                        </div>
+                        {withdrawError ? (
+                            <div className="text-xs text-red-600 mb-3">{withdrawError}</div>
+                        ) : null}
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => { setShowWithdrawModal(false); setWithdrawError(''); }}
+                                className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium"
+                                disabled={isSubmittingWithdraw}
+                            >
+                                {getTranslation('Cancel', selectedLanguage)}
+                            </button>
+                            <button
+                                onClick={submitWithdrawRequest}
+                                className="flex-1 py-2 rounded-lg text-white font-medium"
+                                style={{ background: 'var(--color-purple)' }}
+                                disabled={isSubmittingWithdraw}
+                            >
+                                {isSubmittingWithdraw ? getTranslation('Sending...', selectedLanguage) : getTranslation('Request Withdrawal', selectedLanguage)}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

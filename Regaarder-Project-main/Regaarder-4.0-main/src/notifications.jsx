@@ -552,7 +552,7 @@ const App = ({ onClose }) => {
             else key = 'misc';
           }
 
-          if (!threads[key]) threads[key] = { id: key, items: [], lastTime: item.createdAt, ...item }; // base props from first item
+          if (!threads[key]) threads[key] = { ...item, id: key, items: [], lastTime: item.createdAt }; // base props from first item, then override id with thread key
           threads[key].items.push(item);
           threads[key].lastTime = item.createdAt; // update to latest
 
@@ -642,8 +642,17 @@ const App = ({ onClose }) => {
 
 
   const [toast, setToast] = React.useState(null);
-  const deleteTimerRef = React.useRef(null);
+  const deleteTimersRef = React.useRef(new Map());
+  const deletedThreadSnapshotsRef = React.useRef(new Map());
   const pendingDeleteIdsRef = React.useRef(new Set());
+
+  React.useEffect(() => {
+    return () => {
+      deleteTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+      deleteTimersRef.current.clear();
+      deletedThreadSnapshotsRef.current.clear();
+    };
+  }, []);
 
   // Handler for dismissing (local hide, reappear on refresh)
   const handleDismiss = (thread) => {
@@ -652,6 +661,9 @@ const App = ({ onClose }) => {
 
   // Handler for deletion (persistent delete with undo)
   const handleDelete = (thread) => {
+    const threadKey = String(thread.id);
+    deletedThreadSnapshotsRef.current.set(threadKey, thread);
+
     // 1. Remove from UI immediately
     setGroupedSuggestions(prev => prev.filter(t => t.id !== thread.id));
 
@@ -661,27 +673,38 @@ const App = ({ onClose }) => {
     });
 
     // 2. Show Toast with Undo
-    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    const existingTimer = deleteTimersRef.current.get(threadKey);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      deleteTimersRef.current.delete(threadKey);
+    }
 
     setToast({
       message: 'Conversation deleted',
       onUndo: () => {
+        const snapshot = deletedThreadSnapshotsRef.current.get(threadKey) || thread;
         itemsToDelete.forEach((item) => {
           if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
         });
         // Restore
         setGroupedSuggestions(prev => {
-          const arr = [...prev, thread];
+          if (prev.some(t => String(t.id) === threadKey)) return prev;
+          const arr = [...prev, snapshot];
           // re-sort
           return arr.sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
         });
+        deletedThreadSnapshotsRef.current.delete(threadKey);
         setToast(null);
-        if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+        const timerId = deleteTimersRef.current.get(threadKey);
+        if (timerId) {
+          clearTimeout(timerId);
+          deleteTimersRef.current.delete(threadKey);
+        }
       }
     });
 
     // 3. Set timer to actually delete from backend
-    deleteTimerRef.current = setTimeout(async () => {
+    const timerId = setTimeout(async () => {
       // Perform backend delete for all items in thread
       const token = localStorage.getItem('regaarder_token');
       if (!token) return;
@@ -697,22 +720,32 @@ const App = ({ onClose }) => {
 
       const allOk = results.length ? results.every(Boolean) : true;
 
-      itemsToDelete.forEach((item) => {
-        if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
-      });
-
       if (!allOk) {
+        // Backend delete failed - restore notification and clear pending IDs
+        itemsToDelete.forEach((item) => {
+          if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
+        });
+        const snapshot = deletedThreadSnapshotsRef.current.get(threadKey) || thread;
         setGroupedSuggestions(prev => {
-          if (prev.some(t => t.id === thread.id)) return prev;
-          const arr = [...prev, thread];
+          if (prev.some(t => String(t.id) === threadKey)) return prev;
+          const arr = [...prev, snapshot];
           return arr.sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
         });
       } else {
-        fetchNotifications();
+        // Backend delete succeeded - keep pending IDs until next fetch confirms deletion
+        // Schedule clearing pending IDs after a brief delay to let next poll cycle complete
+        setTimeout(() => {
+          itemsToDelete.forEach((item) => {
+            if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
+          });
+        }, 6000);
       }
 
+      deleteTimersRef.current.delete(threadKey);
+      deletedThreadSnapshotsRef.current.delete(threadKey);
       setToast(null);
     }, 4000); // 4 seconds undo window
+    deleteTimersRef.current.set(threadKey, timerId);
   };
 
   // Handler for sending a reply
