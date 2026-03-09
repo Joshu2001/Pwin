@@ -313,16 +313,76 @@ const initDb = async () => {
 };
 
 let staffCache = null;
-const DEFAULT_STAFF_STATE = { employees: [], pendingAccounts: [], reports: [], shadowDeleted: [], notifications: [] };
+const DEFAULT_ADMIN_EMPLOYEE = {
+  id: 1000,
+  name: 'Admin',
+  email: 'admin@regaarder.com',
+  role: 'administrator',
+  passwords: ['pass123', 'staff456', 'admin789'],
+  createdAt: new Date('2026-01-18T00:00:00Z').toISOString(),
+  status: 'active',
+  permissions: {
+    videos: true,
+    requests: true,
+    comments: true,
+    reports: true,
+    users: true,
+    creators: true,
+    shadowDeleted: true,
+    approvals: true,
+    promotions: true,
+    templates: true,
+    ads: true
+  },
+  approvalAuthority: true
+};
+
+const DEFAULT_STAFF_STATE = {
+  employees: [DEFAULT_ADMIN_EMPLOYEE],
+  pendingAccounts: [],
+  reports: [],
+  shadowDeleted: [],
+  notifications: []
+};
+
+const ensureDefaultAdminEmployee = (state) => {
+  const normalized = {
+    ...(state && typeof state === 'object' ? state : {}),
+    employees: Array.isArray(state?.employees) ? [...state.employees] : [],
+    pendingAccounts: Array.isArray(state?.pendingAccounts) ? state.pendingAccounts : [],
+    reports: Array.isArray(state?.reports) ? state.reports : [],
+    shadowDeleted: Array.isArray(state?.shadowDeleted) ? state.shadowDeleted : [],
+    notifications: Array.isArray(state?.notifications) ? state.notifications : []
+  };
+
+  const hasAdmin = normalized.employees.some((e) => Number(e?.id) === 1000);
+  if (!hasAdmin) {
+    normalized.employees.unshift({ ...DEFAULT_ADMIN_EMPLOYEE });
+  }
+  return normalized;
+};
 
 const loadStaffStateFromDb = async () => {
   if (!DB_ENABLED) return;
   try {
     const { rows } = await dbQuery('SELECT payload FROM staff_state WHERE id = $1 LIMIT 1', ['staff_state']);
     if (rows[0] && rows[0].payload) {
-      staffCache = rows[0].payload;
+      staffCache = ensureDefaultAdminEmployee(rows[0].payload);
     } else {
-      staffCache = DEFAULT_STAFF_STATE;
+      staffCache = ensureDefaultAdminEmployee(DEFAULT_STAFF_STATE);
+    }
+
+    await dbQuery(
+      `INSERT INTO staff_state (id, payload, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+      ['staff_state', staffCache]
+    );
+
+    try {
+      fs.writeFileSync(path.join(__dirname, 'staff.json'), JSON.stringify(staffCache, null, 2), 'utf8');
+    } catch (fileErr) {
+      console.error('load staff state write file error', fileErr);
     }
   } catch (err) {
     console.error('load staff state db error', err);
@@ -6988,34 +7048,35 @@ const STAFF_FILE = path.join(__dirname, 'staff.json');
 const readStaff = () => {
   try {
     if (DB_ENABLED) {
-      if (staffCache) return staffCache;
+      if (staffCache) return ensureDefaultAdminEmployee(staffCache);
       if (fs.existsSync(STAFF_FILE)) {
         const data = fs.readFileSync(STAFF_FILE, 'utf8');
-        staffCache = JSON.parse(data);
+        staffCache = ensureDefaultAdminEmployee(JSON.parse(data));
         return staffCache;
       }
-      return DEFAULT_STAFF_STATE;
+      return ensureDefaultAdminEmployee(DEFAULT_STAFF_STATE);
     }
     const data = fs.readFileSync(STAFF_FILE, 'utf8');
-    return JSON.parse(data);
+    return ensureDefaultAdminEmployee(JSON.parse(data));
   } catch (err) {
     console.error('Error reading staff.json:', err);
-    return DEFAULT_STAFF_STATE;
+    return ensureDefaultAdminEmployee(DEFAULT_STAFF_STATE);
   }
 };
 
 const writeStaff = (data) => {
   try {
+    const normalized = ensureDefaultAdminEmployee(data);
     if (DB_ENABLED) {
-      staffCache = data;
+      staffCache = normalized;
       dbQuery(
         `INSERT INTO staff_state (id, payload, updated_at)
          VALUES ($1, $2, now())
          ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
-        ['staff_state', data]
+        ['staff_state', normalized]
       ).catch((err) => console.error('write staff state db error', err));
     }
-    fs.writeFileSync(STAFF_FILE, JSON.stringify(data, null, 2));
+    fs.writeFileSync(STAFF_FILE, JSON.stringify(normalized, null, 2));
   } catch (err) {
     console.error('Error writing staff.json:', err);
   }
