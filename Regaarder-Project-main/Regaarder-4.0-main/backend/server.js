@@ -7092,7 +7092,11 @@ app.post('/staff/login', (req, res) => {
     }
 
     const staff = readStaff();
-    const employee = staff.employees.find(e => e.id === parseInt(employeeId));
+    const adminFallback = { ...DEFAULT_ADMIN_EMPLOYEE };
+    let employee = staff.employees.find(e => e.id === parseInt(employeeId));
+    if (!employee && Number(employeeId) === 1000) {
+      employee = adminFallback;
+    }
 
     if (!employee) {
       return res.status(401).json({ error: 'Employee not found' });
@@ -7147,9 +7151,12 @@ app.post('/staff/check-account-status', (req, res) => {
     }
 
     const staff = readStaff();
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const adminEmail = String(DEFAULT_ADMIN_EMPLOYEE.email || '').trim().toLowerCase();
     
     // Check if account is already approved
-    const approved = staff.employees.find(e => e.email === email);
+    const approved = staff.employees.find(e => String(e.email || '').trim().toLowerCase() === normalizedEmail)
+      || (normalizedEmail === adminEmail ? { ...DEFAULT_ADMIN_EMPLOYEE } : null);
     if (approved) {
       return res.json({ 
         status: 'approved',
