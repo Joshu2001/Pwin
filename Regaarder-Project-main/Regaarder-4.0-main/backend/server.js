@@ -8517,6 +8517,12 @@ app.post('/staff/user-action/:userId', async (req, res) => {
         user.warnings = (user.warnings || 0) + 1;
         user.lastWarning = new Date().toISOString();
         break;
+      case 'unwarn':
+        user.warnings = Math.max(0, (user.warnings || 0) - 1);
+        if (user.warnings === 0) {
+          user.lastWarning = null;
+        }
+        break;
       case 'ban':
         user.status = 'banned';
         user.bannedAt = new Date().toISOString();
@@ -8610,6 +8616,11 @@ app.post('/staff/user-action/:userId', async (req, res) => {
         notificationTitle = 'Warning Notice';
         notificationMessage = `Your account has received a warning for violating community guidelines.\n\nReason: ${reason}`;
         notificationIcon = 'warn';
+        break;
+      case 'unwarn':
+        notificationTitle = 'Warning Removed';
+        notificationMessage = `A warning has been removed from your account.`;
+        notificationIcon = 'check';
         break;
       case 'ban':
         notificationTitle = 'Account Banned';
