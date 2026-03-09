@@ -5295,14 +5295,26 @@ const App = () => {
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 flex items-center justify-center rounded-full font-semibold text-sm overflow-hidden">
                     {selectedCreatorImage ? (
-                      <img src={selectedCreatorImage} alt={selectedCreator.name || selectedCreator.handle} className="w-full h-full object-cover" />
+                      <img
+                        src={selectedCreatorImage}
+                        alt={selectedCreator.name || selectedCreator.handle}
+                        className="w-full h-full object-cover"
+                        onError={() => setSelectedCreatorImage(null)}
+                      />
                     ) : (
                       (() => {
                         // Check creatorsList for an image (the useEffect will update state, but render the image immediately if found)
                         const creatorFromList = creatorsList.length > 0 ? creatorsList.find(c => c.id === selectedCreator.id) : null;
-                        const listImg = creatorFromList ? (creatorFromList.photoURL || creatorFromList.image) : null;
+                        const listImg = creatorFromList ? normalizeCreatorImage(creatorFromList.photoURL || creatorFromList.image) : null;
                         if (listImg) {
-                          return <img src={listImg} alt={selectedCreator.name} className="w-full h-full object-cover" />;
+                          return (
+                            <img
+                              src={listImg}
+                              alt={selectedCreator.name}
+                              className="w-full h-full object-cover"
+                              onError={() => setSelectedCreatorImage(null)}
+                            />
+                          );
                         }
                         
                         const seed = String(selectedCreator.id || selectedCreator.name || selectedCreator.handle || "");
