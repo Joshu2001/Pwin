@@ -3953,9 +3953,20 @@ app.post('/boost', authMiddleware, (req, res) => {
   return res.json({ success: true, requestId, amount, provider: provider || 'unknown', creditedTo: req.user });
 });
 
-app.get('/users', (req, res) => {
+app.get('/users', async (req, res) => {
   try {
-    const users = readUsers();
+    let users = readUsers();
+    // If cache returned empty but DB is available, query DB directly as fallback
+    if ((!users || users.length === 0) && DB_ENABLED) {
+      try {
+        const { rows } = await dbQuery('SELECT * FROM users');
+        users = rows.map(mapUserRow);
+        // Also refresh the cache for subsequent requests
+        refreshUserCache().catch(() => {});
+      } catch (dbErr) {
+        console.error('get users DB fallback error', dbErr);
+      }
+    }
     const q = (req.query.query || req.query.q || '').trim().toLowerCase();
     const creatorsOnly = req.query.creatorsOnly === '1' || req.query.creatorsOnly === 'true';
     let results = users.map(({ password_hash, passwordHash, token, ...u }) => u);
@@ -3971,6 +3982,38 @@ app.get('/users', (req, res) => {
     return res.json({ users: results });
   } catch (err) {
     console.error('get users error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Dedicated creators endpoint – always queries DB directly for reliability
+app.get('/creators', async (req, res) => {
+  try {
+    let users = [];
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT * FROM users');
+      users = rows.map(mapUserRow);
+    } else {
+      users = readUsers();
+    }
+    const q = (req.query.query || req.query.q || '').trim().toLowerCase();
+    let creators = users
+      .filter(u => u.isCreator === true || u.is_creator === true)
+      .map(({ password_hash, passwordHash, token, ...u }) => u);
+    // If nobody has the creator flag, return all users
+    if (creators.length === 0) {
+      creators = users.map(({ password_hash, passwordHash, token, ...u }) => u);
+    }
+    if (q) {
+      creators = creators.filter(u => {
+        const name = (u.name || '').toLowerCase();
+        const handle = (u.handle || u.tag || '').toLowerCase();
+        return name.includes(q) || handle.includes(q);
+      });
+    }
+    return res.json({ creators });
+  } catch (err) {
+    console.error('get creators error', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
