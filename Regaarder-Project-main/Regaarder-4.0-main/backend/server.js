@@ -1271,9 +1271,14 @@ let _requestDbCache = [];
 let _requestDbCacheReady = false;
 let _requestDbWriteChain = Promise.resolve();
 
+function safeParseJson(val) {
+  if (!val) return null;
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch(e) { return val; }
+}
+
 function mapRequestRow(row) {
   if (!row) return null;
-  const claimedBy = parseClaimedByValue(row.claimed_by);
   return {
     id: row.id,
     title: row.title,
@@ -1298,9 +1303,12 @@ function mapRequestRow(row) {
     updatedAt: row.updated_at,
     currentStep: row.current_step,
     claimed: row.claimed,
-    claimedBy,
+    claimedBy: safeParseJson(row.claimed_by),
     claimedAt: row.claimed_at,
     meta: row.meta,
+    hidden: Boolean(row.meta && row.meta.hidden),
+    hiddenReason: (row.meta && row.meta.hiddenReason) || null,
+    deleted: Boolean(row.meta && row.meta.deleted),
     // snake_case aliases for DB-path code that expects them
     is_trending: Boolean(row.is_trending),
     is_sponsored: Boolean(row.is_sponsored),
@@ -1314,33 +1322,10 @@ function mapRequestRow(row) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     current_step: row.current_step,
-    claimed_by: claimedBy,
+    claimed_by: safeParseJson(row.claimed_by),
     claimed_at: row.claimed_at
   };
 }
-
-const parseClaimedByValue = (value) => {
-  if (!value) return null;
-  if (typeof value === 'object' && !Array.isArray(value)) return value;
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') return parsed;
-  } catch (e) { }
-  return { id: raw };
-};
-
-const getClaimedByUserId = (requestLike) => {
-  const parsed = parseClaimedByValue(requestLike?.claimedBy || requestLike?.claimed_by);
-  return parsed && parsed.id != null ? String(parsed.id) : '';
-};
-
-const isRequestHiddenForPublicFeed = (requestLike) => {
-  if (!requestLike || typeof requestLike !== 'object') return false;
-  const meta = (requestLike.meta && typeof requestLike.meta === 'object') ? requestLike.meta : {};
-  return Boolean(requestLike.hidden || meta.hidden);
-};
 
 async function refreshRequestCache() {
   if (!DB_ENABLED) return;
@@ -3968,14 +3953,9 @@ const buildSuggestionSortTimestamp = (s) => {
             return !isMine; // Keep if not mine (i.e. remove if mine)
         });
         
-        const deleted = before - arr.length;
-        if (!deleted) {
-          return res.status(404).json({ error: 'Notification not found or not owned by user', deleted: 0, id });
-        }
-
         await saveNotifications(arr);
-
-        return res.json({ success: true, deleted, id });
+        
+        return res.json({ success: true, deleted: before - arr.length, id });
       } catch (e) {
         return res.status(500).json({ error: 'Server error' });
       }
@@ -4624,7 +4604,6 @@ app.get('/requests', async (req, res) => {
          LEFT JOIN users u ON u.id = r.creator_id`
       );
       requests = rows.map((row) => {
-        const claimedBy = parseClaimedByValue(row.claimed_by);
         const base = {
           id: row.id,
           title: row.title,
@@ -4654,9 +4633,10 @@ app.get('/requests', async (req, res) => {
           updatedAt: row.updated_at,
           currentStep: row.current_step,
           claimed: row.claimed,
-          claimedBy,
+          claimedBy: safeParseJson(row.claimed_by),
           claimedAt: row.claimed_at,
-          meta: row.meta
+          meta: row.meta,
+          hidden: Boolean(row.meta && row.meta.hidden)
         };
         if (base.creator && (!base.imageUrl || base.imageUrl === '') && base.creator.image) {
           base.imageUrl = base.creator.image;
@@ -4687,9 +4667,6 @@ app.get('/requests', async (req, res) => {
          } catch (e) { return r; }
       });
     }
-
-    // Public feed must hide requests hidden by staff moderation.
-    requests = requests.filter((r) => !isRequestHiddenForPublicFeed(r));
 
     const feed = req.query.feed || 'recommended';
     
@@ -5091,11 +5068,10 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
     if (DB_ENABLED) {
       const sql = includeClaimed
         ? `SELECT *
-          FROM requests
-          WHERE created_by = $1
-            OR claimed_by = $1
-            OR claimed_by = ('{"id":"' || $1 || '"}')
-          ORDER BY created_at DESC`
+           FROM requests
+           WHERE created_by = $1
+              OR (claimed_by ->> 'id') = $1
+           ORDER BY created_at DESC`
         : `SELECT *
            FROM requests
            WHERE created_by = $1
@@ -5123,9 +5099,10 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
         updatedAt: row.updated_at,
         currentStep: row.current_step,
         claimed: row.claimed,
-        claimedBy: row.claimed_by,
+        claimedBy: safeParseJson(row.claimed_by),
         claimedAt: row.claimed_at,
-        meta: row.meta
+        meta: row.meta,
+        hidden: Boolean(row.meta && row.meta.hidden)
       }));
       return res.json({ requests: mapped });
     }
@@ -5134,7 +5111,7 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
     const userRequests = allRequests
       .filter((r) => {
         const createdBy = r.createdBy || r.created_by;
-        const claimedById = getClaimedByUserId(r);
+        const claimedById = r.claimedBy?.id || r.claimed_by?.id;
         if (includeClaimed) {
           return String(createdBy || '') === uid || String(claimedById || '') === uid;
         }
@@ -6934,13 +6911,12 @@ app.post('/requests/:id/status', authMiddleware, async (req, res) => {
     const request = requests[idx];
     
     // Check if claimed by current user
-     const claimedById = getClaimedByUserId(request);
-     if (!request.claimed || !claimedById || claimedById !== String(req.user.id)) {
+    if (!request.claimed || !request.claimedBy || String(request.claimedBy.id) !== String(req.user.id)) {
        return res.status(403).json({ error: 'Not authorized to update this request' });
     }
     
     // Update step
-    if (step) request.currentStep = step;
+    if (step != null) request.currentStep = step;
     request.updatedAt = new Date().toISOString();
     writeRequests(requests);
     
@@ -7315,8 +7291,7 @@ app.delete('/claims', authMiddleware, (req, res) => {
     const request = requests[idx];
 
     // Verify the request is claimed by the current user
-    const claimedById = getClaimedByUserId(request);
-    if (!request.claimed || !claimedById || claimedById !== String(userId)) {
+    if (!request.claimed || !request.claimedBy || request.claimedBy.id !== userId) {
       return res.status(403).json({ error: 'You have not claimed this request' });
     }
 
@@ -8520,7 +8495,7 @@ app.delete('/staff/delete-request/:requestId', (req, res) => {
     }
 
     let requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
-    const requestIndex = requests.findIndex(r => r.id === requestId);
+    const requestIndex = requests.findIndex(r => String(r.id) === String(requestId));
 
     if (requestIndex === -1) {
       return res.status(404).json({ error: 'Request not found' });
@@ -8594,7 +8569,7 @@ app.post('/staff/hide-request/:requestId', (req, res) => {
     }
 
     let requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8'));
-    const request = requests.find(r => r.id === requestId);
+    const request = requests.find(r => String(r.id) === String(requestId));
 
     if (!request) {
       return res.status(404).json({ error: 'Request not found' });
