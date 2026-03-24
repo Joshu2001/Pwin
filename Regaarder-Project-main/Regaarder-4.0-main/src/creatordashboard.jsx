@@ -2041,12 +2041,16 @@ const ClaimStatusPanel = ({
 
                                     <div className="mt-6 flex flex-col gap-3">
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 // If we're on the final step, treat this as the final Update Progress action
                                                 if (currentStep === steps.length) {
                                                     try {
                                                         // inform parent we're finishing
-                                                        onUpdateProgress(currentStep, message);
+                                                        const ok = await Promise.resolve(onUpdateProgress(currentStep, message));
+                                                        if (ok === false) {
+                                                            setToastMessage(getTranslation('Failed to update status. Please try again.', selectedLanguage));
+                                                            return;
+                                                        }
                                                     } catch (e) { }
                                                     setShowModal(false);
                                                     setFinished(true);
@@ -2059,7 +2063,11 @@ const ClaimStatusPanel = ({
                                                 // compute next step (cap at length)
                                                 const next = Math.min(steps.length, currentStep + 1);
                                                 try {
-                                                    onUpdateProgress(next, message);
+                                                    const ok = await Promise.resolve(onUpdateProgress(next, message));
+                                                    if (ok === false) {
+                                                        setToastMessage(getTranslation('Failed to update status. Please try again.', selectedLanguage));
+                                                        return;
+                                                    }
                                                 } catch (e) { }
                                                 setShowModal(false);
                                             }}
@@ -2888,6 +2896,11 @@ const App = () => {
     const categoryRef = useRef(null);
 
     const [claimedRequests, setClaimedRequests] = useState([]);
+    const updateClaimInFlightRef = useRef(false);
+    const latestClaimStepRef = useRef(new Map());
+    const getClaimStepStorageKey = useCallback((requestId) => {
+        return `latestClaimStep:${String(currentUserId || 'anon')}:${String(requestId || '')}`;
+    }, [currentUserId]);
     // For backward compatibility or reupload, we might use a separate state or just append to list.
     // We will use claimedRequests exclusively for the claims tab.
 
@@ -2897,7 +2910,7 @@ const App = () => {
             const token = localStorage.getItem('regaarder_token');
             if (!token) {
                 setClaimedRequests([]);
-                return;
+                return [];
             }
 
             const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin-copy-production.up.railway.app';
@@ -2913,6 +2926,22 @@ const App = () => {
                 const claimedById = r?.claimedBy?.id || r?.claimed_by?.id;
                 if (!claimedById) return false;
                 return uid ? String(claimedById) === uid : true;
+            }).map((r) => {
+                let pinnedStep = latestClaimStepRef.current.get(String(r?.id));
+                if (!Number.isFinite(pinnedStep)) {
+                    try {
+                        const persisted = localStorage.getItem(getClaimStepStorageKey(r?.id));
+                        const parsed = Number(persisted);
+                        if (Number.isFinite(parsed)) {
+                            pinnedStep = parsed;
+                            latestClaimStepRef.current.set(String(r?.id), parsed);
+                        }
+                    } catch (e) { }
+                }
+                if (Number.isFinite(pinnedStep) && Number(r?.currentStep || 0) < pinnedStep) {
+                    return { ...r, currentStep: pinnedStep };
+                }
+                return r;
             });
 
             setClaimedRequests(claimedOnly);
@@ -2921,17 +2950,21 @@ const App = () => {
                     localStorage.setItem(claimedCacheKey, JSON.stringify(claimedOnly));
                 }
             } catch (e) { }
+            return claimedOnly;
         } catch (err) {
             // Fallback to local cache to keep UX functional offline.
             try {
                 const saved = (typeof localStorage !== 'undefined') && localStorage.getItem(claimedCacheKey);
                 const parsed = saved ? JSON.parse(saved) : [];
-                setClaimedRequests(Array.isArray(parsed) ? parsed : []);
+                const safe = Array.isArray(parsed) ? parsed : [];
+                setClaimedRequests(safe);
+                return safe;
             } catch (e) {
                 setClaimedRequests([]);
+                return [];
             }
         }
-    }, [currentUserId]);
+    }, [currentUserId, getClaimStepStorageKey]);
 
     useEffect(() => {
         fetchClaimedRequests();
@@ -3180,9 +3213,16 @@ const App = () => {
     };
 
     // Called when the ClaimStatusPanel modal advances the status
-    const handleUpdateClaimStatus = (nextStep, message, requestId) => {
+    const handleUpdateClaimStatus = async (nextStep, message, requestId) => {
+        if (updateClaimInFlightRef.current) return false;
+        updateClaimInFlightRef.current = true;
         // Get the request that's being updated
         const requestBeingUpdated = claimedRequests.find(r => r.id === requestId);
+        const previousStep = Number(requestBeingUpdated?.currentStep || 0);
+        latestClaimStepRef.current.set(String(requestId), Number(nextStep || 0));
+        try {
+            localStorage.setItem(getClaimStepStorageKey(requestId), String(Number(nextStep || 0)));
+        } catch (e) { }
         
         setClaimedRequests((prev) => {
             return prev.map(req => {
@@ -3193,33 +3233,7 @@ const App = () => {
             });
         });
         
-        // If this is the final step (completion), move to published
         const stepsCount = 6; // Based on ClaimStatusPanel steps
-        if (nextStep >= stepsCount && requestBeingUpdated) {
-            setTimeout(() => {
-                // Remove from claims
-                setClaimedRequests(prev => prev.filter(r => r.id !== requestId));
-                
-                // Add to published list
-                const publishedItem = {
-                    id: requestBeingUpdated.id,
-                    title: requestBeingUpdated.title,
-                    description: requestBeingUpdated.description,
-                    funding: requestBeingUpdated.funding,
-                    requesterName: requestBeingUpdated.requesterName,
-                    requesterAvatar: requestBeingUpdated.requesterAvatar,
-                    format: requestBeingUpdated.format,
-                    completedAt: Date.now(),
-                    currentStep: nextStep,
-                    originalClaim: requestBeingUpdated
-                };
-                setPublishedList(prev => [publishedItem, ...prev]);
-
-                // TRIGGER FEEDBACK for Creator
-                setCompletedRequestId(requestBeingUpdated.id);
-                setShowCreatorFeedback(true);
-            }, 2000);
-        }
         
         // Ensure this request is considered active in the Requests list so
         // the Active Requests card and the Claims view reflect the update.
@@ -3248,31 +3262,74 @@ const App = () => {
         console.log('Status updated to', nextStep, 'message:', message);
 
         // Update server and notify requester
+        let serverUpdated = false;
         try {
             const token = localStorage.getItem('regaarder_token');
             const rid = requestId;
             if (token && rid) {
                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
-                fetch(`${BACKEND}/requests/${rid}/status`, {
+                const res = await fetch(`${BACKEND}/requests/${rid}/status`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify({ step: nextStep, message })
-                }).then(res => {
-                    if (res.ok) setToastMessage('Status updated & requester notified');
-                }).catch(err => console.error('Status update failed', err));
+                });
+                if (res.ok) {
+                    serverUpdated = true;
+                    setToastMessage('Status updated & requester notified');
+                } else {
+                    console.error('Status update failed', res.status);
+                }
             }
         } catch (e) {
             console.error('Failed to update status on server', e);
         }
-        fetchClaimedRequests();
-        // Try to resync published list from localStorage
-        try {
-            const raw = (typeof localStorage !== 'undefined') && localStorage.getItem('publishedItems');
-            if (raw) setPublishedList(JSON.parse(raw));
-        } catch (e) { }
+        if (!serverUpdated) {
+            setClaimedRequests((prev) => prev.map((req) => {
+                if (req.id !== requestId) return req;
+                return { ...req, currentStep: previousStep };
+            }));
+            latestClaimStepRef.current.set(String(requestId), previousStep);
+            try {
+                localStorage.setItem(getClaimStepStorageKey(requestId), String(previousStep));
+            } catch (e) { }
+            updateClaimInFlightRef.current = false;
+            setToastMessage('Failed to update status — please try again');
+            return false;
+        }
+
+        await fetchClaimedRequests();
+
+        if (nextStep >= stepsCount && requestBeingUpdated) {
+            setTimeout(() => {
+                // Remove from claims
+                setClaimedRequests(prev => prev.filter(r => r.id !== requestId));
+
+                // Add to published list
+                const publishedItem = {
+                    id: requestBeingUpdated.id,
+                    title: requestBeingUpdated.title,
+                    description: requestBeingUpdated.description,
+                    funding: requestBeingUpdated.funding,
+                    requesterName: requestBeingUpdated.requesterName,
+                    requesterAvatar: requestBeingUpdated.requesterAvatar,
+                    format: requestBeingUpdated.format,
+                    completedAt: Date.now(),
+                    currentStep: nextStep,
+                    originalClaim: requestBeingUpdated
+                };
+                persistPublishedList([publishedItem, ...publishedList]);
+
+                // TRIGGER FEEDBACK for Creator
+                setCompletedRequestId(requestBeingUpdated.id);
+                setShowCreatorFeedback(true);
+            }, 2000);
+        }
+
+        updateClaimInFlightRef.current = false;
+        return true;
     };
 
     // Header navigation guard and active state for header buttons (prevents double navigation)

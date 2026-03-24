@@ -1442,6 +1442,15 @@ function writeRequests(requests) {
   }
 }
 
+async function awaitRequestDbWrites() {
+  if (!DB_ENABLED) return;
+  try {
+    await _requestDbWriteChain;
+  } catch (err) {
+    console.error('[request-cache] await write chain error:', err);
+  }
+}
+
 function toNonNegativeNumber(value, fallback = 0) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -2334,7 +2343,7 @@ app.get('/api/playback', async (req, res) => {
 });
 
 // Claim endpoint: requires authentication
-app.post('/claim', authMiddleware, (req, res) => {
+app.post('/claim', authMiddleware, async (req, res) => {
   const { requestId } = req.body || {};
   if (!requestId) return res.status(400).json({ error: 'Missing requestId' });
   
@@ -2453,8 +2462,10 @@ app.post('/claim', authMiddleware, (req, res) => {
       name: req.user.name || req.user.email
     };
     request.claimedAt = new Date().toISOString();
+    request.currentStep = 1;
     
     writeRequests(requests);
+    await awaitRequestDbWrites();
     
     return res.json({ 
       success: true, 
@@ -4599,11 +4610,22 @@ app.get('/requests', async (req, res) => {
 
     if (DB_ENABLED) {
       const { rows } = await dbQuery(
-        `SELECT r.*, u.name AS creator_user_name, u.email AS creator_user_email, u.image AS creator_user_image
+        `SELECT r.*,
+                u.name AS creator_user_name,
+                u.email AS creator_user_email,
+                u.image AS creator_user_image,
+                ub.name AS fallback_creator_user_name,
+                ub.email AS fallback_creator_user_email,
+                ub.image AS fallback_creator_user_image
          FROM requests r
-         LEFT JOIN users u ON u.id = r.creator_id`
+         LEFT JOIN users u ON u.id = r.creator_id
+         LEFT JOIN users ub ON ub.id = r.created_by`
       );
       requests = rows.map((row) => {
+        const creatorId = row.creator_id || row.created_by || null;
+        const creatorName = row.creator_user_name || row.fallback_creator_user_name || row.creator_name || 'Anonymous';
+        const creatorEmail = row.creator_user_email || row.fallback_creator_user_email || row.creator_email || null;
+        const creatorImage = row.creator_user_image || row.fallback_creator_user_image || null;
         const base = {
           id: row.id,
           title: row.title,
@@ -4619,15 +4641,15 @@ app.get('/requests', async (req, res) => {
           companyInitial: row.company_initial,
           companyColor: row.company_color,
           imageUrl: row.image_url,
-          creator: row.creator_id || row.creator_user_name
+          creator: creatorId || creatorName
             ? {
-                id: row.creator_id,
-                name: row.creator_user_name || row.creator_name || 'Anonymous',
-                email: row.creator_user_email || row.creator_email || null,
-                image: row.creator_user_image || null
+                id: creatorId,
+                name: creatorName,
+                email: creatorEmail,
+                image: creatorImage
               }
             : null,
-          creatorId: row.creator_id,
+          creatorId,
           createdBy: row.created_by,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
@@ -5112,6 +5134,8 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
     }
 
     const allRequests = readRequests();
+    const users = readUsers();
+    const usersById = new Map((Array.isArray(users) ? users : []).map((u) => [String(u?.id || ''), u]));
     const userRequests = allRequests
       .filter((r) => {
         const createdBy = r.createdBy || r.created_by;
@@ -5121,7 +5145,28 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
         }
         return String(createdBy || '') === uid;
       })
-      .map((request) => applyRequestAmountPresentation(request));
+      .map((request) => {
+        const copy = { ...request };
+        const requesterId = String(copy.createdBy || copy.created_by || '');
+        const requesterUser = usersById.get(requesterId);
+        const creatorId = String(copy.creatorId || copy.creator_id || copy.creator?.id || copy.createdBy || copy.created_by || '');
+        const creatorUser = usersById.get(creatorId);
+        copy.requesterName = copy.requesterName || requesterUser?.name || null;
+        copy.requesterAvatar = copy.requesterAvatar || requesterUser?.image || null;
+        if (copy.creator && !copy.creator.image && creatorUser?.image) {
+          copy.creator = { ...copy.creator, image: creatorUser.image };
+        }
+        if (!copy.creator && creatorUser) {
+          copy.creator = {
+            id: creatorUser.id,
+            name: creatorUser.name || 'Anonymous',
+            email: creatorUser.email || null,
+            image: creatorUser.image || null
+          };
+        }
+        if (!copy.imageUrl && copy.creator?.image) copy.imageUrl = copy.creator.image;
+        return applyRequestAmountPresentation(copy);
+      });
     return res.json({ requests: userRequests });
   } catch (err) {
     console.error('get my requests error', err);
@@ -6923,6 +6968,7 @@ app.post('/requests/:id/status', authMiddleware, async (req, res) => {
     if (step != null) request.currentStep = step;
     request.updatedAt = new Date().toISOString();
     writeRequests(requests);
+    await awaitRequestDbWrites();
     
     // Notify requester
     if (request.createdBy) {
@@ -8185,7 +8231,19 @@ app.get('/staff/requests', (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     if (DB_ENABLED) {
-      return dbQuery('SELECT * FROM requests ORDER BY created_at DESC')
+      return dbQuery(
+        `SELECT r.*,
+                u.name AS creator_user_name,
+                u.email AS creator_user_email,
+                u.image AS creator_user_image,
+                ub.name AS fallback_creator_user_name,
+                ub.email AS fallback_creator_user_email,
+                ub.image AS fallback_creator_user_image
+         FROM requests r
+         LEFT JOIN users u ON u.id = r.creator_id
+         LEFT JOIN users ub ON ub.id = r.created_by
+         ORDER BY r.created_at DESC`
+      )
         .then(({ rows }) => {
           const requests = rows.map((row) => applyRequestAmountPresentation({
             id: row.id,
@@ -8201,16 +8259,22 @@ app.get('/staff/requests', (req, res) => {
             company: row.company,
             companyInitial: row.company_initial,
             companyColor: row.company_color,
-            imageUrl: row.image_url,
-            creatorId: row.creator_id,
-            creatorName: row.creator_name,
-            creatorEmail: row.creator_email,
+            imageUrl: row.image_url || row.creator_user_image || row.fallback_creator_user_image || null,
+            creatorId: row.creator_id || row.created_by,
+            creatorName: row.creator_user_name || row.fallback_creator_user_name || row.creator_name,
+            creatorEmail: row.creator_user_email || row.fallback_creator_user_email || row.creator_email,
+            creator: {
+              id: row.creator_id || row.created_by,
+              name: row.creator_user_name || row.fallback_creator_user_name || row.creator_name || 'Anonymous',
+              email: row.creator_user_email || row.fallback_creator_user_email || row.creator_email || null,
+              image: row.creator_user_image || row.fallback_creator_user_image || null
+            },
             createdBy: row.created_by,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
             currentStep: row.current_step,
             claimed: row.claimed,
-            claimedBy: row.claimed_by,
+            claimedBy: safeParseJson(row.claimed_by),
             claimedAt: row.claimed_at,
             meta: row.meta
           }));
@@ -8222,7 +8286,26 @@ app.get('/staff/requests', (req, res) => {
         });
     }
 
-    const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8')).map((request) => applyRequestAmountPresentation(request));
+    const users = readUsers();
+    const usersById = new Map((Array.isArray(users) ? users : []).map((u) => [String(u?.id || ''), u]));
+    const requests = JSON.parse(fs.readFileSync(REQUESTS_FILE, 'utf8')).map((request) => {
+      const copy = { ...request };
+      const creatorId = String(copy.creatorId || copy.creator_id || copy.creator?.id || copy.createdBy || copy.created_by || '');
+      const creatorUser = usersById.get(creatorId);
+      copy.creatorId = copy.creatorId || copy.creator_id || creatorUser?.id || null;
+      copy.creatorName = copy.creatorName || copy.creator_name || creatorUser?.name || copy.company || 'Anonymous';
+      copy.creatorEmail = copy.creatorEmail || copy.creator_email || creatorUser?.email || null;
+      if (creatorUser) {
+        copy.creator = {
+          id: copy.creatorId,
+          name: copy.creatorName,
+          email: copy.creatorEmail,
+          image: creatorUser.image || null
+        };
+      }
+      if (!copy.imageUrl && creatorUser?.image) copy.imageUrl = creatorUser.image;
+      return applyRequestAmountPresentation(copy);
+    });
     return res.json({ requests });
   } catch (err) {
     console.error('Get requests error:', err);
