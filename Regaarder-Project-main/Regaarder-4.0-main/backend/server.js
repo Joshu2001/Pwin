@@ -6952,30 +6952,71 @@ app.post('/requests/:id/status', authMiddleware, async (req, res) => {
   try {
     const requestId = req.params.id;
     const { step, message } = req.body || {};
-    
-    const requests = readRequests();
-    const idx = requests.findIndex(r => String(r.id) === String(requestId));
-    if (idx === -1) return res.status(404).json({ error: 'Request not found' });
-    
-    const request = requests[idx];
-    
-    // Check if claimed by current user
-    if (!request.claimed || !request.claimedBy || String(request.claimedBy.id) !== String(req.user.id)) {
-       return res.status(403).json({ error: 'Not authorized to update this request' });
+    let request = null;
+
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1 LIMIT 1', [requestId]);
+      if (!rows[0]) return res.status(404).json({ error: 'Request not found' });
+
+      const existing = mapRequestRow(rows[0]);
+      const claimedBy = existing?.claimedBy || safeParseJson(existing?.claimed_by);
+      if (!existing.claimed || !claimedBy || String(claimedBy.id) !== String(req.user.id)) {
+        return res.status(403).json({ error: 'Not authorized to update this request' });
+      }
+
+      const nowIso = new Date().toISOString();
+      const parsedStep = Number(step);
+      const safeStep = Number.isFinite(parsedStep)
+        ? Math.max(1, Math.min(6, Math.trunc(parsedStep)))
+        : null;
+
+      let updated;
+      if (safeStep != null) {
+        updated = await dbQuery(
+          'UPDATE requests SET current_step = $1, updated_at = $2 WHERE id = $3 RETURNING *',
+          [safeStep, nowIso, requestId]
+        );
+      } else {
+        updated = await dbQuery(
+          'UPDATE requests SET updated_at = $1 WHERE id = $2 RETURNING *',
+          [nowIso, requestId]
+        );
+      }
+
+      request = mapRequestRow(updated.rows[0]);
+
+      if (Array.isArray(_requestDbCache) && _requestDbCacheReady) {
+        const cacheIdx = _requestDbCache.findIndex((r) => String(r?.id) === String(requestId));
+        if (cacheIdx !== -1) _requestDbCache[cacheIdx] = request;
+      }
+    } else {
+      const requests = readRequests();
+      const idx = requests.findIndex(r => String(r.id) === String(requestId));
+      if (idx === -1) return res.status(404).json({ error: 'Request not found' });
+
+      request = requests[idx];
+      const claimedBy = request?.claimedBy || safeParseJson(request?.claimed_by);
+
+      // Check if claimed by current user
+      if (!request.claimed || !claimedBy || String(claimedBy.id) !== String(req.user.id)) {
+        return res.status(403).json({ error: 'Not authorized to update this request' });
+      }
+
+      // Update step
+      if (step != null) request.currentStep = Number(step);
+      request.updatedAt = new Date().toISOString();
+      writeRequests(requests);
+      await awaitRequestDbWrites();
     }
     
-    // Update step
-    if (step != null) request.currentStep = step;
-    request.updatedAt = new Date().toISOString();
-    writeRequests(requests);
-    await awaitRequestDbWrites();
-    
     // Notify requester
-    if (request.createdBy) {
+    const requesterId = request?.createdBy || request?.created_by;
+    if (requesterId) {
         // Construct notification message
         // steps are 1-based index in dashboard logic
         const stepsLabels = ['Request Received', 'Under Review', 'In Production', 'Preview Ready', 'Published', 'Completed'];
-        const stepLabel = (typeof step === 'number' && step > 0 && step <= stepsLabels.length) ? stepsLabels[step-1] : step;
+      const stepNum = Number(step);
+      const stepLabel = (Number.isFinite(stepNum) && stepNum > 0 && stepNum <= stepsLabels.length) ? stepsLabels[stepNum - 1] : step;
         
         const notifText = `Update for "${request.title}": ${stepLabel} ${message ? ' - ' + message : ''}`;
         
@@ -6984,10 +7025,10 @@ app.post('/requests/:id/status', authMiddleware, async (req, res) => {
           requestId: request.id,
           text: notifText,
           from: { id: req.user.id, name: req.user.name || req.user.email },
-          to: { id: request.createdBy }, // Requester ID
+          to: { id: requesterId }, // Requester ID
           createdAt: new Date().toISOString(),
           type: 'status_update',
-          metadata: { step, message }
+          metadata: { step: Number.isFinite(Number(step)) ? Number(step) : step, message }
         };
         
         const arr = await loadNotifications();
@@ -6995,7 +7036,7 @@ app.post('/requests/:id/status', authMiddleware, async (req, res) => {
         await saveNotifications(arr);
     }
 
-    return res.json({ success: true, currentStep: request.currentStep });
+    return res.json({ success: true, currentStep: Number(request.currentStep || request.current_step || 1) });
   } catch (err) {
     console.error('update status error', err);
     return res.status(500).json({ error: 'Server error' });

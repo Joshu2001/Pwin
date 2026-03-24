@@ -9,6 +9,7 @@ import SharedBottomBar from './components/SharedBottomBar.jsx';
 import { useAuth } from './AuthContext.jsx';
 import { getTranslation, translations } from './translations.js';
 import { WEB_URL } from './config.js';
+import { resolveMediaUrl } from './utils/media.js';
 
 // No per-page CSS vars here — let the page inherit the global :root variables
 const customStyle = {};
@@ -428,6 +429,12 @@ const ClaimStatusPanel = ({
     const [thumbnailPreview, setThumbnailPreview] = useState(null);
     const [thumbnailInputMode, setThumbnailInputMode] = useState('file');
     const [thumbnailLinkInput, setThumbnailLinkInput] = useState('');
+    const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+    const resolvedRequesterAvatar = !avatarLoadFailed ? resolveMediaUrl(requesterAvatar) : '';
+
+    useEffect(() => {
+        setAvatarLoadFailed(false);
+    }, [requesterAvatar]);
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [validationError, setValidationError] = useState('');
@@ -1104,8 +1111,13 @@ const ClaimStatusPanel = ({
                         // Collapsed view: show profile picture, name, role, and price
                         <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center flex-shrink-0">
-                                {requesterAvatar ? (
-                                    <img src={requesterAvatar} alt={requesterName} className="w-full h-full object-cover" />
+                                {resolvedRequesterAvatar ? (
+                                    <img
+                                        src={resolvedRequesterAvatar}
+                                        alt={requesterName}
+                                        className="w-full h-full object-cover"
+                                        onError={() => setAvatarLoadFailed(true)}
+                                    />
                                 ) : (
                                     <div className="text-xs text-gray-500">{requesterName.charAt(0)}</div>
                                 )}
@@ -2927,6 +2939,13 @@ const App = () => {
                 if (!claimedById) return false;
                 return uid ? String(claimedById) === uid : true;
             }).map((r) => {
+                const avatar = resolveMediaUrl(
+                    r?.requesterAvatar ||
+                    r?.creator?.image ||
+                    r?.creator?.avatar ||
+                    r?.creator?.photoURL ||
+                    ''
+                );
                 let pinnedStep = latestClaimStepRef.current.get(String(r?.id));
                 if (!Number.isFinite(pinnedStep)) {
                     try {
@@ -2939,9 +2958,9 @@ const App = () => {
                     } catch (e) { }
                 }
                 if (Number.isFinite(pinnedStep) && Number(r?.currentStep || 0) < pinnedStep) {
-                    return { ...r, currentStep: pinnedStep };
+                    return { ...r, requesterAvatar: avatar || null, currentStep: pinnedStep };
                 }
-                return r;
+                return { ...r, requesterAvatar: avatar || null };
             });
 
             setClaimedRequests(claimedOnly);

@@ -11,6 +11,7 @@ import FreeRequestSubmittedModal from './FreeRequestSubmittedModal.jsx';
 import BoostsModal from './BoostsModal.jsx';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
 import { getBackendBaseUrl } from './config.js';
+import { resolveMediaUrl } from './utils/media.js';
 import { getSafeReturnBaseUrl, getSafeReturnPath, startPayPalCheckout } from './utils/paypalCheckout.js';
 import {
   Home,
@@ -1348,7 +1349,7 @@ const VideoLengthDropdown = ({ lengths, selectedLength, setSelectedLength, custo
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-lg">
+        <div className="absolute z-[90] mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-lg max-h-72 overflow-y-auto overscroll-contain">
           <ul ref={listRef} role="listbox" aria-label="Video lengths" className="divide-y divide-gray-100">
             {lengths.map((len) => (
               <li
@@ -1455,7 +1456,7 @@ const FrequencyDropdown = ({ options, selected, setSelected, selectedLanguage = 
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-lg">
+        <div className="absolute z-[90] mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-lg max-h-72 overflow-y-auto overscroll-contain">
           <ul ref={listRef} role="listbox" aria-label="Frequency options" className="divide-y divide-gray-100">
             {options.map((opt) => (
               <li
@@ -2270,7 +2271,7 @@ const PrivacySettingsStep = ({ selectedPrivacy, setSelectedPrivacy, prevStepComp
           </svg>
 
           {open && (
-            <div className="absolute z-20 mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-lg">
+            <div className="absolute z-[90] mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-lg max-h-72 overflow-y-auto overscroll-contain">
               <ul role="listbox" className="divide-y divide-gray-100">
                 {options.map((opt) => (
                   <li
@@ -3017,16 +3018,12 @@ const App = () => {
   // Helper: normalize image URLs (uploaded: prefix → full backend URL, http→https)
   const normalizeCreatorImage = (url) => {
     if (!url) return null;
-    let s = String(url);
-    if (s.startsWith('uploaded:')) {
-      const filename = s.split(':')[1] || s.slice('uploaded:'.length);
-      return `${BACKEND}/uploads/${filename}`;
+    const resolved = resolveMediaUrl(url);
+    if (!resolved) return null;
+    if (resolved.startsWith('http://') && resolved.includes('onrender.com')) {
+      return resolved.replace('http://', 'https://');
     }
-    // Fix http → https for backend URLs
-    if (s.startsWith('http://') && s.includes('onrender.com')) {
-      s = s.replace('http://', 'https://');
-    }
-    return s;
+    return resolved;
   };
 
   const getRandomColor = () => {
@@ -3904,6 +3901,19 @@ const App = () => {
     return { mode: 'anycreators', creatorId: null, category: null };
   };
 
+  const getSpecificTargetCreator = () => {
+    const targeting = getRequestTargeting();
+    if (targeting.mode !== 'specific' || !targeting.creatorId) {
+      return { creatorId: null, creatorHandle: null, creatorMention: null };
+    }
+    const creatorHandle = selectedCreatorHandle || null;
+    return {
+      creatorId: targeting.creatorId,
+      creatorHandle,
+      creatorMention: creatorHandle ? `@${creatorHandle}` : null
+    };
+  };
+
   const handleDescriptionKeyDown = (e) => {
     if (e.key === "@" || e.key === "\uFF20" || e.key === "\uFE6B") {
       e.preventDefault();
@@ -4270,26 +4280,39 @@ const App = () => {
   // Send notification to creator when request is assigned to them
   const sendCreatorNotification = async (creatorId, requestData) => {
     try {
+      if (!creatorId || String(creatorId) === '@anycreators') return;
       const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
       const token = localStorage.getItem('regaarder_token');
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
       // Get current user info
-      let userId = null;
+      let user = null;
       try {
-        const user = JSON.parse(localStorage.getItem('regaarder_user') || '{}');
-        userId = user.id;
+        user = JSON.parse(localStorage.getItem('regaarder_user') || '{}');
       } catch (e) { }
+
+      const userId = user?.id || null;
+      const requestType = normalizeIdeasFlow(
+        requestData?.deliveryType || requestData?.flow || requestData?.meta?.flow || 'one-time'
+      );
+      const requesterName = String(user?.name || user?.displayName || user?.username || 'someone').trim();
+      const requesterMention = requesterName ? `@${requesterName.replace(/\s+/g, '_')}` : '@someone';
 
       // Create notification payload
       const notificationPayload = {
         recipientId: creatorId,
         type: 'request_assigned',
-        title: `New Request Assigned: ${requestData.title}`,
-        message: `You have a new request assigned to you: "${requestData.title}"${requestData.description ? ' - ' + requestData.description.substring(0, 50) : ''}...`,
+        title: 'New request assigned',
+        message: `You have a new ${requestType} request check it out !`,
         requestId: requestData.id,
         senderId: userId,
+        metadata: {
+          requestType,
+          amountUsd: Number(requestData?.amount || 0),
+          requesterName,
+          requesterMention
+        },
         isRead: false,
         createdAt: new Date().toISOString()
       };
@@ -4306,7 +4329,7 @@ const App = () => {
         
         // Try to send browser notification if supported
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('New Request Assigned', {
+          new Notification('New request assigned', {
             body: notificationPayload.message,
             icon: '/icon.png',
             tag: `request_${requestData.id}`
@@ -4334,6 +4357,7 @@ const App = () => {
     }
 
     const flow = normalizeIdeasFlow(pendingSubmission?.flow || selectedDeliveryType || 'one-time');
+    const specificTarget = getSpecificTargetCreator();
     const requiredBaseAmount = getIdeasBaseAmount(flow);
     const effectiveBaseAmount = getIdeasEffectiveBaseAmount();
     const totalCharge = getIdeasTotalCharge();
@@ -4356,6 +4380,8 @@ const App = () => {
       ...(selectedDeliveryType === 'recurrent' ? { frequency: selectedFrequency, customDates: customRecurrentDates } : {}),
       ...(selectedDeliveryType === 'catalogue' ? { targetVideos, themes } : {}),
       selectedCreator: (selectedCreator && selectedCreator.id && selectedCreator.id !== '@anycreators') ? selectedCreator.id : null,
+      selectedCreatorHandle: specificTarget.creatorHandle,
+      selectedCreatorMention: specificTarget.creatorMention,
       targetCategory: String(targetCategory || '').trim() || null,
       targeting: getRequestTargeting(),
       flow,
@@ -4388,6 +4414,9 @@ const App = () => {
           id: rawPending.id,
           title: String(rawPending.title || '').trim() || 'Untitled request',
           description: String(rawPending.description || '').trim() || 'No description provided',
+          deliveryType: flow,
+          delivery: flow,
+          flow,
           creator: requester,
           createdBy: requester.id,
           amount: totalCharge,
@@ -4401,7 +4430,9 @@ const App = () => {
             flow,
             role: rawPending.role,
             episodes: episodes,
-            selectedCreator: rawPending.selectedCreator || null
+            selectedCreator: rawPending.selectedCreator || null,
+            selectedCreatorHandle: rawPending.selectedCreatorHandle || null,
+            selectedCreatorMention: rawPending.selectedCreatorMention || null
           }
         };
       })();
@@ -4427,6 +4458,16 @@ const App = () => {
         requestId: syncedRequestId,
         backendSynced: true
       };
+
+      if (specificTarget.creatorId) {
+        sendCreatorNotification(specificTarget.creatorId, {
+          id: syncedRequestId,
+          title: requestPayload.title,
+          description: requestPayload.description,
+          deliveryType: flow,
+          amount: totalCharge
+        });
+      }
 
       localStorage.setItem('pending_payment_data', JSON.stringify(rawPending));
 
@@ -4475,10 +4516,12 @@ const App = () => {
     // }
 
     // 2. Prepare payload
+    const specificTarget = getSpecificTargetCreator();
+    const selectedFlow = normalizeIdeasFlow(pendingSubmission?.flow || selectedDeliveryType || 'one-time');
     const requestData = {
         title,
         description,
-        deliveryType: selectedDeliveryType,
+      deliveryType: selectedFlow,
         privacy: selectedPrivacy,
         videoLength: selectedVideoLength === 'custom' ? customVideoLength : selectedVideoLength,
         tones: selectedTones,
@@ -4487,10 +4530,12 @@ const App = () => {
         ...(selectedDeliveryType === 'recurrent' ? { frequency: selectedFrequency, customDates: customRecurrentDates } : {}),
         ...(selectedDeliveryType === 'catalogue' ? { targetVideos, themes } : {}),
         selectedCreator: (selectedCreator && selectedCreator.id && selectedCreator.id !== '@anycreators') ? selectedCreator.id : null,
+        selectedCreatorHandle: specificTarget.creatorHandle,
+        selectedCreatorMention: specificTarget.creatorMention,
         targetCategory: String(targetCategory || '').trim() || null,
         targeting: getRequestTargeting(),
         // Added for restoration after redirect
-        flow: pendingSubmission ? pendingSubmission.flow : 'one-time',
+        flow: selectedFlow,
         nextStep: pendingSubmission ? pendingSubmission.nextStep : 1,
         amount: paymentAmount,
         currency: 'usd',
@@ -4538,6 +4583,9 @@ const App = () => {
               selectedPrivacy: requestData.privacy || null,
               targetCategory: requestData.targetCategory,
               targeting: requestData.targeting,
+              selectedCreator: requestData.selectedCreator || null,
+              selectedCreatorHandle: requestData.selectedCreatorHandle || null,
+              selectedCreatorMention: requestData.selectedCreatorMention || null,
             },
             isPendingPayment: true // Flag to indicate it's not fully paid yet
         };
@@ -4558,6 +4606,9 @@ const App = () => {
               id: tempId,
               title: newRequest.title,
               description: newRequest.description,
+            deliveryType: requestData.flow,
+            delivery: requestData.flow,
+            flow: requestData.flow,
               creator: newRequest.creator,
               createdBy: newRequest.createdBy,
               meta: newRequest.meta,
@@ -4581,6 +4632,16 @@ const App = () => {
             console.log('🟢🟢🟢 Backend returned:', json);
             createdRequest = json.request || newRequest;
             isBackendSynced = true;
+
+          if (specificTarget.creatorId) {
+            sendCreatorNotification(specificTarget.creatorId, {
+              id: createdRequest?.id || newRequest.id,
+              title: newRequest.title,
+              description: newRequest.description,
+              deliveryType: requestData.flow,
+              amount: requestData.amount
+            });
+          }
 
             // FORCE UPDATE LOCAL STORAGE with the confirmed backend data
             try {
@@ -4612,7 +4673,7 @@ const App = () => {
         ...requestData,
         id: createdRequest ? createdRequest.id : null,
         backendSynced: isBackendSynced,
-        flow: pendingSubmission ? pendingSubmission.flow : 'one-time',
+      flow: requestData.flow,
         nextStep: pendingSubmission ? pendingSubmission.nextStep : 'step-3-success'
     };
 
@@ -4696,7 +4757,7 @@ const App = () => {
         id: tempId,
         title: title.trim(),
         description: description || '',
-        delivery: pendingSubmission ? pendingSubmission.flow : 'one-time',
+        delivery: normalizeIdeasFlow(pendingSubmission?.flow || selectedDeliveryType || 'one-time'),
         amount: 0,
         funding: 0,
         creator: submitterCreator,
@@ -4706,6 +4767,9 @@ const App = () => {
           selectedTones: selectedTones || [],
           selectedVideoLength: selectedVideoLength || null,
           selectedPrivacy: selectedPrivacy || null,
+          selectedCreator: (selectedCreator && selectedCreator.id && selectedCreator.id !== '@anycreators') ? selectedCreator.id : null,
+          selectedCreatorHandle: getSpecificTargetCreator().creatorHandle,
+          selectedCreatorMention: getSpecificTargetCreator().creatorMention,
           targetCategory: String(targetCategory || '').trim() || null,
           targeting: getRequestTargeting(),
         },
@@ -4728,6 +4792,9 @@ const App = () => {
         id: tempId,
         title: newRequest.title,
         description: newRequest.description,
+        deliveryType: newRequest.delivery,
+        delivery: newRequest.delivery,
+        flow: newRequest.delivery,
         creator: newRequest.creator,
         createdBy: newRequest.createdBy,
         meta: newRequest.meta,
@@ -4749,6 +4816,17 @@ const App = () => {
       if (saveRes.ok) {
         const json = await saveRes.json();
         console.log('🟢🟢🟢 Backend returned:', json);
+
+        const targetCreatorId = newRequest?.meta?.targeting?.mode === 'specific' ? newRequest?.meta?.targeting?.creatorId : null;
+        if (targetCreatorId) {
+          sendCreatorNotification(targetCreatorId, {
+            id: json?.request?.id || newRequest.id,
+            title: newRequest.title,
+            description: newRequest.description,
+            deliveryType: newRequest.delivery,
+            amount: 0
+          });
+        }
         
         const savedRequest = json.request || newRequest;
         
@@ -4843,6 +4921,11 @@ const App = () => {
           selectedTones: sourceData.tones || selectedTones || [],
           selectedVideoLength: sourceData.videoLength || selectedVideoLength || null,
           selectedPrivacy: sourceData.privacy || selectedPrivacy || null,
+          targetCategory: sourceData.targetCategory || String(targetCategory || '').trim() || null,
+          targeting: sourceData.targeting || getRequestTargeting(),
+          selectedCreator: sourceData.selectedCreator || (selectedCreator && selectedCreator.id && selectedCreator.id !== '@anycreators' ? selectedCreator.id : null),
+          selectedCreatorHandle: sourceData.selectedCreatorHandle || getSpecificTargetCreator().creatorHandle,
+          selectedCreatorMention: sourceData.selectedCreatorMention || getSpecificTargetCreator().creatorMention,
         },
       };
 
@@ -4881,6 +4964,9 @@ const App = () => {
               id: newRequest.id, // Share ID with backend for consistency
               title: newRequest.title,
               description: newRequest.description,
+              deliveryType: flow,
+              delivery: flow,
+              flow,
               creator: newRequest.creator,
               createdBy: newRequest.createdBy,
               meta: newRequest.meta,
@@ -4894,6 +4980,17 @@ const App = () => {
             console.log('Backup save result:', res.status, data);
             // If backend saved and returned the created request, use that object
             const published = (data && data.request) ? data.request : newRequest;
+
+            const targetCreatorId = newRequest?.meta?.targeting?.mode === 'specific' ? newRequest?.meta?.targeting?.creatorId : null;
+            if (targetCreatorId) {
+              sendCreatorNotification(targetCreatorId, {
+                id: published?.id || newRequest.id,
+                title: newRequest.title,
+                description: newRequest.description,
+                deliveryType: flow,
+                amount: finalAmount
+              });
+            }
 
             // Update the stored request with the authoritative version from backend
             try {
@@ -6422,7 +6519,8 @@ const App = () => {
                             {filteredCreatorsWithAny.length > 0 ? (
                               <div className="max-h-64 overflow-y-auto space-y-0 pb-2">
                                 {filteredCreatorsWithAny.map((c) => {
-                                      const avatarUrl = c.photoURL || c.image;
+                                    const avatarUrl = normalizeCreatorImage(c.photoURL || c.image || c.avatar);
+                                    const initial = (c.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase();
                                       return (
                                       <button
                                          key={c.id}
@@ -6434,11 +6532,28 @@ const App = () => {
                                          }}
                                          className="w-full flex items-center gap-3 p-3 hover:bg-blue-50/50 transition-colors text-left border-b border-gray-100 last:border-b-0 active:scale-95"
                                       >
-                                         <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center text-white text-sm font-bold shadow-md" style={{ backgroundColor: avatarUrl ? 'transparent' : (c.fallbackColor || '#3b82f6') }}>
+                                          <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center text-white text-sm font-bold shadow-md" style={{ backgroundColor: avatarUrl ? 'transparent' : (c.fallbackColor || '#3b82f6') }}>
                                             {avatarUrl ? (
-                                               <img src={avatarUrl} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display='none'; }} />
+                                              <>
+                                               <img
+                                                src={avatarUrl}
+                                                alt=""
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                  e.currentTarget.style.display = 'none';
+                                                  const fallback = e.currentTarget.nextElementSibling;
+                                                  if (fallback) fallback.style.display = 'flex';
+                                                }}
+                                               />
+                                               <div
+                                                className="w-full h-full items-center justify-center text-white text-sm font-bold"
+                                                style={{ display: 'none', backgroundColor: c.fallbackColor || '#3b82f6' }}
+                                               >
+                                                {initial}
+                                               </div>
+                                              </>
                                             ) : (
-                                               (c.name || 'U').charAt(0).toUpperCase()
+                                              initial
                                             )}
                                          </div>
                                          <div className="flex-1 min-w-0">
