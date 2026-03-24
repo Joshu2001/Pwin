@@ -1273,6 +1273,7 @@ let _requestDbWriteChain = Promise.resolve();
 
 function mapRequestRow(row) {
   if (!row) return null;
+  const claimedBy = parseClaimedByValue(row.claimed_by);
   return {
     id: row.id,
     title: row.title,
@@ -1297,7 +1298,7 @@ function mapRequestRow(row) {
     updatedAt: row.updated_at,
     currentStep: row.current_step,
     claimed: row.claimed,
-    claimedBy: row.claimed_by,
+    claimedBy,
     claimedAt: row.claimed_at,
     meta: row.meta,
     // snake_case aliases for DB-path code that expects them
@@ -1313,10 +1314,33 @@ function mapRequestRow(row) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     current_step: row.current_step,
-    claimed_by: row.claimed_by,
+    claimed_by: claimedBy,
     claimed_at: row.claimed_at
   };
 }
+
+const parseClaimedByValue = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (e) { }
+  return { id: raw };
+};
+
+const getClaimedByUserId = (requestLike) => {
+  const parsed = parseClaimedByValue(requestLike?.claimedBy || requestLike?.claimed_by);
+  return parsed && parsed.id != null ? String(parsed.id) : '';
+};
+
+const isRequestHiddenForPublicFeed = (requestLike) => {
+  if (!requestLike || typeof requestLike !== 'object') return false;
+  const meta = (requestLike.meta && typeof requestLike.meta === 'object') ? requestLike.meta : {};
+  return Boolean(requestLike.hidden || meta.hidden);
+};
 
 async function refreshRequestCache() {
   if (!DB_ENABLED) return;
@@ -3944,9 +3968,14 @@ const buildSuggestionSortTimestamp = (s) => {
             return !isMine; // Keep if not mine (i.e. remove if mine)
         });
         
+        const deleted = before - arr.length;
+        if (!deleted) {
+          return res.status(404).json({ error: 'Notification not found or not owned by user', deleted: 0, id });
+        }
+
         await saveNotifications(arr);
-        
-        return res.json({ success: true, deleted: before - arr.length, id });
+
+        return res.json({ success: true, deleted, id });
       } catch (e) {
         return res.status(500).json({ error: 'Server error' });
       }
@@ -4595,6 +4624,7 @@ app.get('/requests', async (req, res) => {
          LEFT JOIN users u ON u.id = r.creator_id`
       );
       requests = rows.map((row) => {
+        const claimedBy = parseClaimedByValue(row.claimed_by);
         const base = {
           id: row.id,
           title: row.title,
@@ -4624,7 +4654,7 @@ app.get('/requests', async (req, res) => {
           updatedAt: row.updated_at,
           currentStep: row.current_step,
           claimed: row.claimed,
-          claimedBy: row.claimed_by,
+          claimedBy,
           claimedAt: row.claimed_at,
           meta: row.meta
         };
@@ -4657,6 +4687,9 @@ app.get('/requests', async (req, res) => {
          } catch (e) { return r; }
       });
     }
+
+    // Public feed must hide requests hidden by staff moderation.
+    requests = requests.filter((r) => !isRequestHiddenForPublicFeed(r));
 
     const feed = req.query.feed || 'recommended';
     
@@ -5058,10 +5091,11 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
     if (DB_ENABLED) {
       const sql = includeClaimed
         ? `SELECT *
-           FROM requests
-           WHERE created_by = $1
-              OR (claimed_by ->> 'id') = $1
-           ORDER BY created_at DESC`
+          FROM requests
+          WHERE created_by = $1
+            OR claimed_by = $1
+            OR claimed_by = ('{"id":"' || $1 || '"}')
+          ORDER BY created_at DESC`
         : `SELECT *
            FROM requests
            WHERE created_by = $1
@@ -5100,7 +5134,7 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
     const userRequests = allRequests
       .filter((r) => {
         const createdBy = r.createdBy || r.created_by;
-        const claimedById = r.claimedBy?.id || r.claimed_by?.id;
+        const claimedById = getClaimedByUserId(r);
         if (includeClaimed) {
           return String(createdBy || '') === uid || String(claimedById || '') === uid;
         }
@@ -6900,7 +6934,8 @@ app.post('/requests/:id/status', authMiddleware, async (req, res) => {
     const request = requests[idx];
     
     // Check if claimed by current user
-    if (!request.claimed || !request.claimedBy || request.claimedBy.id !== req.user.id) {
+     const claimedById = getClaimedByUserId(request);
+     if (!request.claimed || !claimedById || claimedById !== String(req.user.id)) {
        return res.status(403).json({ error: 'Not authorized to update this request' });
     }
     
@@ -7280,7 +7315,8 @@ app.delete('/claims', authMiddleware, (req, res) => {
     const request = requests[idx];
 
     // Verify the request is claimed by the current user
-    if (!request.claimed || !request.claimedBy || request.claimedBy.id !== userId) {
+    const claimedById = getClaimedByUserId(request);
+    if (!request.claimed || !claimedById || claimedById !== String(userId)) {
       return res.status(403).json({ error: 'You have not claimed this request' });
     }
 
