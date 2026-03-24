@@ -5067,15 +5067,17 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
 
     if (DB_ENABLED) {
       const sql = includeClaimed
-        ? `SELECT *
-           FROM requests
-           WHERE created_by = $1
-              OR (claimed_by ->> 'id') = $1
-           ORDER BY created_at DESC`
-        : `SELECT *
-           FROM requests
-           WHERE created_by = $1
-           ORDER BY created_at DESC`;
+        ? `SELECT r.*, u.name AS requester_name, u.image AS requester_image
+           FROM requests r
+           LEFT JOIN users u ON u.id = r.created_by
+           WHERE r.created_by = $1
+              OR (r.claimed_by::jsonb ->> 'id') = $1
+           ORDER BY r.created_at DESC`
+        : `SELECT r.*, u.name AS requester_name, u.image AS requester_image
+           FROM requests r
+           LEFT JOIN users u ON u.id = r.created_by
+           WHERE r.created_by = $1
+           ORDER BY r.created_at DESC`;
       const { rows } = await dbQuery(sql, [uid]);
       const mapped = rows.map((row) => applyRequestAmountPresentation({
         id: row.id,
@@ -5102,7 +5104,9 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
         claimedBy: safeParseJson(row.claimed_by),
         claimedAt: row.claimed_at,
         meta: row.meta,
-        hidden: Boolean(row.meta && row.meta.hidden)
+        hidden: Boolean(row.meta && row.meta.hidden),
+        requesterName: row.requester_name || null,
+        requesterAvatar: row.requester_image || null
       }));
       return res.json({ requests: mapped });
     }
