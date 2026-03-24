@@ -39,6 +39,105 @@ const getPublicBackendBase = (req) => {
 app.use(cors());
 app.use(bodyParser.json());
 
+const CURRENCY_CACHE_TTL_MS = 60 * 60 * 1000;
+const GEO_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const FALLBACK_CURRENCY_RATES = {
+  USD: 1.00,
+  EUR: 0.92,
+  GBP: 0.79,
+  CAD: 1.36,
+  AUD: 1.53,
+  NZD: 1.66,
+  JPY: 149.50,
+  KRW: 1312.00,
+  TWD: 31.50,
+  HKD: 7.81,
+  SGD: 1.34,
+  INR: 83.12,
+  PHP: 55.50,
+  VND: 24385.00,
+  MXN: 16.95,
+  BRL: 4.97,
+  ARS: 835.50,
+  CLP: 850.00,
+  COP: 3985.00,
+  ZAR: 18.50,
+  CHF: 0.88,
+  NOK: 10.50,
+  SEK: 10.45,
+  DKK: 6.87,
+  PLN: 3.98,
+  CZK: 23.45,
+  HUF: 356.00,
+  RON: 4.58,
+  ILS: 3.68,
+  TRY: 32.15,
+  AED: 3.67,
+  SAR: 3.75
+};
+
+const sanitizeCurrencyRates = (rates) => {
+  const sanitized = { ...FALLBACK_CURRENCY_RATES };
+  if (rates && typeof rates === 'object') {
+    Object.keys(rates).forEach((key) => {
+      const code = String(key || '').toUpperCase();
+      const value = Number(rates[key]);
+      if (!code || code === 'USD') return;
+      if (Number.isFinite(value) && value > 0) {
+        sanitized[code] = value;
+      }
+    });
+  }
+  sanitized.USD = 1;
+  return sanitized;
+};
+
+const currencyRatesCache = { base: 'USD', rates: sanitizeCurrencyRates(FALLBACK_CURRENCY_RATES), updatedAt: 0 };
+const geoCache = new Map();
+
+const fetchJsonWithTimeout = async (url, options = {}, timeoutMs = 8000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const getClientIpAddress = (req) => {
+  try {
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    const ip = xff || req.ip || req.connection?.remoteAddress || '';
+    if (!ip) return '';
+    if (ip === '::1') return '127.0.0.1';
+    return ip.replace('::ffff:', '');
+  } catch (e) {
+    return '';
+  }
+};
+
+const isPrivateIp = (ip) => {
+  if (!ip) return true;
+  return (
+    ip === '127.0.0.1' ||
+    ip === '0.0.0.0' ||
+    ip === '::1' ||
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    ip.startsWith('172.16.') ||
+    ip.startsWith('172.17.') ||
+    ip.startsWith('172.18.') ||
+    ip.startsWith('172.19.') ||
+    ip.startsWith('172.2') ||
+    ip.startsWith('fe80:')
+  );
+};
+
 const DATABASE_URL = process.env.DATABASE_URL || null;
 const DB_ENABLED = Boolean(DATABASE_URL);
 const dbPool = DB_ENABLED
@@ -1724,6 +1823,108 @@ app.get('/debug/db-status', async (req, res) => {
 
 app.get('/healthz', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+app.get('/currency/rates', async (req, res) => {
+  const requestedBase = String(req.query.base || 'USD').toUpperCase();
+  const base = requestedBase || 'USD';
+  const now = Date.now();
+
+  if (
+    currencyRatesCache.base === base &&
+    currencyRatesCache.updatedAt &&
+    now - currencyRatesCache.updatedAt < CURRENCY_CACHE_TTL_MS
+  ) {
+    const cachedRates = sanitizeCurrencyRates(currencyRatesCache.rates);
+    return res.json({
+      base,
+      rates: cachedRates,
+      updatedAt: currencyRatesCache.updatedAt,
+      cached: true
+    });
+  }
+
+  try {
+    const providerUrl = `https://open.er-api.com/v6/latest/${encodeURIComponent(base)}`;
+    const payload = await fetchJsonWithTimeout(providerUrl, {}, 9000);
+    if (!payload || payload.result !== 'success' || !payload.rates) {
+      throw new Error('Unexpected exchange rate payload');
+    }
+
+    const safeRates = sanitizeCurrencyRates(payload.rates);
+
+    currencyRatesCache.base = base;
+    currencyRatesCache.rates = safeRates;
+    currencyRatesCache.updatedAt = now;
+
+    return res.json({
+      base,
+      rates: safeRates,
+      updatedAt: now,
+      cached: false
+    });
+  } catch (error) {
+    if (currencyRatesCache.rates && Object.keys(currencyRatesCache.rates).length > 0) {
+      const safeCachedRates = sanitizeCurrencyRates(currencyRatesCache.rates);
+      return res.json({
+        base: currencyRatesCache.base || 'USD',
+        rates: safeCachedRates,
+        updatedAt: currencyRatesCache.updatedAt || now,
+        cached: true,
+        fallback: true
+      });
+    }
+
+    return res.json({
+      base: 'USD',
+      rates: sanitizeCurrencyRates(FALLBACK_CURRENCY_RATES),
+      updatedAt: now,
+      cached: false,
+      fallback: true
+    });
+  }
+});
+
+app.get('/currency/locale', async (req, res) => {
+  const ip = getClientIpAddress(req);
+  const cacheKey = ip || 'unknown';
+  const now = Date.now();
+  const cachedGeo = geoCache.get(cacheKey);
+
+  if (cachedGeo && now - cachedGeo.cachedAt < GEO_CACHE_TTL_MS) {
+    return res.json({ ...cachedGeo.payload, cached: true });
+  }
+
+  const fallbackPayload = {
+    ip: ip || null,
+    countryCode: null,
+    currencyCode: 'USD',
+    source: 'fallback'
+  };
+
+  try {
+    const isLocal = isPrivateIp(ip);
+    const geoUrl = isLocal
+      ? 'https://ipapi.co/json/'
+      : `https://ipapi.co/${encodeURIComponent(ip)}/json/`;
+
+    const payload = await fetchJsonWithTimeout(geoUrl, {}, 9000);
+    const currencyCode = String(payload.currency || payload.currency_code || 'USD').toUpperCase();
+    const countryCode = String(payload.country_code || payload.country || '').toUpperCase() || null;
+
+    const responsePayload = {
+      ip: ip || null,
+      countryCode,
+      currencyCode: currencyCode || 'USD',
+      source: 'ipapi'
+    };
+
+    geoCache.set(cacheKey, { cachedAt: now, payload: responsePayload });
+    return res.json({ ...responsePayload, cached: false });
+  } catch (error) {
+    geoCache.set(cacheKey, { cachedAt: now, payload: fallbackPayload });
+    return res.json({ ...fallbackPayload, cached: false });
+  }
 });
 
 // Get all marketplace products
@@ -3745,7 +3946,7 @@ const buildSuggestionSortTimestamp = (s) => {
         
         await saveNotifications(arr);
         
-        return res.json({ success: true, deleted: before - arr.length });
+        return res.json({ success: true, deleted: before - arr.length, id });
       } catch (e) {
         return res.status(500).json({ error: 'Server error' });
       }
@@ -4971,6 +5172,10 @@ const loadCreatorsForTargeting = async () => {
 
 const resolveTargetCreatorIds = async (targeting, requesterId) => {
   const t = targeting || { mode: 'anycreators', creatorId: null, category: null };
+  if (t.mode === 'anycreators') {
+    // Broadcast mode should not spam all creators with individual notifications.
+    return [];
+  }
   if (t.mode === 'specific' && t.creatorId && t.creatorId !== '@anycreators') {
     return [String(t.creatorId)];
   }
@@ -4993,6 +5198,24 @@ const resolveTargetCreatorIds = async (targeting, requesterId) => {
   ));
 };
 
+const normalizeRequestPricingType = (requestData = {}) => {
+  const rawType = String(
+    requestData?.meta?.selectedFormat
+    || requestData?.meta?.format
+    || requestData?.meta?.flow
+    || requestData?.deliveryType
+    || requestData?.flow
+    || requestData?.delivery
+    || requestData?.type
+    || 'one-time'
+  ).toLowerCase();
+
+  if (rawType === 'recurrent') return 'recurring';
+  if (rawType === 'catalogue') return 'one-time';
+  if (rawType === 'recurring' || rawType === 'series') return rawType;
+  return 'one-time';
+};
+
 const createRequestAssignedNotifications = async (targetCreatorIds, requestData, sender) => {
   try {
     if (!Array.isArray(targetCreatorIds) || targetCreatorIds.length === 0) return 0;
@@ -5000,6 +5223,16 @@ const createRequestAssignedNotifications = async (targetCreatorIds, requestData,
     const arr = await loadNotifications();
     const createdAt = new Date().toISOString();
     const created = [];
+    const pricingType = normalizeRequestPricingType(requestData);
+    const amountUsd = Number(
+      (requestData && requestData.funding)
+      || (requestData && requestData.amount)
+      || 0
+    );
+    const requesterName = (sender && (sender.name || sender.email)) || 'Someone';
+    const requesterMention = requesterName.startsWith('@')
+      ? requesterName
+      : `@${String(requesterName).trim().replace(/\s+/g, '_')}`;
 
     targetCreatorIds.forEach((recipientId) => {
       const notif = {
@@ -5011,8 +5244,14 @@ const createRequestAssignedNotifications = async (targetCreatorIds, requestData,
         },
         type: 'request_assigned',
         title: `New Request Assigned: ${requestData.title}`,
-        message: `You have a new request assigned to you: "${requestData.title}"${requestData.description ? ' - ' + String(requestData.description).substring(0, 50) : ''}...`,
+        message: `${requesterMention} requested you a ${pricingType} request + $${amountUsd.toFixed(2)}`,
         requestId: requestData.id || null,
+        metadata: {
+          requestType: pricingType,
+          amountUsd,
+          requesterName,
+          requesterMention
+        },
         read: false,
         createdAt
       };
@@ -5085,7 +5324,16 @@ app.post('/requests', authMiddleware, async (req, res) => {
       const { rows } = await dbQuery('SELECT * FROM requests WHERE id = $1', [id]);
       try {
         const targetCreatorIds = await resolveTargetCreatorIds(targeting, req.user?.id);
-        await createRequestAssignedNotifications(targetCreatorIds, { id, title: body.title, description: body.description }, req.user);
+        await createRequestAssignedNotifications(targetCreatorIds, {
+          id,
+          title: body.title,
+          description: body.description,
+          amount: parsedAmount || 0,
+          funding,
+          delivery: body.delivery,
+          deliveryType: body.deliveryType,
+          meta: metaPayload
+        }, req.user);
       } catch (notifyErr) {
         console.error('request notify error', notifyErr);
       }
@@ -8227,7 +8475,7 @@ app.delete('/staff/delete-request/:requestId', (req, res) => {
           });
           writeStaff(staff);
 
-          return res.json({ success: true, message: 'Request deleted' });
+          return res.json({ success: true, message: 'Request deleted', requestId });
         })
         .catch((err) => {
           console.error('Delete request db error:', err);
@@ -8257,7 +8505,7 @@ app.delete('/staff/delete-request/:requestId', (req, res) => {
     });
     writeStaff(staff);
 
-    return res.json({ success: true, message: 'Request deleted' });
+    return res.json({ success: true, message: 'Request deleted', requestId });
   } catch (err) {
     console.error('Delete request error:', err);
     return res.status(500).json({ error: 'Server error' });
