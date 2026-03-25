@@ -5962,6 +5962,8 @@ app.get('/videos', async (req, res) => {
     let videos = await loadVideos();
     const feed = req.query.feed; // 'trending' | 'recommended' | undefined
     const category = req.query.category;
+    const authorIdFilter = req.query.authorId;
+    const mineOnly = String(req.query.mine || '0') === '1';
     const user = await tryGetUser(req); // helper to get user from token if present
 
     console.log(`GET /videos feed=${feed} category=${category} user=${user ? user.id : 'anon'}`);
@@ -5969,6 +5971,22 @@ app.get('/videos', async (req, res) => {
     // Filter by category if provided
     if (category && category !== 'All') {
         videos = videos.filter(v => v.category === category);
+    }
+
+    if (authorIdFilter) {
+      videos = videos.filter((v) => String(v.authorId || '') === String(authorIdFilter));
+    }
+
+    if (mineOnly) {
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required for mine=1' });
+      }
+      videos = videos.filter((v) => {
+        const authorId = String(v.authorId || '');
+        const userId = String(user.id || '');
+        const userEmail = String(user.email || '');
+        return authorId === userId || (userEmail && authorId === userEmail);
+      });
     }
 
     if (feed && (feed.toLowerCase() === 'trending' || feed.toLowerCase() === 'trending now')) {
@@ -6106,7 +6124,7 @@ app.post('/videos/publish', async (req, res) => {
     console.log('POST /videos/publish received');
     console.log('Request body:', req.body);
     
-    const { title, thumbnail, videoUrl, category, format, time, requester, overlays } = req.body;
+    const { title, thumbnail, videoUrl, category, format, time, requester, overlays, appearance } = req.body;
     
     // Try to get authenticated user, otherwise use default
     let author = 'Anonymous';
@@ -6119,7 +6137,7 @@ app.post('/videos/publish', async (req, res) => {
       const user = await getUserFromAuthHeader(req);
       if (user) {
         author = user.name || user.email;
-        authorId = user.email;
+        authorId = user.id || user.email;
         console.log('Authenticated user:', author);
       }
     }
@@ -6165,7 +6183,7 @@ app.post('/videos/publish', async (req, res) => {
       date: 'Just now',
       category: category || 'General',
       format: format || 'one-time',
-      appearance: 'public',  // Videos published are public by default
+      appearance: appearance || 'public',
       pinned: false,
       pinnedDays: null,
       bookmarked: false,
@@ -6205,17 +6223,18 @@ app.post('/videos/publish', async (req, res) => {
 // Delete a published video
 app.delete('/videos/:id', authMiddleware, async (req, res) => {
   try {
-    const videoId = parseInt(req.params.id);
+    const videoId = String(req.params.id);
     const user = req.user;
     const videos = await loadVideos();
     
-    const videoIndex = videos.findIndex(v => v.id === videoId);
+    const videoIndex = videos.findIndex(v => String(v.id) === videoId);
     if (videoIndex === -1) {
       return res.status(404).json({ error: 'Video not found' });
     }
 
     // Only allow the author to delete their own video
-    if (videos[videoIndex].authorId !== user.email) {
+    const ownerId = String(videos[videoIndex].authorId || '');
+    if (ownerId !== String(user.id || '') && ownerId !== String(user.email || '')) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -6225,6 +6244,47 @@ app.delete('/videos/:id', authMiddleware, async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('delete video error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Creator updates their own published video metadata
+app.put('/videos/:id', authMiddleware, async (req, res) => {
+  try {
+    const videoId = String(req.params.id);
+    const user = req.user;
+    const body = req.body || {};
+    const videos = await loadVideos();
+
+    const idx = videos.findIndex((v) => String(v.id) === videoId);
+    if (idx === -1) return res.status(404).json({ error: 'Video not found' });
+
+    const ownerId = String(videos[idx].authorId || '');
+    if (ownerId !== String(user.id || '') && ownerId !== String(user.email || '')) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const next = { ...videos[idx] };
+    const allowed = ['title', 'videoUrl', 'imageUrl', 'category', 'format', 'appearance', 'requester', 'time', 'overlays'];
+    for (const key of allowed) {
+      if (body[key] === undefined) continue;
+      if (key === 'title' && !String(body[key] || '').trim()) continue;
+      if ((key === 'videoUrl' || key === 'imageUrl') && String(body[key] || '').startsWith('blob:')) continue;
+      if (key === 'videoUrl' || key === 'imageUrl') {
+        next[key] = normalizeMediaUrl(body[key], req);
+      } else if (key === 'overlays') {
+        next[key] = Array.isArray(body[key]) ? body[key] : [];
+      } else {
+        next[key] = body[key];
+      }
+    }
+    next.updatedAt = new Date().toISOString();
+    videos[idx] = next;
+
+    await saveVideos(videos);
+    return res.json({ success: true, video: next });
+  } catch (err) {
+    console.error('creator update video error', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });

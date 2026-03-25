@@ -405,6 +405,7 @@ const ClaimStatusPanel = ({
     onClose = () => { },
     onUpdateProgress = () => { },
     onUnclaim = () => { },
+    onPublishedChange = () => { },
     pendingReuploadItem = null,
     clearPendingReupload = () => { },
 }) => {
@@ -2392,6 +2393,7 @@ const ClaimStatusPanel = ({
                                                                 videoUrl: videoUrl || null,
                                                                 category: category || 'General',
                                                                 format: pd.format || videoFormat,
+                                                                appearance: appearance || 'public',
                                                                 time: videoDuration,
                                                                 requester: requesterName || null,
                                                                 overlays: videoOverlays && Array.isArray(videoOverlays) ? videoOverlays : []
@@ -2401,6 +2403,12 @@ const ClaimStatusPanel = ({
                                                         if (response.ok) {
                                                             const result = await response.json();
                                                             console.log('Video published successfully:', result);
+                                                            if (result && result.video) {
+                                                                publishedMeta.id = result.video.id || publishedMeta.id;
+                                                                publishedMeta.videoUrl = result.video.videoUrl || publishedMeta.videoUrl;
+                                                                publishedMeta.thumbnail = result.video.imageUrl || publishedMeta.thumbnail;
+                                                            }
+                                                            try { onPublishedChange(); } catch (e) { }
 
                                                             // Show success toast with option to view
                                                             setToastMessage(getTranslation('Video published! Refresh home page to see it.', selectedLanguage));
@@ -3057,16 +3065,10 @@ const App = () => {
     const [pendingReuploadItem, setPendingReuploadItem] = useState(null);
     const [collapsedRequests, setCollapsedRequests] = useState({}); // Track which requests are collapsed by ID
     const [claimsMinimized, setClaimsMinimized] = useState(false);
-    // Published list stored in local state (backed by localStorage)
-    const [publishedList, setPublishedList] = useState(() => {
-        try {
-            if (typeof localStorage !== 'undefined') {
-                const raw = localStorage.getItem('publishedItems');
-                return raw ? JSON.parse(raw) : [];
-            }
-        } catch (e) { /* ignore */ }
-        return [];
-    });
+    // Published list sourced from backend so Home and Creator views stay in sync.
+    const [publishedList, setPublishedList] = useState([]);
+    const [publishedLoading, setPublishedLoading] = useState(false);
+    const [publishedError, setPublishedError] = useState('');
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [uploadFile, setUploadFile] = useState(null);
     const [uploadTitle, setUploadTitle] = useState('');
@@ -3080,6 +3082,8 @@ const App = () => {
     const [deletingId, setDeletingId] = useState(null);
     const [pressedId, setPressedId] = useState(null);
     const [deleteCandidate, setDeleteCandidate] = useState(null);
+    const [editPublishedItem, setEditPublishedItem] = useState(null);
+    const [savingEditPublished, setSavingEditPublished] = useState(false);
 
     const handleDeletePressStart = (id) => {
         setPressedId(id);
@@ -3183,26 +3187,58 @@ const App = () => {
         window.removeEventListener('mouseup', onMouseUp);
     };
 
-    // reload published list when storage changes or when switching to Published tab
-    useEffect(() => {
-        const onStorage = (e) => {
-            if (e.key === 'publishedItems') {
-                try { setPublishedList(e.newValue ? JSON.parse(e.newValue) : []); } catch (err) { }
+    const fetchPublishedVideos = useCallback(async () => {
+        setPublishedLoading(true);
+        setPublishedError('');
+        try {
+            const token = localStorage.getItem('regaarder_token');
+            if (!token) {
+                setPublishedList([]);
+                return;
             }
-        };
-        window.addEventListener('storage', onStorage);
-        return () => window.removeEventListener('storage', onStorage);
-    }, []);
-
-    useEffect(() => {
-        // refresh when switching to Published tab in same window (storage event not fired)
-        if (activeTopTab === 'Published') {
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin-copy-production.up.railway.app';
+            const response = await fetch(`${BACKEND}/videos?mine=1`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error('Failed to fetch published videos');
+            const data = await response.json();
+            const list = Array.isArray(data?.videos) ? data.videos : [];
+            const mapped = list.map((v) => ({
+                id: v.id,
+                title: v.title || getTranslation('Untitled', selectedLanguage),
+                thumbnail: v.imageUrl || null,
+                videoUrl: v.videoUrl || null,
+                category: v.category || 'General',
+                format: v.format || 'one-time',
+                appearance: v.appearance || 'public',
+                requesterName: v.requester || '',
+                time: v.timestamp || Date.now(),
+                completedAt: v.timestamp || Date.now(),
+            }));
+            setPublishedList(mapped);
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    localStorage.setItem('publishedItems', JSON.stringify(mapped));
+                }
+            } catch (e) { }
+        } catch (e) {
+            setPublishedError(e?.message || 'Failed to load published videos');
             try {
                 const raw = localStorage.getItem('publishedItems');
                 setPublishedList(raw ? JSON.parse(raw) : []);
-            } catch (e) { }
+            } catch (err) {
+                setPublishedList([]);
+            }
+        } finally {
+            setPublishedLoading(false);
         }
-    }, [activeTopTab]);
+    }, [selectedLanguage]);
+
+    useEffect(() => {
+        if (activeTopTab === 'Published') {
+            fetchPublishedVideos();
+        }
+    }, [activeTopTab, fetchPublishedVideos]);
 
     const persistPublishedList = (arr) => {
         try {
@@ -3211,16 +3247,59 @@ const App = () => {
         } catch (e) { /* ignore */ }
     };
 
-    const handleDeletePublished = (id) => {
+    const handleDeletePublished = async (id) => {
         try {
             setDeletingId(id);
-            const next = publishedList.filter((i) => i.id !== id);
-            persistPublishedList(next);
+            const token = localStorage.getItem('regaarder_token');
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin-copy-production.up.railway.app';
+            if (token) {
+                await fetch(`${BACKEND}/videos/${encodeURIComponent(id)}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            }
+            await fetchPublishedVideos();
             setAppToast(getTranslation('Deleted', selectedLanguage));
             setTimeout(() => setAppToast(''), 1800);
         } finally {
             // slight delay so user sees deleting state
             setTimeout(() => setDeletingId(null), 300);
+        }
+    };
+
+    const handleSavePublishedEdit = async () => {
+        if (!editPublishedItem || !editPublishedItem.id) return;
+        setSavingEditPublished(true);
+        try {
+            const token = localStorage.getItem('regaarder_token');
+            if (!token) throw new Error('Missing auth token');
+            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin-copy-production.up.railway.app';
+            const payload = {
+                title: String(editPublishedItem.title || '').trim(),
+                videoUrl: String(editPublishedItem.videoUrl || '').trim() || null,
+                imageUrl: String(editPublishedItem.thumbnail || '').trim() || null,
+                category: String(editPublishedItem.category || '').trim() || 'General',
+                format: String(editPublishedItem.format || '').trim() || 'one-time',
+                appearance: String(editPublishedItem.appearance || '').trim() || 'public',
+            };
+            const response = await fetch(`${BACKEND}/videos/${encodeURIComponent(editPublishedItem.id)}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) throw new Error('Failed to save video changes');
+            await fetchPublishedVideos();
+            setEditPublishedItem(null);
+            setAppToast(getTranslation('Video updated', selectedLanguage));
+            setTimeout(() => setAppToast(''), 1800);
+        } catch (e) {
+            setAppToast(getTranslation('Failed to update video', selectedLanguage));
+            setTimeout(() => setAppToast(''), 1800);
+        } finally {
+            setSavingEditPublished(false);
         }
     };
 
@@ -4104,6 +4183,7 @@ const App = () => {
                                                     // Remove the unclaimed request from claimedRequests using ID
                                                     setClaimedRequests(prev => prev.filter(r => r.id !== requestIdentifier));
                                                 }}
+                                                onPublishedChange={fetchPublishedVideos}
                                                 // Pass pendingReuploadItem ONLY if it targets this request (or if reupload has no target ID, pass to first/active?)
                                                 pendingReuploadItem={pendingReuploadItem && (pendingReuploadItem.targetClaimId === req.id) ? pendingReuploadItem : null}
                                                 clearPendingReupload={() => setPendingReuploadItem(null)}
@@ -4121,6 +4201,13 @@ const App = () => {
                         <h3 className="text-[18px] font-semibold text-gray-900">{getTranslation('Published', selectedLanguage)}</h3>
                         <button onClick={() => { setActiveTopTab('Upload'); }} className="text-[var(--color-gold)] font-medium">{getTranslation('Upload New', selectedLanguage)}</button>
                     </div>
+
+                    {publishedError && (
+                        <div className="mb-3 text-sm text-red-600">{publishedError}</div>
+                    )}
+                    {publishedLoading && (
+                        <div className="mb-3 text-sm text-gray-500">{getTranslation('Loading published videos...', selectedLanguage)}</div>
+                    )}
 
                     {publishedList && publishedList.length > 0 ? (
                         <div className="space-y-4">
@@ -4140,6 +4227,7 @@ const App = () => {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                        <button onClick={() => setEditPublishedItem({ ...item })} className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700">{getTranslation('Edit', selectedLanguage)}</button>
                                         <button onClick={() => openReupload(item)} className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700">{getTranslation('Re-upload', selectedLanguage)}</button>
                                         <button
                                             onClick={() => setDeleteCandidate(item)}
@@ -4195,6 +4283,29 @@ const App = () => {
                                 <div className="flex gap-2">
                                     <button onClick={() => { handleDeletePublished(deleteCandidate.id); setDeleteCandidate(null); setPressedId(null); }} className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white">{getTranslation('Delete', selectedLanguage)}</button>
                                     <button onClick={() => { setDeleteCandidate(null); setPressedId(null); }} className="flex-1 px-4 py-2 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {editPublishedItem && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center">
+                            <div className="absolute inset-0 bg-black opacity-60" onClick={() => !savingEditPublished && setEditPublishedItem(null)} />
+                            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 z-10 p-4">
+                                <div className="flex items-start justify-between mb-3">
+                                    <h3 className="text-[18px] font-semibold text-gray-900">{getTranslation('Edit Published Video', selectedLanguage)}</h3>
+                                    <button onClick={() => !savingEditPublished && setEditPublishedItem(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+                                </div>
+                                <div className="space-y-3">
+                                    <input value={editPublishedItem.title || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, title: e.target.value }))} placeholder={getTranslation('Title', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                                    <input value={editPublishedItem.videoUrl || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, videoUrl: e.target.value }))} placeholder={getTranslation('Video link', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                                    <input value={editPublishedItem.thumbnail || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, thumbnail: e.target.value }))} placeholder={getTranslation('Thumbnail URL', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                                    <input value={editPublishedItem.category || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, category: e.target.value }))} placeholder={getTranslation('Category', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                                    <input value={editPublishedItem.format || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, format: e.target.value }))} placeholder={getTranslation('Format', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                                </div>
+                                <div className="flex gap-2 mt-4">
+                                    <button onClick={handleSavePublishedEdit} disabled={savingEditPublished} className={`flex-1 px-4 py-2 rounded-lg text-white ${savingEditPublished ? 'bg-gray-300 cursor-not-allowed' : 'bg-[var(--color-gold)]'}`}>{savingEditPublished ? getTranslation('Saving...', selectedLanguage) : getTranslation('Save', selectedLanguage)}</button>
+                                    <button onClick={() => !savingEditPublished && setEditPublishedItem(null)} className="flex-1 px-4 py-2 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
                                 </div>
                             </div>
                         </div>
