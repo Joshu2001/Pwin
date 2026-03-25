@@ -670,13 +670,18 @@ const ClaimStatusPanel = ({
     const [publishStep, setPublishStep] = useState('form');
     const [previewData, setPreviewData] = useState(null);
 
-    const closeClaimModal = () => {
-        if (statusUpdating || uploading) return;
+    const closeClaimModal = (force = false) => {
+        if (!force && (statusUpdating || uploading)) return;
         setShowModal(false);
         setModalMode('status');
         setMessage('');
         setValidationError('');
         setPublishStep('form');
+        setIsReuploading(false);
+        setChangeNote('');
+        if (requestData?.sourceTab === 'Published') {
+            try { onClose(); } catch (e) { }
+        }
     };
 
     // Status steps for the claim workflow (used to render the tracker and labels)
@@ -1473,7 +1478,11 @@ const ClaimStatusPanel = ({
                                             <div className="mx-5 mb-5 bg-white rounded-xl shadow-lg transition-shadow duration-300 overflow-visible">
                                                 <div className="relative w-full pb-[75%]">
                                                     <img
-                                                        src={(publishStep === 'preview' ? previewData : lastPublished)?.thumbnail || thumbnailPreview || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable'}
+                                                        src={(() => {
+                                                            const candidate = (publishStep === 'preview' ? previewData : lastPublished)?.thumbnail || thumbnailPreview || '';
+                                                            if (typeof candidate === 'string' && (candidate.startsWith('blob:') || candidate.startsWith('data:'))) return candidate;
+                                                            return resolveMediaUrl(candidate) || candidate || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable';
+                                                        })()}
                                                         alt={(publishStep === 'preview' ? previewData : lastPublished)?.title || videoTitle || 'Published thumbnail'}
                                                         className="absolute top-0 left-0 w-full h-full object-cover rounded-t-xl"
                                                     />
@@ -2225,6 +2234,18 @@ const ClaimStatusPanel = ({
                                     </>
                                 ) : (
                                     <>
+                                        {isReuploading && (
+                                            <div className="mb-3">
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">{getTranslation('Update note for staff (optional)', selectedLanguage)}</label>
+                                                <textarea
+                                                    value={changeNote}
+                                                    onChange={(e) => setChangeNote(e.target.value)}
+                                                    placeholder={getTranslation('Describe what you changed in this re-upload', selectedLanguage)}
+                                                    rows={3}
+                                                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-gold)]"
+                                                />
+                                            </div>
+                                        )}
                                         <button
                                             onClick={async () => {
                                                 // run publish flow using previewData if available, otherwise fallback to current fields
@@ -2257,11 +2278,6 @@ const ClaimStatusPanel = ({
                                                     return;
                                                 }
 
-                                                // If this is a re-upload, require a change note describing edits
-                                                if (isReuploading && (!changeNote || changeNote.trim().length === 0)) {
-                                                    setValidationError(getTranslation('Please provide a short change note describing the re-upload.', selectedLanguage));
-                                                    return;
-                                                }
                                                 setUploading(true);
                                                 setUploadProgress(0);
                                                 try {
@@ -2304,7 +2320,7 @@ const ClaimStatusPanel = ({
                                                         });
 
                                                         // Upload thumbnail
-                                                        let thumbnailUrl = thumbnailPreview;
+                                                        let thumbnailUrl = null;
                                                         if (thumbnailFile && thumbnailFile instanceof File) {
                                                             const thumbFormData = new FormData();
                                                             thumbFormData.append('photo', thumbnailFile);
@@ -2320,7 +2336,7 @@ const ClaimStatusPanel = ({
                                                                 thumbnailUrl = thumbData.url;
                                                                 console.log('Thumbnail uploaded:', thumbnailUrl);
                                                             } else {
-                                                                console.warn('Thumbnail upload failed, using preview');
+                                                                console.warn('Thumbnail upload failed, using placeholder');
                                                             }
                                                         }
 
@@ -2395,6 +2411,14 @@ const ClaimStatusPanel = ({
                                                             }
                                                         }
 
+                                                        const existingThumbCandidate = publishedMeta.thumbnail || thumbnailPreview || null;
+                                                        const resolvedExistingThumbnail = (existingThumbCandidate && !String(existingThumbCandidate).startsWith('blob:') && !String(existingThumbCandidate).startsWith('data:'))
+                                                            ? (resolveMediaUrl(existingThumbCandidate) || existingThumbCandidate)
+                                                            : null;
+                                                        const effectiveThumbnailUrl = thumbnailUrl || resolvedExistingThumbnail || null;
+
+                                                        publishedMeta.thumbnail = effectiveThumbnailUrl || publishedMeta.thumbnail;
+
                                                         const publishTargetUrl = (isReuploading && pendingReuploadItem && pendingReuploadItem.id)
                                                             ? `${BACKEND}/videos/${encodeURIComponent(pendingReuploadItem.id)}`
                                                             : `${BACKEND}/videos/publish`;
@@ -2407,8 +2431,8 @@ const ClaimStatusPanel = ({
                                                             },
                                                             body: JSON.stringify({
                                                                 title: titleStr || videoTitle,
-                                                                thumbnail: thumbnailUrl || null,
-                                                                imageUrl: thumbnailUrl || null,
+                                                                thumbnail: effectiveThumbnailUrl,
+                                                                imageUrl: effectiveThumbnailUrl,
                                                                 videoUrl: videoUrl || null,
                                                                 category: category || 'General',
                                                                 format: pd.format || videoFormat,
@@ -2417,6 +2441,7 @@ const ClaimStatusPanel = ({
                                                                 requester: requesterName || null,
                                                                 requesterId: requestData?.createdBy || requestData?.created_by || null,
                                                                 requestId: requestId || requestData?.id || null,
+                                                                changeNote: (changeNote || '').trim() || null,
                                                                 overlays: videoOverlays && Array.isArray(videoOverlays) ? videoOverlays : []
                                                             })
                                                         });
@@ -2557,6 +2582,9 @@ const ClaimStatusPanel = ({
                                                             setLastPublished(publishedMeta);
                                                             setToastMessage(getTranslation('Updated published video', selectedLanguage));
                                                             try { onUpdateProgress(Math.min(steps.length, currentStep + 1), `Re-uploaded video:${publishedMeta.fileName} thumb:${publishedMeta.thumbnail || ''}`); } catch (e) { }
+                                                            if (requestData?.sourceTab === 'Published') {
+                                                                closeClaimModal(true);
+                                                            }
                                                         } else {
                                                             const newCount = publishedCount + 1;
                                                             setPublishedCount(newCount);
@@ -4170,7 +4198,12 @@ const App = () => {
                                                 currentStep={req.currentStep || 1}
                                                 requestId={req.id}
                                                 requestData={req}
-                                                onClose={() => { }}
+                                                onClose={() => {
+                                                    if (req?.sourceTab === 'Published') {
+                                                        setClaimedRequests(prev => prev.filter(r => r.id !== req.id));
+                                                        setActiveTopTab('Published');
+                                                    }
+                                                }}
                                                 onUpdateProgress={(step, msg) => {
                                                     return handleUpdateClaimStatus(step, msg, req.id);
                                                 }}
@@ -4211,7 +4244,7 @@ const App = () => {
                                     <div className="flex items-center gap-3">
                                         <div className="w-20 h-12 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
                                             {item.thumbnail ? (
-                                                <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
+                                                <img src={resolveMediaUrl(item.thumbnail) || item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
                                             ) : (
                                                 <Video size={20} />
                                             )}
@@ -4267,7 +4300,7 @@ const App = () => {
 
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="w-16 h-10 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
-                                        {deleteCandidate.thumbnail ? <img src={deleteCandidate.thumbnail} alt={deleteCandidate.title} className="w-full h-full object-cover" /> : <Video size={20} />}
+                                        {deleteCandidate.thumbnail ? <img src={resolveMediaUrl(deleteCandidate.thumbnail) || deleteCandidate.thumbnail} alt={deleteCandidate.title} className="w-full h-full object-cover" /> : <Video size={20} />}
                                     </div>
                                     <div>
                                         <div className="font-semibold">{deleteCandidate.title}</div>

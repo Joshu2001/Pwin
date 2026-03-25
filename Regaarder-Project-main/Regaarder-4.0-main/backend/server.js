@@ -637,10 +637,37 @@ const persistUploadedFile = async (req, file, prefix = 'uploads') => {
 };
 
 const normalizeMediaUrl = (rawUrl, req) => {
-  if (!rawUrl || String(rawUrl).startsWith('blob:')) return null;
+  if (!rawUrl) return null;
+  const raw = String(rawUrl).trim();
+  if (!raw) return null;
+  if (raw.startsWith('blob:') || raw.startsWith('data:')) return null;
+
+  // Legacy prefix format
+  if (raw.startsWith('uploaded:')) {
+    const base = getPublicBackendBase(req);
+    const suffix = raw.slice('uploaded:'.length).trim().replace(/\\/g, '/').replace(/^\/+/, '');
+    const clean = suffix.split(/[?#]/)[0];
+    const filename = clean.split('/').filter(Boolean).pop() || '';
+    return filename ? `${base}/uploads/${filename}` : null;
+  }
+
+  // Relative uploads path
+  if (/^uploads\//i.test(raw)) {
+    const base = getPublicBackendBase(req);
+    return `${base}/${raw.replace(/^\/+/, '')}`;
+  }
+
+  // Plain media filename from device uploads
+  if (!/^https?:\/\//i.test(raw) && !raw.startsWith('/') && !raw.includes('://') && !raw.includes('/')) {
+    if (/\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv)$/i.test(raw)) {
+      const base = getPublicBackendBase(req);
+      return `${base}/uploads/${raw}`;
+    }
+  }
+
   try {
     const base = getPublicBackendBase(req);
-    const u = new URL(String(rawUrl), base);
+    const u = new URL(raw, base);
     const host = (u.hostname || '').toLowerCase();
     if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
       const baseUrl = new URL(base);
@@ -650,7 +677,8 @@ const normalizeMediaUrl = (rawUrl, req) => {
     }
     return u.toString();
   } catch {
-    return rawUrl;
+    // Preserve legacy non-standard values instead of clearing them during read paths.
+    return raw;
   }
 };
 
@@ -836,6 +864,13 @@ const isRewritableHost = (hostname) => {
 
 const normalizeUrlString = (value, baseUrl) => {
   if (typeof value !== 'string') return value;
+  if (value.startsWith('uploaded:')) {
+    const filename = value.slice('uploaded:'.length).trim();
+    if (!filename) return value;
+    const safeBase = String(baseUrl || '').replace(/\/$/, '');
+    if (!safeBase) return `/uploads/${filename}`;
+    return `${safeBase}/uploads/${filename}`;
+  }
   if (!/^https?:\/\//i.test(value)) return value;
   try {
     const url = new URL(value);
@@ -1757,12 +1792,37 @@ const saveNotifications = async (list) => {
     return;
   }
   const client = await dbPool.connect();
-  const ids = list.map(n => String(n.id));
+  const safeList = (Array.isArray(list) ? list : []).filter((n) => n && n.id != null);
+  const ids = safeList.map((n) => String(n.id));
   try {
     await client.query('BEGIN');
-    for (const notif of list) {
-      if (!notif || !notif.id) continue;
-      const createdAt = notif.createdAt ? new Date(notif.createdAt) : new Date();
+    const existingById = new Map();
+    if (ids.length > 0) {
+      const { rows } = await client.query(
+        'SELECT id, payload FROM notifications WHERE id = ANY($1::text[])',
+        [ids]
+      );
+      for (const row of rows || []) {
+        existingById.set(String(row.id), row.payload || null);
+      }
+    }
+
+    for (const notif of safeList) {
+      let createdAt = notif.createdAt ? new Date(notif.createdAt) : new Date();
+      if (Number.isNaN(createdAt.getTime())) createdAt = new Date();
+
+      // Preserve per-user soft-delete flags so stale list saves do not resurrect notifications.
+      const existing = existingById.get(String(notif.id));
+      const existingHidden = Array.isArray(existing && existing.hiddenForUserIds)
+        ? existing.hiddenForUserIds.map((x) => String(x))
+        : [];
+      const incomingHidden = Array.isArray(notif.hiddenForUserIds)
+        ? notif.hiddenForUserIds.map((x) => String(x))
+        : [];
+      if (existingHidden.length || incomingHidden.length) {
+        notif.hiddenForUserIds = Array.from(new Set([...existingHidden, ...incomingHidden]));
+      }
+
       const toId = notif.to?.id || notif.userId || null;
       const fromId = notif.from?.id || null;
       const type = notif.type || null;
@@ -1774,11 +1834,9 @@ const saveNotifications = async (list) => {
         [String(notif.id), toId, fromId, type, isRead, notif, createdAt]
       );
     }
-    if (ids.length > 0) {
-      await client.query('DELETE FROM notifications WHERE id NOT IN (' + ids.map((_, i) => `$${i + 1}`).join(',') + ')', ids);
-    } else {
-      await client.query('DELETE FROM notifications');
-    }
+
+    // Intentionally avoid table-wide pruning here. Full-list deletes can cause
+    // cross-user data loss under concurrent requests.
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1786,6 +1844,37 @@ const saveNotifications = async (list) => {
   } finally {
     client.release();
   }
+};
+
+const notificationParticipants = (notification) => {
+  const ids = [];
+  if (notification && notification.to && notification.to.id != null) ids.push(String(notification.to.id));
+  if (notification && notification.from && notification.from.id != null) ids.push(String(notification.from.id));
+  // Fallback: some notification types (support_response, staff) use userId instead of to.id
+  if (notification && notification.userId != null && !ids.length) ids.push(String(notification.userId));
+  return Array.from(new Set(ids));
+};
+
+const notificationHiddenForUser = (notification, userId) => {
+  const uid = String(userId || '');
+  if (!uid || !notification || !Array.isArray(notification.hiddenForUserIds)) return false;
+  return notification.hiddenForUserIds.some((id) => String(id) === uid);
+};
+
+const notificationUserMatches = (notification, userId) => {
+  const uid = String(userId || '');
+  if (!uid || !notification) return false;
+  const toId = notification.to && notification.to.id != null ? String(notification.to.id) : '';
+  const fromId = notification.from && notification.from.id != null ? String(notification.from.id) : '';
+  // Fallback: some notification types (support_response, staff) use userId instead of to.id
+  const legacyUserId = notification.userId != null ? String(notification.userId) : '';
+  return toId === uid || fromId === uid || legacyUserId === uid;
+};
+
+const canHardDeleteNotification = (notification) => {
+  const participants = notificationParticipants(notification);
+  if (participants.length === 0) return true;
+  return participants.every((id) => notificationHiddenForUser(notification, id));
 };
 
 app.get('/', (req, res) => {
@@ -3924,8 +4013,8 @@ const buildSuggestionSortTimestamp = (s) => {
         const arr = await loadNotifications();
         
         const mine = arr.filter(s => 
-            (s.to && s.to.id === req.user.id) || 
-            (s.from && s.from.id === req.user.id)
+            notificationUserMatches(s, req.user.id)
+            && !notificationHiddenForUser(s, req.user.id)
         );
         return res.json({ success: true, suggestions: mine, userId: req.user.id });
       } catch (err) {
@@ -3940,8 +4029,8 @@ const buildSuggestionSortTimestamp = (s) => {
         const arr = await loadNotifications();
         
         const mine = arr.filter(s => 
-            (s.to && s.to.id === req.user.id) || 
-            (s.from && s.from.id === req.user.id)
+            notificationUserMatches(s, req.user.id)
+            && !notificationHiddenForUser(s, req.user.id)
         );
         return res.json({ success: true, notifications: mine, userId: req.user.id });
       } catch (err) {
@@ -3953,20 +4042,66 @@ const buildSuggestionSortTimestamp = (s) => {
     app.delete('/notifications/:id', authMiddleware, async (req, res) => {
       try {
         const id = req.params.id;
+        const uid = String(req.user.id);
+
+        if (DB_ENABLED) {
+          const { rows } = await dbQuery('SELECT payload FROM notifications WHERE id = $1 LIMIT 1', [String(id)]);
+          const current = rows && rows[0] ? rows[0].payload : null;
+          if (!current || !notificationUserMatches(current, uid)) {
+            return res.json({ success: true, hidden: 0, deleted: 0, id });
+          }
+
+          const hiddenFor = Array.isArray(current.hiddenForUserIds)
+            ? current.hiddenForUserIds.map((x) => String(x))
+            : [];
+          let hidden = 0;
+          if (!hiddenFor.includes(uid)) {
+            hiddenFor.push(uid);
+            hidden = 1;
+          }
+          current.hiddenForUserIds = hiddenFor;
+
+          if (hidden > 0) {
+            const toId = current.to?.id || current.userId || null;
+            const fromId = current.from?.id || null;
+            const type = current.type || null;
+            const isRead = Boolean(current.read);
+            await dbQuery(
+              'UPDATE notifications SET to_id = $2, from_id = $3, type = $4, read = $5, payload = $6 WHERE id = $1',
+              [String(id), toId, fromId, type, isRead, current]
+            );
+          }
+
+          return res.json({ success: true, hidden, deleted: 0, id });
+        }
+
         let arr = await loadNotifications();
-        
-        const before = arr.length;
-        // Allow deleting if user is sender or receiver
-        arr = arr.filter(s => {
-            if (String(s.id) !== String(id)) return true;
-            // Check ownership
-            const isMine = (s.to && String(s.to.id) === String(req.user.id)) || (s.from && String(s.from.id) === String(req.user.id));
-            return !isMine; // Keep if not mine (i.e. remove if mine)
+
+        let hidden = 0;
+        let deleted = 0;
+        // Per-user hide semantics: deleting hides notification for current user only.
+        // Notification row is physically removed only when all participants hid it.
+        arr = arr.filter((s) => {
+          if (!s || s.id == null) return false;
+          if (String(s.id) !== String(id)) return true;
+          if (!notificationUserMatches(s, uid)) return true;
+
+          const hiddenFor = Array.isArray(s.hiddenForUserIds) ? s.hiddenForUserIds.map((x) => String(x)) : [];
+          if (!hiddenFor.includes(uid)) hiddenFor.push(uid);
+          s.hiddenForUserIds = hiddenFor;
+          hidden += 1;
+
+          // Keep rows as soft-hidden only. Never hard-delete here,
+          // otherwise one user's action can impact visibility for others.
+          return true;
         });
+
+        // Only persist if something changed to avoid unnecessary writes and race conditions
+        if (hidden > 0 || deleted > 0) {
+          await saveNotifications(arr);
+        }
         
-        await saveNotifications(arr);
-        
-        return res.json({ success: true, deleted: before - arr.length, id });
+        return res.json({ success: true, hidden, deleted, id });
       } catch (e) {
         return res.status(500).json({ error: 'Server error' });
       }
@@ -3976,11 +4111,40 @@ const buildSuggestionSortTimestamp = (s) => {
     app.post('/notifications/:id/read', authMiddleware, async (req, res) => {
       try {
         const id = req.params.id;
+
+        if (DB_ENABLED) {
+          const uid = String(req.user.id);
+          const { rows } = await dbQuery('SELECT payload FROM notifications WHERE id = $1 LIMIT 1', [String(id)]);
+          const current = rows && rows[0] ? rows[0].payload : null;
+          if (!current) return res.json({ success: true, marked: false });
+
+          const recipientId = current.to && current.to.id != null
+            ? String(current.to.id)
+            : (current.userId != null ? String(current.userId) : '');
+          if (!recipientId || recipientId !== uid) {
+            return res.json({ success: true, marked: false });
+          }
+
+          if (!current.read) {
+            current.read = true;
+            const toId = current.to?.id || current.userId || null;
+            const fromId = current.from?.id || null;
+            const type = current.type || null;
+            await dbQuery(
+              'UPDATE notifications SET to_id = $2, from_id = $3, type = $4, read = $5, payload = $6 WHERE id = $1',
+              [String(id), toId, fromId, type, true, current]
+            );
+          }
+
+          return res.json({ success: true, marked: true });
+        }
+
         let arr = await loadNotifications();
         
         // Find and mark notification as read
         let found = false;
         arr = arr.map(s => {
+          if (!s || s.id == null) return s;
           if (String(s.id) === String(id)) {
             // Check ownership - only mark as read if recipient
             if (s.to && s.to.id === req.user.id) {
@@ -5964,7 +6128,10 @@ app.get('/videos', async (req, res) => {
     videos = (Array.isArray(videos) ? videos : []).map((video) => {
       const next = { ...(video || {}) };
       const normalizedVideoUrl = normalizeMediaUrl(next.videoUrl || next.url || next.src || next.videoLink || next.youtubeUrl || next.mediaUrl, req);
-      const normalizedThumb = normalizeMediaUrl(next.imageUrl || next.thumbnail || next.image, req);
+      const normalizedImageUrl = normalizeMediaUrl(next.imageUrl, req);
+      const normalizedThumbnail = normalizeMediaUrl(next.thumbnail, req);
+      const normalizedImage = normalizeMediaUrl(next.image, req);
+      const normalizedThumb = normalizedImageUrl || normalizedThumbnail || normalizedImage;
 
       if (normalizedVideoUrl && normalizedVideoUrl !== next.videoUrl) {
         next.videoUrl = normalizedVideoUrl;
@@ -6013,29 +6180,9 @@ app.get('/videos', async (req, res) => {
     }
 
     // Private visibility rule:
-    // - creator (author) can view
+    // - fulfiller (video author) can view
     // - requester can view
-    // - users who boosted or sent creative suggestions for the linked request can view
-    const hasPrivateVideos = videos.some((v) => String(v?.appearance || '').toLowerCase() === 'private');
-    let viewerAccessRequestIds = new Set();
-    if (user && hasPrivateVideos) {
-      try {
-        const arr = await loadNotifications();
-        const uid = String(user.id || '');
-        viewerAccessRequestIds = new Set(
-          (Array.isArray(arr) ? arr : [])
-            .filter((n) => {
-              const fromId = String(n?.from?.id || '');
-              const type = String(n?.type || '').toLowerCase();
-              return fromId && fromId === uid && (type === 'funded_boost' || type === 'suggestion' || type === 'funded_suggestion');
-            })
-            .map((n) => String(n?.requestId || ''))
-            .filter(Boolean)
-        );
-      } catch (e) {
-        // ignore lookup errors and apply strict fallback below
-      }
-    }
+    // - everyone else cannot view private videos
 
     videos = videos.filter((v) => {
       const isPrivate = String(v?.appearance || '').toLowerCase() === 'private';
@@ -6046,11 +6193,9 @@ app.get('/videos', async (req, res) => {
       const userEmail = String(user.email || '');
       const authorId = String(v?.authorId || '');
       const requesterId = String(v?.requesterId || '');
-      const requestId = String(v?.requestId || '');
 
       if (authorId && (authorId === userId || (userEmail && authorId === userEmail))) return true;
       if (requesterId && (requesterId === userId || (userEmail && requesterId === userEmail))) return true;
-      if (requestId && viewerAccessRequestIds.has(requestId)) return true;
 
       return false;
     });
@@ -6150,6 +6295,24 @@ app.get('/videos/:id', async (req, res) => {
       console.log(`Video not found: ${videoId}`);
       return res.status(404).json({ error: 'Video not found' });
     }
+
+    const isPrivate = String(video?.appearance || '').toLowerCase() === 'private';
+    if (isPrivate) {
+      const user = await tryGetUser(req);
+      if (!user) {
+        return res.status(403).json({ error: 'Private video' });
+      }
+      const userId = String(user.id || '');
+      const userEmail = String(user.email || '');
+      const fulfillerId = String(video?.authorId || '');
+      const requesterId = String(video?.requesterId || '');
+
+      const isFulfiller = fulfillerId && (fulfillerId === userId || (userEmail && fulfillerId === userEmail));
+      const isRequester = requesterId && (requesterId === userId || (userEmail && requesterId === userEmail));
+      if (!isFulfiller && !isRequester) {
+        return res.status(403).json({ error: 'Private video' });
+      }
+    }
     
     console.log(`Found video: ${video.title}, ads:`, video.ads);
     return res.json(video);
@@ -6184,13 +6347,56 @@ app.patch('/videos/:id/duration', async (req, res) => {
   }
 });
 
+const notifyStaffOfCreatorVideoNote = ({ action = 'published', video, changeNote, actor }) => {
+  try {
+    const trimmedNote = String(changeNote || '').trim();
+    if (!trimmedNote) return;
+
+    const staff = readStaff();
+    if (!staff) return;
+    if (!Array.isArray(staff.notifications)) staff.notifications = [];
+
+    const recipients = Array.isArray(staff.employees)
+      ? staff.employees.filter((e) => e && e.id != null)
+      : [];
+
+    const actorName = String(actor?.name || actor?.email || video?.author || 'Creator');
+    const videoTitle = String(video?.title || 'Untitled video');
+    const requestId = video?.requestId ? String(video.requestId) : null;
+    const createdAt = new Date().toISOString();
+
+    recipients.forEach((emp) => {
+      staff.notifications.push({
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        userId: Number(emp.id),
+        type: 'staff_action',
+        title: `Video ${action}`,
+        message: `${actorName} ${action} "${videoTitle}"`,
+        metadata: {
+          action,
+          videoId: video?.id || null,
+          requestId,
+          authorId: video?.authorId || null,
+          note: trimmedNote
+        },
+        read: false,
+        createdAt
+      });
+    });
+
+    writeStaff(staff);
+  } catch (err) {
+    console.error('notifyStaffOfCreatorVideoNote error:', err);
+  }
+};
+
 // Publish a new video
 app.post('/videos/publish', async (req, res) => {
   try {
     console.log('POST /videos/publish received');
     console.log('Request body:', req.body);
     
-    const { title, thumbnail, videoUrl, category, format, time, requester, requesterId, requestId, overlays, appearance } = req.body;
+    const { title, thumbnail, videoUrl, category, format, time, requester, requesterId, requestId, overlays, appearance, changeNote } = req.body;
     
     // Try to get authenticated user, otherwise use default
     let author = 'Anonymous';
@@ -6237,6 +6443,8 @@ app.post('/videos/publish', async (req, res) => {
     // Generate unique ID by combining timestamp with random string
     const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
+    const finalAppearance = appearance || 'public';
+
     const newVideo = {
       id: uniqueId,
       title,
@@ -6251,7 +6459,8 @@ app.post('/videos/publish', async (req, res) => {
       date: 'Just now',
       category: category || 'General',
       format: format || 'one-time',
-      appearance: appearance || 'public',
+      appearance: finalAppearance,
+      changeNote: String(changeNote || '').trim() || null,
       pinned: false,
       pinnedDays: null,
       bookmarked: false,
@@ -6271,6 +6480,12 @@ app.post('/videos/publish', async (req, res) => {
     videos.unshift(newVideo);
     console.log('Writing videos, new count:', videos.length);
     await saveVideos(videos);
+    notifyStaffOfCreatorVideoNote({
+      action: 'published',
+      video: newVideo,
+      changeNote,
+      actor: { id: authorId, name: author }
+    });
     
     // Update streak for the author if authenticated
     if (!DB_ENABLED && authorId && authorId !== 'anonymous') {
@@ -6333,15 +6548,24 @@ app.put('/videos/:id', authMiddleware, async (req, res) => {
     }
 
     const next = { ...videos[idx] };
-    const allowed = ['title', 'videoUrl', 'imageUrl', 'category', 'format', 'appearance', 'requester', 'requesterId', 'requestId', 'time', 'overlays'];
+    const allowed = ['title', 'videoUrl', 'imageUrl', 'thumbnail', 'category', 'format', 'appearance', 'requester', 'requesterId', 'requestId', 'time', 'overlays', 'changeNote'];
     for (const key of allowed) {
       if (body[key] === undefined) continue;
       if (key === 'title' && !String(body[key] || '').trim()) continue;
-      if ((key === 'videoUrl' || key === 'imageUrl') && String(body[key] || '').startsWith('blob:')) continue;
-      if (key === 'videoUrl' || key === 'imageUrl') {
-        next[key] = normalizeMediaUrl(body[key], req);
+      if ((key === 'videoUrl' || key === 'imageUrl' || key === 'thumbnail') && String(body[key] || '').startsWith('blob:')) continue;
+      if (key === 'videoUrl') {
+        const normalized = normalizeMediaUrl(body[key], req);
+        if (!normalized) continue;
+        next.videoUrl = normalized;
+      } else if (key === 'imageUrl' || key === 'thumbnail') {
+        const normalized = normalizeMediaUrl(body[key], req);
+        if (!normalized) continue;
+        next.imageUrl = normalized;
+        next.thumbnail = normalized;
       } else if (key === 'overlays') {
         next[key] = Array.isArray(body[key]) ? body[key] : [];
+      } else if (key === 'changeNote') {
+        next[key] = String(body[key] || '').trim() || null;
       } else {
         next[key] = body[key];
       }
@@ -6350,6 +6574,12 @@ app.put('/videos/:id', authMiddleware, async (req, res) => {
     videos[idx] = next;
 
     await saveVideos(videos);
+    notifyStaffOfCreatorVideoNote({
+      action: 'updated',
+      video: next,
+      changeNote: body.changeNote,
+      actor: user
+    });
     return res.json({ success: true, video: next });
   } catch (err) {
     console.error('creator update video error', err);
@@ -10467,16 +10697,14 @@ app.post('/support/ticket/:id/response', async (req, res) => {
 
     // Create notification for customer
     try {
-      const notifFile = path.join(__dirname, 'notifications.json');
-      let notifications = [];
-      if (fs.existsSync(notifFile)) {
-        const data = fs.readFileSync(notifFile, 'utf-8');
-        notifications = JSON.parse(data);
-      }
+      const recipientId = ticket.userId || 'anonymous';
+      const arr = await loadNotifications();
 
       const notification = {
-        id: Date.now(),
-        userId: ticket.userId || 'anonymous',
+        id: `support-${Date.now()}`,
+        to: { id: String(recipientId) },
+        from: { id: 'staff', name: 'Support Team' },
+        userId: String(recipientId),
         userEmail: ticket.userEmail,
         type: 'support_response',
         title: 'Support Response Received',
@@ -10486,8 +10714,8 @@ app.post('/support/ticket/:id/response', async (req, res) => {
         createdAt: new Date().toISOString()
       };
 
-      notifications.push(notification);
-      fs.writeFileSync(notifFile, JSON.stringify(notifications, null, 2));
+      arr.unshift(notification);
+      await saveNotifications(arr);
       console.log(`Notification created for ticket ${ticketId} to ${ticket.userEmail}`);
     } catch (notifErr) {
       console.warn('Could not create notification:', notifErr.message);
