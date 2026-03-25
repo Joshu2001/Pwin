@@ -11,7 +11,7 @@ import FreeRequestSubmittedModal from './FreeRequestSubmittedModal.jsx';
 import BoostsModal from './BoostsModal.jsx';
 import SharedBottomBar from './components/SharedBottomBar.jsx';
 import { getBackendBaseUrl } from './config.js';
-import { resolveMediaUrl } from './utils/media.js';
+import { resolveMediaUrl, markMediaUrlAsFailed } from './utils/media.js';
 import { getSafeReturnBaseUrl, getSafeReturnPath, startPayPalCheckout } from './utils/paypalCheckout.js';
 import {
   Home,
@@ -3026,6 +3026,11 @@ const App = () => {
     return resolved;
   };
 
+  const getProfileImageCandidate = (userLike) => {
+    if (!userLike || typeof userLike !== 'object') return null;
+    return userLike.profilePicture || userLike.photoURL || userLike.avatar || userLike.image || null;
+  };
+
   const getRandomColor = () => {
     const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
     return colors[Math.floor(Math.random() * colors.length)];
@@ -3038,8 +3043,8 @@ const App = () => {
     displayName: u.name || u.handle || u.tag || 'Unknown',
     handle: u.handle || u.tag || '',
     email: u.email || null,
-    photoURL: normalizeCreatorImage(u.photoURL || u.image || u.avatar),
-    image: normalizeCreatorImage(u.image || u.photoURL || u.avatar),
+    photoURL: normalizeCreatorImage(getProfileImageCandidate(u)),
+    image: normalizeCreatorImage(getProfileImageCandidate(u)),
     price: u.price || u.rate || 0,
     followers: u.followers || u.followers_count || 0,
     fallbackColor: getRandomColor()
@@ -3099,7 +3104,7 @@ const App = () => {
               creatorMap.set(key, {
                 id: authorId || `video-${key}`,
                 name: authorName || 'Unknown',
-                image: v.authorImage || v.creatorImage || null,
+                image: null,
                 handle: v.authorHandle || '',
                 email: authorId && authorId.includes('@') ? authorId : null,
                 isCreator: true,
@@ -3302,7 +3307,7 @@ const App = () => {
             if (stored) {
                 const creatorObj = JSON.parse(stored);
                 setSelectedCreator(creatorObj);
-                const rawImg = creatorObj.photoURL || creatorObj.image;
+                const rawImg = getProfileImageCandidate(creatorObj);
                 if (rawImg) {
                     setSelectedCreatorImage(normalizeCreatorImage(rawImg));
                 }
@@ -3619,11 +3624,11 @@ const App = () => {
     if (!selectedCreator || !selectedCreator.id) {
       return; // No selectedCreator
     }
-    
-    if (selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar) {
-      return; // Already has image data
-    }
 
+    if (selectedCreator.isAnyCreators || String(selectedCreator.id) === '@anycreators') {
+      return;
+    }
+    
     // Use /users/:id (which works) instead of /users (which may return empty)
     const enrichCreatorData = async () => {
       try {
@@ -3642,7 +3647,7 @@ const App = () => {
             const json = await res.json();
             const u = json.user || json;
             if (u && !u.isPlaceholder) {
-              const imageUrl = normalizeCreatorImage(u.photoURL || u.image || u.avatar);
+              const imageUrl = normalizeCreatorImage(getProfileImageCandidate(u));
               console.log('[ideas] Enriched creator image from /users/:id:', imageUrl);
               if (imageUrl) {
                 setSelectedCreator(prev => ({
@@ -3673,12 +3678,16 @@ const App = () => {
       return;
     }
 
+    if (selectedCreator.isAnyCreators || String(selectedCreator.id) === '@anycreators') {
+      setSelectedCreatorImage(null);
+      return;
+    }
+
     // If selectedCreator already has image data, use it
-    if (selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar) {
-      const normalized = normalizeCreatorImage(selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar);
+    if (getProfileImageCandidate(selectedCreator)) {
+      const normalized = normalizeCreatorImage(getProfileImageCandidate(selectedCreator));
       console.log('[ideas] Using image from selectedCreator:', normalized);
       setSelectedCreatorImage(normalized);
-      return;
     }
 
     // Otherwise fetch from backend using /users/:id (reliable)
@@ -3692,7 +3701,7 @@ const App = () => {
         const creator = json.user || json;
         
         if (creator && !creator.isPlaceholder) {
-          const imgUrl = normalizeCreatorImage(creator.image || creator.photoURL || creator.avatar);
+          const imgUrl = normalizeCreatorImage(getProfileImageCandidate(creator));
           console.log('[ideas] Found creator image via /users/:id:', imgUrl);
           setSelectedCreatorImage(imgUrl || null);
         } else {
@@ -3700,7 +3709,7 @@ const App = () => {
           if (creatorsList.length > 0) {
             const fromList = creatorsList.find(c => c.id === selectedCreator.id || c.email === selectedCreator.id);
             if (fromList) {
-              const img = normalizeCreatorImage(fromList.photoURL || fromList.image);
+              const img = normalizeCreatorImage(getProfileImageCandidate(fromList));
               if (img) setSelectedCreatorImage(img);
             }
           }
@@ -3719,8 +3728,8 @@ const App = () => {
     if (!selectedCreator || !selectedCreator.id || selectedCreatorImage) return;
     if (creatorsList.length === 0) return;
     const creatorFromList = creatorsList.find(c => c.id === selectedCreator.id);
-    if (creatorFromList && (creatorFromList.photoURL || creatorFromList.image)) {
-      const img = normalizeCreatorImage(creatorFromList.photoURL || creatorFromList.image);
+    if (creatorFromList && getProfileImageCandidate(creatorFromList)) {
+      const img = normalizeCreatorImage(getProfileImageCandidate(creatorFromList));
       if (img) setSelectedCreatorImage(img);
     }
   }, [creatorsList, selectedCreator?.id, selectedCreatorImage]);
@@ -5384,7 +5393,6 @@ const App = () => {
           {/* Selected creator banner: appears automatically when arriving with a pre-selected creator */}
           {selectedCreator && !showCreatorModal && (
             <div className="mb-3" style={{ zIndex: 10, position: "relative" }}>
-              {console.log('[ideas-display] selectedCreator:', selectedCreator, 'selectedCreatorImage:', selectedCreatorImage, 'creatorsList.length:', creatorsList.length)}
               <div
                 className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-center justify-between gap-3"
                 style={{ position: "relative", zIndex: 10 }}
@@ -6240,8 +6248,16 @@ const App = () => {
                           }
                         }}
                       >
-                        {selectedCreator && (selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar) ? (
-                          <img src={selectedCreator.photoURL || selectedCreator.image || selectedCreator.avatar} alt={selectedCreator.name || selectedCreator.handle} className="w-full h-full object-cover" />
+                        {selectedCreator && normalizeCreatorImage(getProfileImageCandidate(selectedCreator)) ? (
+                          <img
+                            src={normalizeCreatorImage(getProfileImageCandidate(selectedCreator))}
+                            alt={selectedCreator.name || selectedCreator.handle}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              markMediaUrlAsFailed(e.currentTarget.src);
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
                         ) : (
                           (() => {
                             const displayName = (selectedCreator && (selectedCreator.displayName || selectedCreator.name)) || (auth && auth.user && (auth.user.name || auth.user.handle)) || 'Y';
@@ -6467,10 +6483,10 @@ const App = () => {
                     <div className="flex items-center justify-between w-full border border-blue-200 bg-gradient-to-r from-blue-50/80 to-purple-50/80 rounded-2xl p-4 backdrop-blur-sm mb-4">
                        <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-purple-400 flex-shrink-0 shadow-md flex items-center justify-center flex-none">
-                            {(selectedCreator.id !== '@anycreators' && (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image)) ? (
-                                <img src={selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
+                            {(selectedCreator.id !== '@anycreators' && normalizeCreatorImage(selectedCreatorImage || getProfileImageCandidate(selectedCreator))) ? (
+                              <img src={normalizeCreatorImage(selectedCreatorImage || getProfileImageCandidate(selectedCreator))} alt="" className="w-full h-full object-cover" onError={(e) => { markMediaUrlAsFailed(e.currentTarget.src); e.currentTarget.style.display = 'none'; setSelectedCreatorImage(null); if (e.currentTarget.nextSibling) e.currentTarget.nextSibling.style.display = 'flex'; }} />
                              ) : null}
-                            <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold" style={{ display: (selectedCreator.id !== '@anycreators' && (selectedCreatorImage || selectedCreator.photoURL || selectedCreator.image)) ? 'none' : 'flex' }}>
+                            <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold" style={{ display: (selectedCreator.id !== '@anycreators' && normalizeCreatorImage(selectedCreatorImage || getProfileImageCandidate(selectedCreator))) ? 'none' : 'flex' }}>
                               {selectedCreator.id === '@anycreators' ? '@' : (selectedCreator.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase()}
                              </div>
                           </div>
@@ -6519,7 +6535,7 @@ const App = () => {
                             {filteredCreatorsWithAny.length > 0 ? (
                               <div className="max-h-64 overflow-y-auto space-y-0 pb-2">
                                 {filteredCreatorsWithAny.map((c) => {
-                                    const avatarUrl = normalizeCreatorImage(c.photoURL || c.image || c.avatar);
+                                    const avatarUrl = normalizeCreatorImage(getProfileImageCandidate(c));
                                     const initial = (c.name || 'U').replace(/^@+/, '').charAt(0).toUpperCase();
                                       return (
                                       <button
@@ -6540,6 +6556,7 @@ const App = () => {
                                                 alt=""
                                                 className="w-full h-full object-cover"
                                                 onError={(e) => {
+                                                  markMediaUrlAsFailed(e.currentTarget.src);
                                                   e.currentTarget.style.display = 'none';
                                                   const fallback = e.currentTarget.nextElementSibling;
                                                   if (fallback) fallback.style.display = 'flex';
@@ -6719,15 +6736,15 @@ const App = () => {
                       <div
                         className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold overflow-hidden"
                         style={{
-                          backgroundColor: (c.id !== '@anycreators' && (c.photoURL || c.image)) ? 'transparent' : (c.fallbackColor || '#3b82f6'),
+                          backgroundColor: (c.id !== '@anycreators' && normalizeCreatorImage(getProfileImageCandidate(c))) ? 'transparent' : (c.fallbackColor || '#3b82f6'),
                         }}
                       >
-                        {(c.id !== '@anycreators' && (c.photoURL || c.image)) ? (
+                        {(c.id !== '@anycreators' && normalizeCreatorImage(getProfileImageCandidate(c))) ? (
                           <img
-                            src={c.photoURL || c.image}
+                            src={normalizeCreatorImage(getProfileImageCandidate(c))}
                             alt={c.name}
                             className="w-full h-full rounded-full object-cover"
-                            onError={(e) => { e.target.style.display = 'none'; }}
+                            onError={(e) => { markMediaUrlAsFailed(e.currentTarget.src); e.currentTarget.style.display = 'none'; }}
                           />
                         ) : (
                           c.id === '@anycreators'

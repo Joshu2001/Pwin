@@ -1503,7 +1503,6 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
     const requesterAvatar = resolveImageUrl(
         request.requesterAvatar ||
         (request.creator && (request.creator.image || request.creator.avatar || request.creator.photoURL)) ||
-        request.imageUrl ||
         request.avatarUrl ||
         ''
     );
@@ -3408,16 +3407,15 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
     const currentYear = new Date().getFullYear();
     const [loadedProfileData, setLoadedProfileData] = useState(null);
 
-    // Fetch user profile data to get avatar if not already provided
+    // Always resolve avatar from user profile data so video thumbnails are never used as profile photos.
     useEffect(() => {
-        if (profileData && profileData.avatar) {
-            setLoadedProfileData(profileData);
-            return;
-        }
-
         const fetchUserProfile = async () => {
             try {
-                const targetId = username || name;
+                const targetId = (profileData && profileData.id) || username || name;
+                if (!targetId) {
+                    setLoadedProfileData(profileData);
+                    return;
+                }
                 const BACKEND = getBackendBaseUrl();
                 const response = await fetch(`${BACKEND}/users`);
                 const result = await response.json();
@@ -3433,7 +3431,7 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                 if (user) {
                     setLoadedProfileData({
                         ...profileData,
-                        avatar: user.image || user.avatar || null
+                        avatar: user.profilePicture || user.profileImage || user.photoURL || user.avatar || user.image || null
                     });
                 } else {
                     setLoadedProfileData(profileData);
@@ -3570,7 +3568,9 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                                         id: data.id || (data.handle || data.tag || String(data.name || '').replace(/^@+/, '')).toLowerCase(),
                                         name: data.handle ? `@${data.handle}` : (data.name || ''),
                                         handle: data.handle,
-                                        image: data.image || null
+                                        image: resolveImageUrl(data.avatar || data.photoURL || data.profilePicture || data.image || null) || null,
+                                        avatar: resolveImageUrl(data.avatar || data.photoURL || data.profilePicture || data.image || null) || null,
+                                        photoURL: resolveImageUrl(data.avatar || data.photoURL || data.profilePicture || data.image || null) || null
                                     };
                                     window.localStorage.setItem(key, JSON.stringify(creatorObj));
 
@@ -3943,16 +3943,6 @@ export default function RequestsFeed() {
         };
     }, []);
 
-    // DEBUG LOGGER
-    useEffect(() => {
-        console.log(`DEBUG: RankedRequests update. Count=${rankedRequests.length}`);
-        const optimistic = rankedRequests.filter(r => r.isOptimistic);
-        if (optimistic.length > 0) {
-            console.warn('DEBUG: Found OPTIMISTIC requests in list:', optimistic.map(r => r.id));
-        }
-        console.log('DEBUG: Top 3 IDs:', rankedRequests.slice(0, 3).map(r => r.id));
-    }, [rankedRequests]);
-
     // Fetch persisted requests from backend on mount and whenever refreshed
     useEffect(() => {
         let cancelled = false;
@@ -3978,7 +3968,6 @@ export default function RequestsFeed() {
                                 bookmarkedRequestIds.add(String(b.requestId));
                             }
                         });
-                        console.log('Bookmarked request IDs set:', Array.from(bookmarkedRequestIds));
                     }
                 } catch (e) {
                     console.warn('Failed to fetch request bookmarks:', e);
@@ -3992,10 +3981,8 @@ export default function RequestsFeed() {
                 if (selectedCategory && selectedCategory !== 'All') url.searchParams.set('category', selectedCategory);
 
                 const res = await fetch(url.toString());
-                console.log('[REQUESTS_FETCH] URL:', url.toString(), 'status:', res.status);
                 if (!res.ok) throw new Error('Failed to fetch requests');
                 const body = await res.json();
-                console.log('[REQUESTS_FETCH] Backend returned:', body.requests?.length || 0, 'requests');
                 
                 // CRITICAL DEBUG - Very visible
                 window.__DEBUG_REQUESTS_COUNT = body.requests?.length || 0;
@@ -4004,9 +3991,12 @@ export default function RequestsFeed() {
                 let list = Array.isArray(body.requests) ? body.requests : [];
 
                 const processLocalRequests = (backendList) => {
-                    let finalList = [...backendList];
+                    const deletedTombstones = readDeletedRequestTombstones();
+                    let finalList = (Array.isArray(backendList) ? backendList : []).filter((r) => {
+                        if (!r || r.id == null) return false;
+                        return !deletedTombstones[String(r.id)];
+                    });
                     try {
-                        const deletedTombstones = readDeletedRequestTombstones();
                         const localRaw = localStorage.getItem('ideas_requests_v1');
                         if (localRaw) {
                             console.log('Found local optimistic requests:', localRaw.length, 'chars');
@@ -4135,7 +4125,6 @@ export default function RequestsFeed() {
                     }
 
                     // Return merged list (backend + missing local optimistic requests)
-                    console.log('processLocalRequests returning:', finalList.length, 'total requests');
                     return finalList;
                 };
 
@@ -4150,7 +4139,7 @@ export default function RequestsFeed() {
                     const creatorObj = (base.creator && typeof base.creator === 'object') ? base.creator : null;
                     const creatorId = (creatorObj && (creatorObj.id || creatorObj.userId)) || base.creatorId || base.createdBy || (typeof base.creator === 'string' ? base.creator : null);
                     const requesterName = base.requesterName || base.requester || base.createdByName || base.creatorName || (creatorObj && (creatorObj.name || creatorObj.handle || creatorObj.tag)) || base.company || 'Community';
-                    const requesterAvatar = base.requesterAvatar || base.requesterImage || base.avatar || base.photoURL || (creatorObj && (creatorObj.image || creatorObj.avatar || creatorObj.photoURL)) || base.imageUrl || '';
+                    const requesterAvatar = base.requesterAvatar || base.requesterImage || base.avatar || base.photoURL || (creatorObj && (creatorObj.image || creatorObj.avatar || creatorObj.photoURL)) || '';
                     base.creator = creatorObj || { id: creatorId || null, name: requesterName, image: requesterAvatar || '' };
                     base.requesterName = requesterName;
                     base.requesterAvatar = requesterAvatar || '';
@@ -4175,7 +4164,6 @@ export default function RequestsFeed() {
                     base.timeAgo = base.timeAgo || timeAgoFromISO(base.createdAt);
                     // Sync bookmark state from backend
                     const isBookmarked = bookmarkedRequestIds.has(String(base.id));
-                    console.log(`Request ${base.id} bookmarked:`, isBookmarked);
                     base.bookmarked = isBookmarked;
                     return base;
                 });
@@ -4230,6 +4218,10 @@ export default function RequestsFeed() {
                     });
                 }
 
+                // Never re-introduce requests that user explicitly deleted in this client.
+                const deletedTombstones = readDeletedRequestTombstones();
+                normalized = normalized.filter((r) => !deletedTombstones[String(r.id)]);
+
                 const ranked = calculateInfluenceAndRank(normalized);
                 // Apply pinned map from localStorage if present
                 try {
@@ -4239,12 +4231,10 @@ export default function RequestsFeed() {
                         const withPins = ranked.map(r => ({ ...r, pinned: !!map[r.id], pinnedAt: map[r.id] || null }));
                         const pinned = withPins.filter(r => r.pinned).sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
                         const unpinned = withPins.filter(r => !r.pinned);
-                        console.log('🔴 SETTING rankedRequests with pinned:', [...pinned, ...unpinned].length);
                         setRankedRequests([...pinned, ...unpinned]);
                         return;
                     }
                 } catch (e) { }
-                console.log('🔴 SETTING rankedRequests (no pins):', ranked.length);
                 setRankedRequests(ranked);
             } catch (e) {
                 console.error('🔴🔴🔴 FETCH ERROR:', e);
@@ -4275,6 +4265,10 @@ export default function RequestsFeed() {
                             }
                         }
                     } catch (ex) { }
+
+                    // Filter out tombstoned (deleted) requests so they don't reappear on error fallback
+                    const deletedTombstones = readDeletedRequestTombstones();
+                    initial = initial.filter(r => !deletedTombstones[String(r.id)]);
 
                     setRankedRequests(initial);
                 } catch (err) { }
@@ -4570,7 +4564,9 @@ export default function RequestsFeed() {
             id: creatorData.id || (creatorData.handle || creatorData.tag || String(creatorData.name || '').replace(/^@+/, '')).toLowerCase(),
             name: creatorData.handle ? `@${creatorData.handle}` : (creatorData.name || ''),
             handle: creatorData.handle,
-            image: creatorData.image || null
+            image: resolveImageUrl(creatorData.avatar || creatorData.photoURL || creatorData.profilePicture || creatorData.image || null) || null,
+            avatar: resolveImageUrl(creatorData.avatar || creatorData.photoURL || creatorData.profilePicture || creatorData.image || null) || null,
+            photoURL: resolveImageUrl(creatorData.avatar || creatorData.photoURL || creatorData.profilePicture || creatorData.image || null) || null
         };
         window.localStorage.setItem(key, JSON.stringify(creatorObj));
         

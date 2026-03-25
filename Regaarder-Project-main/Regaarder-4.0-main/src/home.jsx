@@ -2069,7 +2069,7 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
                 if (user) {
                     setLoadedProfileData({
                         ...profileData,
-                        avatar: user.image || user.avatar || null
+                        avatar: user.profilePicture || user.profileImage || user.photoURL || user.avatar || user.image || null
                     });
                 } else {
                     setLoadedProfileData(profileData);
@@ -5498,12 +5498,12 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
             const data = await res.json();
             const users = (data && data.users) || (Array.isArray(data) ? data : []);
             const normalized = users.map((u) => {
-                const img = normalizeImageUrl(u.image || u.avatar || u.photoURL || u.profilePicture || u.profileImage);
+                const img = normalizeImageUrl(u.profilePicture || u.profileImage || u.photoURL || u.avatar || u.image);
                 return {
                     ...u,
-                    image: img || u.image || u.avatar || u.photoURL || null,
-                    avatar: img || u.avatar || u.image || null,
-                    photoURL: img || u.photoURL || u.image || null,
+                    image: img || u.profilePicture || u.profileImage || u.photoURL || u.avatar || u.image || null,
+                    avatar: img || u.profilePicture || u.profileImage || u.photoURL || u.avatar || u.image || null,
+                    photoURL: img || u.profilePicture || u.profileImage || u.photoURL || u.avatar || u.image || null,
                 };
             });
             setResults(normalized);
@@ -5528,6 +5528,7 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
         let creatorObj = null;
         try {
             const followers = creator.followersCount || creator.followers || creator.stats?.followers || creator.followers_count || null;
+            const selectedProfileImage = creator.profilePicture || creator.profileImage || creator.photoURL || creator.avatar || creator.image || null;
             creatorObj = {
                 id: creator.id || creator.handle || creator.username || String(creator.name || '').replace(/^@+/, '').toLowerCase(),
                 name: creator.handle ? `@${creator.handle}` : (creator.username ? `@${creator.username}` : (creator.name || '')),
@@ -5535,9 +5536,9 @@ const SearchBar = ({ searchTerm, setSearchTerm, navigate, onFocusChange, selecte
                 handle: creator.handle || creator.username,
                 username: creator.username || creator.handle,
                 email: creator.email || null,
-                image: creator.image || creator.avatar || creator.photoURL || null,
-                photoURL: creator.image || creator.avatar || creator.photoURL || null,
-                avatar: creator.image || creator.avatar || creator.photoURL || null,
+                image: selectedProfileImage,
+                photoURL: selectedProfileImage,
+                avatar: selectedProfileImage,
                 followers,
                 price: creator.price || 0
             };

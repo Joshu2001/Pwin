@@ -1,5 +1,31 @@
 import { getBackendBaseUrl } from '../config.js';
 
+const failedMediaUrls = new Set();
+
+const mediaFailKey = (value) => String(value || '').trim().split('#')[0];
+
+const maybeSkipFailedMediaUrl = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  const key = mediaFailKey(normalized);
+  const keyNoQuery = key.split('?')[0];
+  if (failedMediaUrls.has(key) || failedMediaUrls.has(keyNoQuery)) return '';
+  return normalized;
+};
+
+export const markMediaUrlAsFailed = (value) => {
+  const key = mediaFailKey(value);
+  if (!key) return;
+  failedMediaUrls.add(key);
+  failedMediaUrls.add(key.split('?')[0]);
+};
+
+export const isMediaUrlMarkedFailed = (value) => {
+  const key = mediaFailKey(value);
+  if (!key) return false;
+  return failedMediaUrls.has(key) || failedMediaUrls.has(key.split('?')[0]);
+};
+
 const getBackendBase = () => {
   try {
     const base = getBackendBaseUrl();
@@ -19,7 +45,7 @@ export const resolveMediaUrl = (input) => {
   const backend = getBackendBase();
 
   if (/^[a-z0-9.-]+(?::\d+)?\//i.test(raw) && !/^https?:\/\//i.test(raw)) {
-    return `https://${raw}`;
+    return maybeSkipFailedMediaUrl(`https://${raw}`);
   }
 
   if (raw.startsWith('uploaded:')) {
@@ -30,27 +56,27 @@ export const resolveMediaUrl = (input) => {
       .split(/[?#]/)[0];
     const filename = normalized.split('/').filter(Boolean).pop() || '';
     if (!filename) return '';
-    if (!backend) return `/uploads/${filename}`;
-    return `${backend}/uploads/${filename}`;
+    if (!backend) return maybeSkipFailedMediaUrl(`/uploads/${filename}`);
+    return maybeSkipFailedMediaUrl(`${backend}/uploads/${filename}`);
   }
 
   // Handle plain device-uploaded filenames persisted without prefix/path.
   if (!/^https?:\/\//i.test(raw) && !raw.startsWith('/') && !raw.includes('://') && !raw.includes('/')) {
     const looksLikeMediaFile = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv)$/i.test(raw);
     if (looksLikeMediaFile) {
-      return backend ? `${backend}/uploads/${raw}` : `/uploads/${raw}`;
+      return maybeSkipFailedMediaUrl(backend ? `${backend}/uploads/${raw}` : `/uploads/${raw}`);
     }
 
     // Legacy persisted names can include a UUID suffix after extension, e.g. image.jpg-<uuid>.
     const hasEmbeddedMediaExt = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv)(?:[-_].+)?$/i.test(raw);
     if (hasEmbeddedMediaExt) {
-      return backend ? `${backend}/uploads/${raw}` : `/uploads/${raw}`;
+      return maybeSkipFailedMediaUrl(backend ? `${backend}/uploads/${raw}` : `/uploads/${raw}`);
     }
   }
 
   // Handle relative uploads paths emitted by backend/client code.
   if (/^uploads\//i.test(raw)) {
-    return backend ? `${backend}/${raw.replace(/^\/+/, '')}` : `/${raw.replace(/^\/+/, '')}`;
+    return maybeSkipFailedMediaUrl(backend ? `${backend}/${raw.replace(/^\/+/, '')}` : `/${raw.replace(/^\/+/, '')}`);
   }
 
   try {
@@ -65,30 +91,30 @@ export const resolveMediaUrl = (input) => {
         if (mediaUrl.hostname === backendUrl.hostname || isLocalhost) {
           mediaUrl.protocol = backendUrl.protocol;
           mediaUrl.host = backendUrl.host;
-          return mediaUrl.toString();
+          return maybeSkipFailedMediaUrl(mediaUrl.toString());
         }
         if (backendUrl.protocol === 'https:' && raw.startsWith('http://') && /onrender\.com$/i.test(mediaUrl.hostname)) {
           mediaUrl.protocol = 'https:';
-          return mediaUrl.toString();
+          return maybeSkipFailedMediaUrl(mediaUrl.toString());
         }
       }
 
-      return mediaUrl.toString();
+      return maybeSkipFailedMediaUrl(mediaUrl.toString());
     }
 
     if (raw.startsWith('/')) {
-      return backend ? `${backend}${raw}` : raw;
+      return maybeSkipFailedMediaUrl(backend ? `${backend}${raw}` : raw);
     }
 
     if (backend) {
       const url = new URL(raw, `${backend}/`);
-      return url.toString();
+      return maybeSkipFailedMediaUrl(url.toString());
     }
   } catch {
-    return raw;
+    return maybeSkipFailedMediaUrl(raw);
   }
 
-  return raw;
+  return maybeSkipFailedMediaUrl(raw);
 };
 
 export default resolveMediaUrl;

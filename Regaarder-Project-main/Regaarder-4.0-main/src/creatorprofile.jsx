@@ -3944,11 +3944,14 @@ const App = () => {
                 }
 
                 const key = 'ideas_selectedCreator_v1';
+                const selectedProfileImage = resolveMediaUrl(profile?.profilePicture || profile?.photoURL || profile?.avatar || profile?.image || null) || null;
                 const creatorObj = {
                     id: profile?.id || (profile?.handle || profile?.tag || String(profile?.name || '').replace(/^@+/, '')).toLowerCase(),
                     name: profile?.handle ? `@${profile.handle}` : (profile?.name || ''),
                     handle: profile?.handle,
-                    image: profile?.image || null
+                    image: selectedProfileImage,
+                    avatar: selectedProfileImage,
+                    photoURL: selectedProfileImage
                 };
                 window.localStorage.setItem(key, JSON.stringify(creatorObj));
             } catch (e) { /* ignore storage errors */ }
