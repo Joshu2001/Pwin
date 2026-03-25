@@ -4107,6 +4107,56 @@ const buildSuggestionSortTimestamp = (s) => {
       }
     });
 
+    // Bulk clear all notifications for the authenticated user (single query)
+    app.delete('/notifications', authMiddleware, async (req, res) => {
+      try {
+        const uid = String(req.user.id);
+
+        if (DB_ENABLED) {
+          // Single UPDATE that adds this user to hiddenForUserIds on all their visible notifications
+          const { rows } = await dbQuery('SELECT id, payload FROM notifications WHERE to_id = $1 OR from_id = $1', [uid]);
+          let hidden = 0;
+          for (const row of rows || []) {
+            const payload = row.payload;
+            if (!payload || notificationHiddenForUser(payload, uid)) continue;
+            if (!notificationUserMatches(payload, uid)) continue;
+            const hiddenFor = Array.isArray(payload.hiddenForUserIds)
+              ? payload.hiddenForUserIds.map((x) => String(x))
+              : [];
+            if (!hiddenFor.includes(uid)) {
+              hiddenFor.push(uid);
+              payload.hiddenForUserIds = hiddenFor;
+              await dbQuery(
+                'UPDATE notifications SET payload = $2 WHERE id = $1',
+                [String(row.id), payload]
+              );
+              hidden++;
+            }
+          }
+          return res.json({ success: true, hidden });
+        }
+
+        // File-based fallback
+        let arr = await loadNotifications();
+        let hidden = 0;
+        for (const s of arr) {
+          if (!s || !notificationUserMatches(s, uid)) continue;
+          if (notificationHiddenForUser(s, uid)) continue;
+          const hiddenFor = Array.isArray(s.hiddenForUserIds) ? s.hiddenForUserIds.map((x) => String(x)) : [];
+          if (!hiddenFor.includes(uid)) {
+            hiddenFor.push(uid);
+            s.hiddenForUserIds = hiddenFor;
+            hidden++;
+          }
+        }
+        if (hidden > 0) await saveNotifications(arr);
+        return res.json({ success: true, hidden });
+      } catch (e) {
+        console.error('DELETE /notifications bulk clear error', e);
+        return res.status(500).json({ error: 'Server error' });
+      }
+    });
+
     // Mark notification as read
     app.post('/notifications/:id/read', authMiddleware, async (req, res) => {
       try {
