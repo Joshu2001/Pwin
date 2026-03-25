@@ -645,6 +645,37 @@ const NotificationsPage = ({ onClose }) => {
       setIsClearingAll(true);
       const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
 
+      const clearSequentially = async () => {
+        const ids = groupedSuggestions
+          .flatMap((thread) => Array.isArray(thread.items) ? thread.items : [thread])
+          .map((item) => item && item.id)
+          .filter((id) => id != null);
+
+        let failed = 0;
+        for (const id of ids) {
+          try {
+            const r = await fetch(`${BACKEND}/notifications/${id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!r.ok) failed++;
+          } catch (err) {
+            failed++;
+          }
+        }
+
+        if (failed === 0) {
+          setGroupedSuggestions([]);
+          setFilteredSuggestions([]);
+          setHasNotifications(false);
+          syncNotificationCache([]);
+          setToast({ message: 'All notifications cleared.' });
+        } else {
+          setToast({ message: 'Some notifications could not be cleared. Try again.' });
+          fetchNotifications();
+        }
+      };
+
       try {
         const res = await fetch(`${BACKEND}/notifications`, {
           method: 'DELETE',
@@ -657,13 +688,15 @@ const NotificationsPage = ({ onClose }) => {
           setHasNotifications(false);
           syncNotificationCache([]);
           setToast({ message: 'All notifications cleared.' });
+        } else if (res.status === 404 || res.status === 405) {
+          // Compatibility fallback while backend deploy is rolling out.
+          await clearSequentially();
         } else {
           setToast({ message: 'Could not clear notifications. Try again.' });
           fetchNotifications();
         }
       } catch (e) {
-        setToast({ message: 'Network error. Please try again.' });
-        fetchNotifications();
+        await clearSequentially();
       }
 
       setIsClearingAll(false);
