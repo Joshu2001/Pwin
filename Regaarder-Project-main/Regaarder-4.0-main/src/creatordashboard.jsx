@@ -3353,9 +3353,20 @@ const App = () => {
 
     // Re-upload flow from Published tab: keep user in Published and open publish modal directly.
     const openReupload = (item, asEdit = false) => {
-        setPendingReuploadItem({ ...item, sourceTab: 'Published', isReupload: true, openInForm: true, editMode: !!asEdit });
-        setActiveTopTab('Published');
-        setEditPublishedItem(null);
+        // Force a fresh mount every time Edit is pressed so the publish modal always opens.
+        setPendingReuploadItem(null);
+        setTimeout(() => {
+            setPendingReuploadItem({
+                ...item,
+                sourceTab: 'Published',
+                isReupload: true,
+                openInForm: true,
+                editMode: !!asEdit,
+                openToken: Date.now()
+            });
+            setActiveTopTab('Published');
+            setEditPublishedItem(null);
+        }, 0);
     };
 
     const handleStartUpload = () => {
@@ -4246,7 +4257,7 @@ const App = () => {
                             style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: 1, height: 1, overflow: 'hidden' }}
                         >
                             <ClaimStatusPanel
-                                key={`published-reupload-${pendingReuploadItem.id || 'new'}`}
+                                key={`published-reupload-${pendingReuploadItem.id || 'new'}-${pendingReuploadItem.openToken || 0}`}
                                 title={pendingReuploadItem.title || getTranslation('Untitled', selectedLanguage)}
                                 requesterName={pendingReuploadItem.requesterName || getTranslation('Requester', selectedLanguage)}
                                 requesterAvatar={pendingReuploadItem.requesterAvatar || null}
@@ -4304,13 +4315,6 @@ const App = () => {
                                             className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700"
                                         >
                                             {getTranslation('Edit', selectedLanguage)}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.stopPropagation(); openReupload(item); }}
-                                            className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700"
-                                        >
-                                            {getTranslation('Re-upload', selectedLanguage)}
                                         </button>
                                         <button
                                             onClick={() => setDeleteCandidate(item)}
