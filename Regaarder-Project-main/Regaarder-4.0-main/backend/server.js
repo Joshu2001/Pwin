@@ -5989,6 +5989,49 @@ app.get('/videos', async (req, res) => {
       });
     }
 
+    // Private visibility rule:
+    // - creator (author) can view
+    // - requester can view
+    // - users who boosted or sent creative suggestions for the linked request can view
+    const hasPrivateVideos = videos.some((v) => String(v?.appearance || '').toLowerCase() === 'private');
+    let viewerAccessRequestIds = new Set();
+    if (user && hasPrivateVideos) {
+      try {
+        const arr = await loadNotifications();
+        const uid = String(user.id || '');
+        viewerAccessRequestIds = new Set(
+          (Array.isArray(arr) ? arr : [])
+            .filter((n) => {
+              const fromId = String(n?.from?.id || '');
+              const type = String(n?.type || '').toLowerCase();
+              return fromId && fromId === uid && (type === 'funded_boost' || type === 'suggestion' || type === 'funded_suggestion');
+            })
+            .map((n) => String(n?.requestId || ''))
+            .filter(Boolean)
+        );
+      } catch (e) {
+        // ignore lookup errors and apply strict fallback below
+      }
+    }
+
+    videos = videos.filter((v) => {
+      const isPrivate = String(v?.appearance || '').toLowerCase() === 'private';
+      if (!isPrivate) return true;
+      if (!user) return false;
+
+      const userId = String(user.id || '');
+      const userEmail = String(user.email || '');
+      const authorId = String(v?.authorId || '');
+      const requesterId = String(v?.requesterId || '');
+      const requestId = String(v?.requestId || '');
+
+      if (authorId && (authorId === userId || (userEmail && authorId === userEmail))) return true;
+      if (requesterId && (requesterId === userId || (userEmail && requesterId === userEmail))) return true;
+      if (requestId && viewerAccessRequestIds.has(requestId)) return true;
+
+      return false;
+    });
+
     if (feed && (feed.toLowerCase() === 'trending' || feed.toLowerCase() === 'trending now')) {
         // Algorithm: Velocity-based trending (Views + Engagement) / Time Decay
         // Customization: Boost fulfilled requests (videos with a requester)
@@ -6124,7 +6167,7 @@ app.post('/videos/publish', async (req, res) => {
     console.log('POST /videos/publish received');
     console.log('Request body:', req.body);
     
-    const { title, thumbnail, videoUrl, category, format, time, requester, overlays, appearance } = req.body;
+    const { title, thumbnail, videoUrl, category, format, time, requester, requesterId, requestId, overlays, appearance } = req.body;
     
     // Try to get authenticated user, otherwise use default
     let author = 'Anonymous';
@@ -6177,6 +6220,8 @@ app.post('/videos/publish', async (req, res) => {
       author: author,
       authorId: authorId,
       requester: requester || null,
+      requesterId: requesterId || null,
+      requestId: requestId || null,
       time: time || '0:00',
       imageUrl: finalThumbnail || 'https://placehold.co/600x400/333333/ffffff?text=Video',
       videoUrl: finalVideoUrl || null,
@@ -6265,7 +6310,7 @@ app.put('/videos/:id', authMiddleware, async (req, res) => {
     }
 
     const next = { ...videos[idx] };
-    const allowed = ['title', 'videoUrl', 'imageUrl', 'category', 'format', 'appearance', 'requester', 'time', 'overlays'];
+    const allowed = ['title', 'videoUrl', 'imageUrl', 'category', 'format', 'appearance', 'requester', 'requesterId', 'requestId', 'time', 'overlays'];
     for (const key of allowed) {
       if (body[key] === undefined) continue;
       if (key === 'title' && !String(body[key] || '').trim()) continue;

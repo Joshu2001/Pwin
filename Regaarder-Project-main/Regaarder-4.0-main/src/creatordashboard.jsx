@@ -2381,8 +2381,12 @@ const ClaimStatusPanel = ({
                                                             }
                                                         }
 
-                                                        const response = await fetch(`${BACKEND}/videos/publish`, {
-                                                            method: 'POST',
+                                                        const publishTargetUrl = (isReuploading && pendingReuploadItem && pendingReuploadItem.id)
+                                                            ? `${BACKEND}/videos/${encodeURIComponent(pendingReuploadItem.id)}`
+                                                            : `${BACKEND}/videos/publish`;
+
+                                                        const response = await fetch(publishTargetUrl, {
+                                                            method: (isReuploading && pendingReuploadItem && pendingReuploadItem.id) ? 'PUT' : 'POST',
                                                             headers: {
                                                                 'Content-Type': 'application/json',
                                                                 'Authorization': token ? `Bearer ${token}` : ''
@@ -2390,12 +2394,15 @@ const ClaimStatusPanel = ({
                                                             body: JSON.stringify({
                                                                 title: titleStr || videoTitle,
                                                                 thumbnail: thumbnailUrl || null,
+                                                                imageUrl: thumbnailUrl || null,
                                                                 videoUrl: videoUrl || null,
                                                                 category: category || 'General',
                                                                 format: pd.format || videoFormat,
                                                                 appearance: appearance || 'public',
                                                                 time: videoDuration,
                                                                 requester: requesterName || null,
+                                                                requesterId: requestData?.createdBy || requestData?.created_by || null,
+                                                                requestId: requestId || requestData?.id || null,
                                                                 overlays: videoOverlays && Array.isArray(videoOverlays) ? videoOverlays : []
                                                             })
                                                         });
@@ -3268,43 +3275,11 @@ const App = () => {
     };
 
     const handleSavePublishedEdit = async () => {
-        if (!editPublishedItem || !editPublishedItem.id) return;
-        setSavingEditPublished(true);
-        try {
-            const token = localStorage.getItem('regaarder_token');
-            if (!token) throw new Error('Missing auth token');
-            const BACKEND = (window && window.__BACKEND_URL__) || import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND || 'https://pwin-copy-production.up.railway.app';
-            const payload = {
-                title: String(editPublishedItem.title || '').trim(),
-                videoUrl: String(editPublishedItem.videoUrl || '').trim() || null,
-                imageUrl: String(editPublishedItem.thumbnail || '').trim() || null,
-                category: String(editPublishedItem.category || '').trim() || 'General',
-                format: String(editPublishedItem.format || '').trim() || 'one-time',
-                appearance: String(editPublishedItem.appearance || '').trim() || 'public',
-            };
-            const response = await fetch(`${BACKEND}/videos/${encodeURIComponent(editPublishedItem.id)}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) throw new Error('Failed to save video changes');
-            await fetchPublishedVideos();
-            setEditPublishedItem(null);
-            setAppToast(getTranslation('Video updated', selectedLanguage));
-            setTimeout(() => setAppToast(''), 1800);
-        } catch (e) {
-            setAppToast(getTranslation('Failed to update video', selectedLanguage));
-            setTimeout(() => setAppToast(''), 1800);
-        } finally {
-            setSavingEditPublished(false);
-        }
+        // Edit now uses the same publish/reupload modal flow to keep behavior identical.
     };
 
     // Re-upload flow: set `pendingReuploadItem` and switch to Claims
-    const openReupload = (item) => {
+    const openReupload = (item, asEdit = false) => {
         const newId = 'reupload-' + Date.now();
         const newClaim = {
             id: newId,
@@ -3316,8 +3291,9 @@ const App = () => {
             sourceTab: 'Published' // Track that this re-upload came from Published tab
         };
         setClaimedRequests(prev => [newClaim, ...prev]);
-        setPendingReuploadItem({ ...item, targetClaimId: newId, sourceTab: 'Published' });
-        // Stay on Published tab instead of switching to Claims
+        setPendingReuploadItem({ ...item, targetClaimId: newId, sourceTab: 'Published', isReupload: true, openInForm: true, editMode: !!asEdit });
+        setActiveTopTab('Claims');
+        setEditPublishedItem(null);
     };
 
     const handleStartUpload = () => {
@@ -4227,7 +4203,7 @@ const App = () => {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <button onClick={() => setEditPublishedItem({ ...item })} className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700">{getTranslation('Edit', selectedLanguage)}</button>
+                                        <button onClick={() => openReupload(item, true)} className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700">{getTranslation('Edit', selectedLanguage)}</button>
                                         <button onClick={() => openReupload(item)} className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700">{getTranslation('Re-upload', selectedLanguage)}</button>
                                         <button
                                             onClick={() => setDeleteCandidate(item)}
@@ -4288,28 +4264,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {editPublishedItem && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center">
-                            <div className="absolute inset-0 bg-black opacity-60" onClick={() => !savingEditPublished && setEditPublishedItem(null)} />
-                            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 z-10 p-4">
-                                <div className="flex items-start justify-between mb-3">
-                                    <h3 className="text-[18px] font-semibold text-gray-900">{getTranslation('Edit Published Video', selectedLanguage)}</h3>
-                                    <button onClick={() => !savingEditPublished && setEditPublishedItem(null)} className="text-gray-400 hover:text-gray-600">✕</button>
-                                </div>
-                                <div className="space-y-3">
-                                    <input value={editPublishedItem.title || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, title: e.target.value }))} placeholder={getTranslation('Title', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                                    <input value={editPublishedItem.videoUrl || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, videoUrl: e.target.value }))} placeholder={getTranslation('Video link', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                                    <input value={editPublishedItem.thumbnail || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, thumbnail: e.target.value }))} placeholder={getTranslation('Thumbnail URL', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                                    <input value={editPublishedItem.category || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, category: e.target.value }))} placeholder={getTranslation('Category', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                                    <input value={editPublishedItem.format || ''} onChange={(e) => setEditPublishedItem((prev) => ({ ...prev, format: e.target.value }))} placeholder={getTranslation('Format', selectedLanguage)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                                </div>
-                                <div className="flex gap-2 mt-4">
-                                    <button onClick={handleSavePublishedEdit} disabled={savingEditPublished} className={`flex-1 px-4 py-2 rounded-lg text-white ${savingEditPublished ? 'bg-gray-300 cursor-not-allowed' : 'bg-[var(--color-gold)]'}`}>{savingEditPublished ? getTranslation('Saving...', selectedLanguage) : getTranslation('Save', selectedLanguage)}</button>
-                                    <button onClick={() => !savingEditPublished && setEditPublishedItem(null)} className="flex-1 px-4 py-2 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    {editPublishedItem && null}
 
 
                     {/* small toast (moved to bottom for better visibility) */}
