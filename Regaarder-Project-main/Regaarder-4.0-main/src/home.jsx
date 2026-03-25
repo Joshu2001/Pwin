@@ -3095,13 +3095,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Poll for new notifications to show toaster
     useEffect(() => {
         let lastNotifCount = -1;
-        let authBlocked = false;
         // Function to check notifications
         const checkForNotifications = async () => {
-            if (authBlocked) return;
-            try {
-                if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
-            } catch (e) { }
             const token = localStorage.getItem('regaarder_token');
             if (!token) return;
             try {
@@ -3110,8 +3105,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.status === 401) {
-                    authBlocked = true;
-                    try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
                     return;
                 }
                 if (res.ok) {

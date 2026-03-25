@@ -37,9 +37,13 @@ const CTAOverlay = ({ cta }) => {
 	return (
 		<div
 			style={{
+				position: 'absolute',
+				bottom: 0,
+				left: 0,
+				right: 0,
+				zIndex: 500,
 				width: '100%',
 				padding: '12px 16px',
-				background: 'rgba(0,0,0,0.8)',
 				display: 'flex',
 				flexDirection: 'column',
 				alignItems: 'center',
@@ -341,7 +345,7 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 											src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&loop=1&playlist=${youtubeId}`}
 											frameBorder="0"
 											allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; autoplay"
-											style={{ background: '#000', width: '100%', height: '100%', border: 'none', display: 'block', pointerEvents: 'none' }}
+											style={{ background: '#000', width: '170%', height: '170%', border: 'none', display: 'block', pointerEvents: 'none', position: 'absolute', top: '-35%', left: '-35%' }}
 											onLoad={() => {
 												// Unmute YouTube ad after autoplay starts (must start muted for autoplay policy)
 												const tryUnmute = () => {
@@ -410,10 +414,13 @@ const VideoAdOverlay = ({ ad, forceLandscapeCss, onDismiss }) => {
 							}
 						})() : (
 							<div
-								ref={(el) => { if (el && !videoReady) setVideoReady(true); }}
+								ref={(el) => {
+									if (el && !videoReady) {
+										setTimeout(() => setVideoReady(true), 500);
+									}
+								}}
 								style={{
 									position: 'absolute',
-									inset: 0,
 									display: 'flex',
 									flexDirection: 'column',
 									alignItems: 'center',
@@ -819,9 +826,7 @@ const VideoPlayer = () => {
 
 	if (!videoInfo) {
 		return (
-			<div className="p-6">
-				<div className="text-gray-600">Loading video...</div>
-			</div>
+			<div className="min-h-screen bg-black" />
 		);
 	}
 
@@ -847,7 +852,7 @@ const VideoPlayer = () => {
 							src={`https://www.youtube-nocookie.com/embed/${desktopYtId}?autoplay=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
 							className="w-full h-full border-0"
 							allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-							style={{ width: '133%', height: '133%', position: 'relative', left: '-16.5%', top: '-16.5%', pointerEvents: 'none' }}
+							style={{ width: '170%', height: '170%', position: 'relative', left: '-35%', top: '-35%', pointerEvents: 'none' }}
 							title="Video player"
 						/>
 						<div style={{ position: 'absolute', inset: 0, zIndex: 3 }} />
@@ -1882,7 +1887,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		clearTimeout(startupUiReadyTimerRef.current);
 		startupUiReadyTimerRef.current = setTimeout(() => {
 			setStartupUiReady(true);
-		}, 500);
+		}, 120);
 		return () => clearTimeout(startupUiReadyTimerRef.current);
 	}, [isYouTubeVideo, ytLoaded, videoPlayerReady, controlsVisible, startupUiReady]);
 
@@ -3692,7 +3697,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 	};
 
 	const formatTime = (secs, opts) => {
-		if (opts && opts.dashIfZero && (!secs || secs <= 0)) return '--:--';
+		if (opts && opts.dashIfZero && (!secs || secs <= 0)) return '';
 		const s = Math.max(0, Math.floor(secs || 0));
 		return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 	};
@@ -4104,7 +4109,6 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 		const savePref = async () => {
 			try {
 				try {
-					if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
 					if (localStorage.getItem('regaarder_disable_preferences_sync') === '1') return;
 				} catch (e) { }
 				const token = localStorage.getItem('regaarder_token');
@@ -4115,10 +4119,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
 					body: JSON.stringify({ preferences: { progressColor } })
 				});
-				if (res.status === 401) {
-					try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
-					return;
-				}
+				if (res.status === 401) return;
 				if (res.status === 404) {
 					try { localStorage.setItem('regaarder_disable_preferences_sync', '1'); } catch (e) { }
 					return;
@@ -6890,7 +6891,7 @@ export default function MobileVideoPlayer({ discoverItems = null, initialVideo: 
 									className="w-full h-full border-0"
 									allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
 									allowFullScreen={false}
-									style={{ position: 'absolute', width: '133%', height: '133%', left: '-16.5%', top: '-16.5%', background: '#000', pointerEvents: 'none' }}
+									style={{ position: 'absolute', width: '170%', height: '170%', left: '-35%', top: '-35%', background: '#000', pointerEvents: 'none' }}
 									title="Video player"
 								/>
 								{/* Loading cover — hides YouTube's own loading spinner until video starts playing */}

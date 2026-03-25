@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { getTranslation } from './translations.js';
 import { useLanguage } from './LanguageContext.jsx';
 import { WEB_URL, getBackendBaseUrl } from './config.js';
+import { useCurrency } from './CurrencyContext.jsx';
 import { resolveMediaUrl } from './utils/media.js';
 import BoostsModal from './BoostsModal.jsx';
 import SuggestionPaymentModal from './SuggestionPaymentModal.jsx';
@@ -36,6 +37,40 @@ const customColors = {
     '--color-alert-border': 'var(--color-alert-border)',
     '--color-alert-text': 'var(--color-alert-text)',
     '--color-like': 'var(--color-like)',
+};
+
+const DELETED_REQUEST_TOMBSTONES_KEY = 'deleted_request_ids_v1';
+
+const readDeletedRequestTombstones = () => {
+    try {
+        const raw = localStorage.getItem(DELETED_REQUEST_TOMBSTONES_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        return parsed;
+    } catch (e) {
+        return {};
+    }
+};
+
+const writeDeletedRequestTombstones = (next) => {
+    try {
+        localStorage.setItem(DELETED_REQUEST_TOMBSTONES_KEY, JSON.stringify(next || {}));
+    } catch (e) { }
+};
+
+const markRequestDeletedTombstone = (requestId) => {
+    if (!requestId) return;
+    const rid = String(requestId);
+    const now = Date.now();
+    const current = readDeletedRequestTombstones();
+    current[rid] = now;
+    // Keep tombstones bounded and fresh (last 30 days, up to 500 ids)
+    const cutoff = now - (30 * 24 * 60 * 60 * 1000);
+    const entries = Object.entries(current)
+        .filter(([, ts]) => Number(ts) >= cutoff)
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 500);
+    writeDeletedRequestTombstones(Object.fromEntries(entries));
 };
 
 // Resolve image URL strings used in request cards and mock data.
@@ -805,10 +840,48 @@ const CommentsModal = ({ isOpen, onClose, requestId, selectedLanguage = 'English
 
 
 // --- Creative Suggestions Modal Component (REVAMPED) ---
+const normalizeRequestFlow = (value) => {
+    const flow = String(value || '').trim().toLowerCase();
+    if (flow === 'recurrent' || flow === 'recurring') return 'recurrent';
+    if (flow === 'series') return 'series';
+    if (flow === 'catalogue' || flow === 'catalog') return 'catalogue';
+    return 'one-time';
+};
+
+const getCreativeSuggestionCopy = (flow) => {
+    const normalizedFlow = normalizeRequestFlow(flow);
+    if (normalizedFlow === 'recurrent') {
+        return {
+            prompt: 'What should be featured in the next episode?',
+            subtext: 'Fund your suggestion to push it to the creator.'
+        };
+    }
+
+    if (normalizedFlow === 'series') {
+        return {
+            prompt: 'What should be included in the next part of this series?',
+            subtext: 'Add an idea and fund it to influence the storyline.'
+        };
+    }
+
+    if (normalizedFlow === 'catalogue') {
+        return {
+            prompt: 'What topic should be added to this collection?',
+            subtext: null
+        };
+    }
+
+    return {
+        prompt: 'What should the creator include in this video?',
+        subtext: null
+    };
+};
+
 const CreativeSuggestionsModal = ({
     isOpen,
     onClose,
     requestId,
+    requestType = 'one-time',
     targetCreatorId = null,
     targetCreatorHandle = null,
     selectedLanguage = 'English'
@@ -823,6 +896,7 @@ const CreativeSuggestionsModal = ({
     const maxHeight = window.innerHeight * 0.95;
 
     const auth = useAuth();
+    const { formatUsdPrice } = useCurrency();
     const [inputValue, setInputValue] = useState('');
     const [pendingSuggestionText, setPendingSuggestionText] = useState('');
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -830,9 +904,16 @@ const CreativeSuggestionsModal = ({
     const [isProcessingPayment, setIsProcessingPayment] = useState(false);
     const [paymentError, setPaymentError] = useState('');
     const [pendingFundingAttempt, setPendingFundingAttempt] = useState(false);
+    const [resolvedRequestType, setResolvedRequestType] = useState(() => normalizeRequestFlow(requestType));
 
     const goldColor = 'var(--color-gold)'; // accent color
     const goldLight = 'var(--color-gold-light)'; // accent color light
+    const suggestionCopy = getCreativeSuggestionCopy(resolvedRequestType);
+    const minFundingText = formatUsdPrice(2, { pricingType: 'one-time', includePricingSuffix: false });
+
+    useEffect(() => {
+        setResolvedRequestType(normalizeRequestFlow(requestType));
+    }, [requestType]);
 
     const loadSuggestions = useCallback(async () => {
         try {
@@ -1080,10 +1161,12 @@ const CreativeSuggestionsModal = ({
                                 <Lightbulb className="w-7 h-7" style={{ color: goldColor }} />
                             </div>
                             <p className="text-base font-semibold text-gray-800 mb-2">
-                                What should the creator include in this video?
+                                {getTranslation(suggestionCopy.prompt, selectedLanguage)}
                             </p>
                             <p className="text-sm text-gray-500 max-w-xs leading-relaxed mb-2">
-                                Attach an amount to support it. Minimum $2.
+                                {suggestionCopy.subtext
+                                    ? getTranslation(suggestionCopy.subtext, selectedLanguage)
+                                    : getTranslation(`Attach an amount to support it. Minimum ${minFundingText}.`, selectedLanguage)}
                             </p>
                             <p className="text-xs text-gray-400 max-w-xs">
                                 Your suggestion becomes visible once funded.
@@ -1113,7 +1196,7 @@ const CreativeSuggestionsModal = ({
                                             <p className="text-[10px] text-gray-400">{getTranslation('Just now', selectedLanguage)}</p>
                                         </div>
                                         <div className="ml-auto text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
-                                            ${(Number(s.fundedAmount || 0)).toFixed(2)}
+                                            {formatUsdPrice(Number(s.fundedAmount || 0), { pricingType: 'one-time', includePricingSuffix: false })}
                                         </div>
                                     </div>
                                     <p className="text-sm text-gray-700 leading-relaxed pl-9">{s.text}</p>
@@ -1139,7 +1222,7 @@ const CreativeSuggestionsModal = ({
                         <input
                             ref={inputRef}
                             type="text"
-                            placeholder={'What should the creator include in this video?'}
+                            placeholder={getTranslation(suggestionCopy.prompt, selectedLanguage)}
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyPress={(e) => {
@@ -1410,6 +1493,7 @@ const Toast = ({ message, isVisible, onClose, actionLabel, onAction, variant = '
 
 // --- Reusable Component for a Single Request Card ---
 const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onTogglePin, pulseActive = false, claimPulseActive = false, onOpenProfile, selectedLanguage = 'English', initialBookmarked = false, adminSelections = {}, onBookmarkChange = null, isFocused = false }) => {
+    const { formatUsdPrice } = useCurrency();
     const goldColor = 'var(--color-gold)';
     const lightGreyBg = customColors['--color-neutral-light-bg']; // UPDATED
 
@@ -1423,6 +1507,18 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
         request.avatarUrl ||
         ''
     );
+    const normalizedTargetMode = String(
+        request?.targeting?.mode || request?.meta?.targeting?.mode || ''
+    ).toLowerCase();
+    const targetCreatorId = String(
+        request?.targetCreatorId || request?.meta?.targeting?.creatorId || request?.meta?.selectedCreator || ''
+    ).trim() || null;
+    const targetCreatorHandle = String(
+        request?.targetCreatorHandle || request?.meta?.selectedCreatorHandle || ''
+    ).trim().replace(/^@+/, '') || null;
+    const targetCreatorMention = targetCreatorHandle
+        ? `@${targetCreatorHandle}`
+        : (String(request?.meta?.selectedCreatorMention || '').trim() || null);
 
     // States for interactivity
     const [isBookmarked, setIsBookmarked] = useState(false);
@@ -1957,6 +2053,27 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
             setActionToast({ visible: true, message: 'You cannot claim your own request' });
             return;
         }
+
+        if (normalizedTargetMode === 'specific' && (targetCreatorId || targetCreatorHandle)) {
+            const currentUserId = String(auth?.user?.id || '').trim();
+            const currentUserHandle = String(
+                auth?.user?.handle || auth?.user?.username || auth?.user?.tag || auth?.user?.name || ''
+            ).trim().replace(/^@+/, '').replace(/\s+/g, '_').toLowerCase();
+            const targetIdNormalized = String(targetCreatorId || '').trim();
+            const targetHandleNormalized = String(targetCreatorHandle || '').trim().replace(/^@+/, '').toLowerCase();
+
+            const allowedById = !!targetIdNormalized && !!currentUserId && currentUserId === targetIdNormalized;
+            const allowedByHandle = !!targetHandleNormalized && !!currentUserHandle && currentUserHandle === targetHandleNormalized;
+
+            if (!allowedById && !allowedByHandle) {
+                setActionToast({
+                    visible: true,
+                    message: `${targetCreatorMention || 'This request'} is for a specific creator. Please try another request.`
+                });
+                return;
+            }
+        }
+
         setShowClaimModal(true);
     };
 
@@ -2329,6 +2446,25 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
     const isBoosted = (request.boosts || 0) >= 1;
     // Use state for admin selections (updated in real-time via storage listener)
     const isAdminSelected = adminSelections[request.id] || false;
+    const requestPricingType = (() => {
+        const rawType = String(
+            request?.meta?.selectedFormat
+            || request?.meta?.format
+            || request?.meta?.flow
+            || request?.delivery
+            || request?.deliveryType
+            || request?.format
+            || request?.type
+            || 'one-time'
+        ).toLowerCase();
+        if (rawType === 'recurrent') return 'recurring';
+        if (rawType === 'catalogue') return 'one-time';
+        if (rawType === 'recurring' || rawType === 'series') return rawType;
+        return 'one-time';
+    })();
+    const formattedFunding = formatUsdPrice(Number(request.funding || 0), {
+        pricingType: requestPricingType
+    });
     const useAccentBorder = isBoosted || isAdminSelected;
     const borderColor = useAccentBorder ? accentColor : '#d1d5db'; // Lighter grey outline by default, purple if boosted or selected
     const borderWidth = useAccentBorder ? '2px' : '1px'; // Thicker border when boosted or selected
@@ -2618,7 +2754,7 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                             </div>
                         )}
                         <div style={fundingBadgeStyle}>
-                            ${Number(request.funding || 0).toFixed(2)}
+                            {formattedFunding}
                         </div>
                         {/* Pin indicator: only show when the request is pinned (pin is toggled via quick-options) */}
                         {/* pinned indicator intentionally moved below to sit above the rank badge */}
@@ -2716,6 +2852,11 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                     </div>
 
                     {/* Request Title and Description */}
+                    {targetCreatorMention && (
+                        <p className="text-xs font-semibold text-[var(--color-gold)] mb-1">
+                            {targetCreatorMention}
+                        </p>
+                    )}
                     <h2 className="text-lg font-medium text-gray-900 mb-2 leading-tight">
                         {highlight(request.title)}
                     </h2>
@@ -3002,8 +3143,9 @@ const RequestCard = ({ request, detailedRank, searchQuery, isPinned = false, onT
                 isOpen={showSuggestionsModal}
                 onClose={handleCloseSuggestions}
                 requestId={request.id}
-                targetCreatorId={request?.creator?.id || request?.creatorId || request?.creator_id || request?.createdBy || request?.created_by || null}
-                targetCreatorHandle={request?.creator?.handle || request?.creator?.tag || null}
+                requestType={request?.delivery || request?.deliveryType || request?.flow || request?.meta?.flow || request?.meta?.selectedFormat || 'one-time'}
+                targetCreatorId={targetCreatorId || request?.creator?.id || request?.creatorId || request?.creator_id || request?.createdBy || request?.created_by || null}
+                targetCreatorHandle={targetCreatorHandle || request?.creator?.handle || request?.creator?.tag || null}
                 selectedLanguage={selectedLanguage}
             />
 
@@ -3510,6 +3652,7 @@ export default function RequestsFeed() {
     const [showMonthYearPicker, setShowMonthYearPicker] = useState(false);
     const [showNudgeModal, setShowNudgeModal] = useState(false);
     const [nudgeRequest, setNudgeRequest] = useState(null); // Store the request that needs nudging
+    const [refreshNonce, setRefreshNonce] = useState(0);
     const [hideClaimedRequests, setHideClaimedRequests] = useState(() => {
         try {
             return localStorage.getItem('hideClaimedRequests') === 'true';
@@ -3611,9 +3754,6 @@ export default function RequestsFeed() {
         let cancelled = false;
         (async () => {
             try {
-                try {
-                    if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
-                } catch (e) { }
                 const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
                 if (!token) {
                     if (!cancelled) setFollowedCreatorIds(new Set());
@@ -3622,10 +3762,7 @@ export default function RequestsFeed() {
                 const res = await fetch(`${getBackendBaseUrl()}/following`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                if (res.status === 401) {
-                    try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
-                    return;
-                }
+                if (res.status === 401) return;
                 if (!res.ok) return;
                 const body = await res.json();
                 const ids = new Set(
@@ -3777,6 +3914,35 @@ export default function RequestsFeed() {
         return initial;
     });
 
+    const triggerRequestsRefresh = () => {
+        setRefreshNonce((prev) => prev + 1);
+    };
+
+    useEffect(() => {
+        const refreshHandler = () => triggerRequestsRefresh();
+        const visibilityHandler = () => {
+            if (document.visibilityState === 'visible') {
+                triggerRequestsRefresh();
+            }
+        };
+
+        window.addEventListener('focus', refreshHandler);
+        window.addEventListener('pageshow', refreshHandler);
+        window.addEventListener('ideas:request_created', refreshHandler);
+        window.addEventListener('request:updated', refreshHandler);
+        window.addEventListener('request:deleted', refreshHandler);
+        document.addEventListener('visibilitychange', visibilityHandler);
+
+        return () => {
+            window.removeEventListener('focus', refreshHandler);
+            window.removeEventListener('pageshow', refreshHandler);
+            window.removeEventListener('ideas:request_created', refreshHandler);
+            window.removeEventListener('request:updated', refreshHandler);
+            window.removeEventListener('request:deleted', refreshHandler);
+            document.removeEventListener('visibilitychange', visibilityHandler);
+        };
+    }, []);
+
     // DEBUG LOGGER
     useEffect(() => {
         console.log(`DEBUG: RankedRequests update. Count=${rankedRequests.length}`);
@@ -3798,17 +3964,11 @@ export default function RequestsFeed() {
                 const token = localStorage.getItem('regaarder_token');
                 let bookmarkedRequestIds = new Set();
                 try {
-                    try {
-                        if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') throw new Error('auth_unavailable');
-                    } catch (e) {
-                        if (e && e.message === 'auth_unavailable') throw e;
-                    }
                     const bookmarksRes = await fetch(`${BACKEND}/bookmarks`, {
                         headers: token ? { Authorization: `Bearer ${token}` } : {}
                     });
                     if (bookmarksRes.status === 401) {
-                        try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
-                        throw new Error('auth_unavailable');
+                        throw new Error('bookmarks_unauthorized');
                     }
                     const bookmarksData = await bookmarksRes.json();
                     if (bookmarksData && bookmarksData.success && Array.isArray(bookmarksData.requests)) {
@@ -3846,6 +4006,7 @@ export default function RequestsFeed() {
                 const processLocalRequests = (backendList) => {
                     let finalList = [...backendList];
                     try {
+                        const deletedTombstones = readDeletedRequestTombstones();
                         const localRaw = localStorage.getItem('ideas_requests_v1');
                         if (localRaw) {
                             console.log('Found local optimistic requests:', localRaw.length, 'chars');
@@ -3855,6 +4016,7 @@ export default function RequestsFeed() {
                                 const backendIds = new Set(finalList.map(r => String(r.id)));
                                 const missing = localReqs.filter(r => {
                                     if (!r || !r.id) return false;
+                                    if (deletedTombstones[String(r.id)]) return false;
                                     if (backendIds.has(String(r.id))) return false;
                                     return true;
                                 });
@@ -3942,13 +4104,14 @@ export default function RequestsFeed() {
                     // CLEANUP: Prune ideas_requests_v1 — remove entries that are now in the backend.
                     // Also cap at 50 most-recent entries to prevent unbounded growth.
                     try {
+                        const deletedTombstones = readDeletedRequestTombstones();
                         const localRaw2 = localStorage.getItem('ideas_requests_v1');
                         if (localRaw2) {
                             const localArr = JSON.parse(localRaw2);
                             if (Array.isArray(localArr)) {
                                 const backendIdSet = new Set(backendList.map(r => String(r.id)));
                                 // Keep only entries NOT yet in backend (still pending sync)
-                                let pruned = localArr.filter(r => r && r.id && !backendIdSet.has(String(r.id)));
+                                let pruned = localArr.filter(r => r && r.id && !backendIdSet.has(String(r.id)) && !deletedTombstones[String(r.id)]);
                                 // Also remove entries older than 7 days that never synced (stale)
                                 const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
                                 pruned = pruned.filter(r => {
@@ -3992,6 +4155,16 @@ export default function RequestsFeed() {
                     base.requesterName = requesterName;
                     base.requesterAvatar = requesterAvatar || '';
                     base.requestLanguage = getRequestLanguageValue(base);
+                    const meta = (base.meta && typeof base.meta === 'object') ? base.meta : {};
+                    const targeting = (base.targeting && typeof base.targeting === 'object')
+                        ? base.targeting
+                        : ((meta.targeting && typeof meta.targeting === 'object') ? meta.targeting : null);
+                    base.targeting = targeting || null;
+                    base.targetCreatorId = (base.targetCreatorId || meta.selectedCreator || (targeting && targeting.creatorId) || null);
+                    base.targetCreatorHandle = (base.targetCreatorHandle || meta.selectedCreatorHandle || null);
+                    base.targetCreatorMention = base.targetCreatorHandle
+                        ? `@${String(base.targetCreatorHandle).replace(/^@+/, '')}`
+                        : (meta.selectedCreatorMention || null);
                     // Derive company / display name
                     base.company = base.company || requesterName;
                     base.companyInitial = base.companyInitial || (base.company ? String(base.company).charAt(0).toUpperCase() : 'C');
@@ -4108,7 +4281,7 @@ export default function RequestsFeed() {
             }
         })();
         return () => { cancelled = true; };
-    }, [activeFilter, selectedCategory, selectedType, selectedStatus, location.search, auth.user && auth.user.id]); // Re-fetch on URL query and account change
+    }, [activeFilter, selectedCategory, selectedType, selectedStatus, location.search, auth.user && auth.user.id, refreshNonce]); // Re-fetch on URL/query/account and refresh triggers
 
     // Listen for local events when a new request is created in Ideas page
     useEffect(() => {
@@ -4200,27 +4373,51 @@ export default function RequestsFeed() {
                 const updated = ev && ev.detail && ev.detail.request ? ev.detail.request : null;
                 if (!updated || !updated.id) return;
                 setRankedRequests(prev => prev.map(r => (String(r.id) === String(updated.id) ? { ...r, ...updated } : r)));
+                triggerRequestsRefresh();
             } catch (e) { console.warn('RequestsFeed: error handling request:updated', e); }
         };
         window.addEventListener('request:updated', handler);
         return () => window.removeEventListener('request:updated', handler);
     }, []);
 
+    // Remove cards immediately when a request is deleted and force a backend refresh.
+    useEffect(() => {
+        const handler = (ev) => {
+            try {
+                const requestId = ev && ev.detail ? ev.detail.requestId : null;
+                if (!requestId) return;
+                markRequestDeletedTombstone(requestId);
+                setRankedRequests(prev => prev.filter(r => String(r.id) !== String(requestId)));
+                triggerRequestsRefresh();
+            } catch (e) { console.warn('RequestsFeed: error handling request:deleted', e); }
+        };
+        window.addEventListener('request:deleted', handler);
+        return () => window.removeEventListener('request:deleted', handler);
+    }, []);
+
+    // Remove cards immediately when a request is hidden by staff.
+    useEffect(() => {
+        const handler = (ev) => {
+            try {
+                const requestId = ev && ev.detail ? ev.detail.requestId : null;
+                if (!requestId) return;
+                setRankedRequests(prev => prev.filter(r => String(r.id) !== String(requestId)));
+                triggerRequestsRefresh();
+            } catch (e) { console.warn('RequestsFeed: error handling request:hidden', e); }
+        };
+        window.addEventListener('request:hidden', handler);
+        return () => window.removeEventListener('request:hidden', handler);
+    }, []);
+
     // Load per-user reactions from backend to persist across devices
     useEffect(() => {
         try {
-            try {
-                if (sessionStorage.getItem('regaarder_auth_unavailable') === '1') return;
-            } catch (e) { }
             const token = (auth.user && auth.user.token) || localStorage.getItem('regaarder_token');
             if (!token) return;
             fetch(`${getBackendBaseUrl()}/requests/react/me`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => {
-                if (res.status === 401) {
-                    try { sessionStorage.setItem('regaarder_auth_unavailable', '1'); } catch (e) { }
-                    return null;
-                }
+                if (res.status === 401) return null;
                 return res.json();
             }).then(data => {
                 if (!data) return;
