@@ -54,6 +54,31 @@ if (typeof document !== 'undefined') {
         document.head.appendChild(style);
     }
 }
+
+const safeToString = (value, fallback = '') => {
+    if (value == null) return fallback;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+    try {
+        const primitive = typeof value?.valueOf === 'function' ? value.valueOf() : value;
+        if (typeof primitive === 'string' || typeof primitive === 'number' || typeof primitive === 'boolean' || typeof primitive === 'bigint') {
+            return String(primitive);
+        }
+    } catch (e) { }
+    try { return JSON.stringify(value); } catch (e) { }
+    try { return Object.prototype.toString.call(value); } catch (e) { }
+    return fallback;
+};
+
+const sanitizeNotificationText = (value) => {
+    const input = safeToString(value, '');
+    if (!input) return '';
+    return input
+        .replace(/\bhttps?:\/\/[^\s)\]}]+/gi, '[secure link removed]')
+        .replace(/\bwww\.[^\s)\]}]+/gi, '[secure link removed]')
+        .replace(/\buploaded:[^\s)\]}]+/gi, '[secure link removed]')
+        .replace(/\b\/uploads\/[^\s)\]}]+/gi, '[secure link removed]');
+};
 // DollarSign is kept in the import list but no longer actively mapped in the Icon component
 // Utility style for clamping long titles to 2 lines when Tailwind line-clamp plugin isn't available
 const clamp2 = {
@@ -2021,16 +2046,15 @@ const ProfileDialog = ({ name, username, isCreator = false, onClose, profileData
     const [loadedProfileData, setLoadedProfileData] = useState(null);
     const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
 
-    // Fetch user profile data to get avatar if not already provided
+    // Always resolve avatar from user profile data so video thumbnails are never used as profile photos.
     useEffect(() => {
-        if (profileData && profileData.avatar) {
-            setLoadedProfileData(profileData);
-            return;
-        }
-
         const fetchUserProfile = async () => {
             try {
                 const targetId = creatorId || username || name;
+                if (!targetId) {
+                    setLoadedProfileData(profileData);
+                    return;
+                }
                 const response = await fetch(`${BACKEND}/users`);
                 const result = await response.json();
                 const users = Array.isArray(result.users) ? result.users : (Array.isArray(result) ? result : []);
@@ -3095,6 +3119,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Poll for new notifications to show toaster
     useEffect(() => {
         let lastNotifCount = -1;
+        const getUnreadCount = (list) => (Array.isArray(list) ? list.filter((n) => n && !n.read && !n.isRead).length : 0);
         // Function to check notifications
         const checkForNotifications = async () => {
             const token = localStorage.getItem('regaarder_token');
@@ -3105,12 +3130,17 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.status === 401) {
+                    try {
+                        localStorage.setItem('notifications', JSON.stringify([]));
+                        localStorage.setItem('notifications_count', '0');
+                        window.dispatchEvent(new CustomEvent('notifications:updated', { detail: { count: 0 } }));
+                    } catch (e) { }
                     return;
                 }
                 if (res.ok) {
                     const data = await res.json();
                     const list = data.notifications || [];
-                    const count = list.length;
+                    const count = getUnreadCount(list);
 
                     // Check for unread staff action notifications
                     const unreadStaffAction = list.find(n => n.type === 'staff_action' && n.requiresAcknowledgment && !n.read);
@@ -3135,7 +3165,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     show: true,
                                     type: 'info',
                                     title: 'New Notification',
-                                    message: newest.text || 'You have a new update'
+                                    message: sanitizeNotificationText(newest.text || 'You have a new update')
                                 });
                                 // Auto-hide after 4 seconds
                                 setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
@@ -3267,10 +3297,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
             } catch (e) { }
             // 3) localStorage as last fallback
             const storedData = localStorage.getItem('miniPlayerData');
-            console.log('home: found stored miniPlayerData?', !!storedData);
             if (storedData) {
                 const data = JSON.parse(storedData);
-                console.log('home: parsed miniPlayerData ->', data);
                 if (data && data.video) {
                     setMiniPlayerData(data);
                     setMiniPlaying(!(data.paused));
@@ -3586,6 +3614,13 @@ const App = ({ overrideMiniPlayerData = null }) => {
 
     // Tab selection state
     const [selectedTab, setSelectedTab] = useState('Recommended');
+    const [videosRefreshTick, setVideosRefreshTick] = useState(0);
+
+    useEffect(() => {
+        const handleVideosUpdated = () => setVideosRefreshTick((v) => v + 1);
+        window.addEventListener('videos:updated', handleVideosUpdated);
+        return () => window.removeEventListener('videos:updated', handleVideosUpdated);
+    }, []);
 
     // Fetch videos from backend on component mount or tab change
     useEffect(() => {
@@ -3594,7 +3629,6 @@ const App = ({ overrideMiniPlayerData = null }) => {
         const fetchVideos = async () => {
             try {
                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
-                console.log('Fetching videos from:', `${BACKEND}/videos`);
 
                 // Fetch bookmarks to sync state
                 const token = localStorage.getItem('regaarder_token');
@@ -3626,14 +3660,11 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 }
 
                 const response = await fetch(`${BACKEND}/videos?${params.toString()}`);
-                console.log('Fetch response:', response.status, response.ok);
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('Fetched videos data:', data);
 
                     if (data.success && data.videos && data.videos.length > 0) {
-                        console.log('Adding', data.videos.length, 'videos from backend');
                         // Ensure unique IDs and filter out blob URLs
                         // Also filter to show only public videos on the home page
                         let backendUrlObj = null;
@@ -3646,12 +3677,10 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 // Exclude videos staff have hidden, deleted, or shadow-deleted so the
                                 // homepage reflects staff actions and the change survives refresh.
                                 if (video.hidden || video.deleted || video.shadowDeleted) return false;
-                                // Only show public videos on home page
-                                const isPublic = !video.appearance || video.appearance === 'public';
                                 // Filter out videos with blob URLs as they're invalid across sessions
-                                const hasValidImage = video.imageUrl && !video.imageUrl.startsWith('blob:');
-                                const hasValidVideo = video.videoUrl && !video.videoUrl.startsWith('blob:');
-                                return isPublic && (hasValidImage || hasValidVideo);
+                                const hasValidImage = video.imageUrl && !video.imageUrl.startsWith('blob:') && !video.imageUrl.startsWith('data:');
+                                const hasValidVideo = video.videoUrl && !video.videoUrl.startsWith('blob:') && !video.videoUrl.startsWith('data:');
+                                return hasValidImage || hasValidVideo;
                             })
                             .map((video, index) => {
                                 // Calculate relative time from timestamp
@@ -3677,7 +3706,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 // Use a stable ID derived from backend id or timestamp (no random suffix)
                                 const uniqueId = (video.id != null && video.id !== undefined) ? String(video.id) : (video.timestamp ? `ts-${video.timestamp}` : (video.videoUrl ? `url-${video.videoUrl}` : `idx-${index}`));
                                 const normalizeMediaUrl = (rawUrl) => {
-                                    if (!rawUrl || rawUrl.startsWith('blob:')) return null;
+                                    if (!rawUrl || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return null;
                                     try {
                                         const resolvedByHelper = resolveMediaUrl(rawUrl);
                                         if (resolvedByHelper && /^https?:\/\//i.test(String(resolvedByHelper))) {
@@ -3701,7 +3730,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 };
 
                                 const rawSource = video.videoUrl || video.url || video.src || video.videoLink || video.youtubeUrl || video.mediaUrl;
-                                const videoUrlRaw = rawSource && !String(rawSource).startsWith('blob:')
+                                const videoUrlRaw = rawSource && !String(rawSource).startsWith('blob:') && !String(rawSource).startsWith('data:')
                                     ? rawSource
                                     : null;
                                 const videoUrl = normalizeMediaUrl(videoUrlRaw);
@@ -3755,12 +3784,17 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                     ...video,
                                     id: uniqueId,
                                     date: relativeTime,
-                                    // Replace blob URLs with fallback placeholders
+                                    // Keep primary and fallback thumbnails so UI can recover when one URL is dead.
                                     imageUrl: (() => {
-                                        const url = (video.imageUrl && !video.imageUrl.startsWith('blob:'))
-                                            ? video.imageUrl
-                                            : (video.thumbnail || video.image || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable');
-                                        return normalizeMediaUrl(url) || url;
+                                        const primary = (video.imageUrl && !video.imageUrl.startsWith('blob:'))
+                                            ? normalizeMediaUrl(video.imageUrl)
+                                            : null;
+                                        const fallback = normalizeMediaUrl(video.thumbnail || video.image || '');
+                                        return primary || fallback || 'https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable';
+                                    })(),
+                                    thumbnail: (() => {
+                                        const fallback = normalizeMediaUrl(video.thumbnail || video.image || '');
+                                        return fallback || null;
                                     })(),
                                     // Process author avatar if available
                                     authorAvatar: (() => {
@@ -3819,7 +3853,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
         };
 
         fetchVideos();
-    }, [selectedTab]);
+    }, [selectedTab, videosRefreshTick]);
 
     // Filter the video data based on the search term
     const filteredVideos = videos.filter(video => {
@@ -4068,7 +4102,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 lineHeight: '1.5',
                                 whiteSpace: 'pre-wrap'
                             }}>
-                                {staffActionNotification.message}
+                                {sanitizeNotificationText(staffActionNotification.message)}
                             </p>
 
                             {/* CTA Button - Shows URL hint for promotions with URL */}
@@ -5021,7 +5055,6 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
     const isVisibleOnHomeFeed = (item) => {
         if (!item || typeof item !== 'object') return false;
         if (item.hidden || item.deleted || item.shadowDeleted) return false;
-        if (item.appearance && item.appearance !== 'public') return false;
         const image = String(item.imageUrl || item.thumbnail || item.image || '');
         const videoUrl = String(item.videoUrl || item.url || item.src || '');
         const hasValidImage = !!image && !image.startsWith('blob:');
@@ -5233,7 +5266,7 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
                                 title: v.title,
                                 url: v.videoUrl || v.url || v.src,
                                 creator: v.author || v.creator || '',
-                                thumbnail: v.imageUrl || v.thumbnail
+                                thumbnail: v.thumbnail || v.imageUrl
                             })) : [];
                             const idx = list.findIndex(x => String(x.id) === String(video.id) || String(x.url) === String(video.videoUrl || video.url));
 
@@ -5249,10 +5282,18 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
             >
                 <div className="relative w-full pb-[75%] card-content">
                     <img
-                        src={video.imageUrl}
+                        src={resolveMediaUrl(video.imageUrl || video.thumbnail || video.image || '') || "https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable"}
                         alt={video.title}
                         className="absolute top-0 left-0 w-full h-full object-cover rounded-t-xl card-content"
-                        onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable" }}
+                        onError={(e) => {
+                            const fallback = resolveMediaUrl(video.thumbnail || video.image || '') || "https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable";
+                            if (e.target.src !== fallback) {
+                                e.target.src = fallback;
+                                return;
+                            }
+                            e.target.onerror = null;
+                            e.target.src = "https://placehold.co/600x400/333333/ffffff?text=Video+Image+Unavailable";
+                        }}
                     />
 
                     {/* <--- NEW: Pin Badge (top-left) */}
@@ -5314,8 +5355,10 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
     const [notifCount, setNotifCount] = useState(0);
 
     useEffect(() => {
+        const getUnreadCount = (list) => (Array.isArray(list) ? list.filter((n) => n && !n.read && !n.isRead).length : 0);
         const readCount = () => {
             try {
+                // Prefer synchronized count key so Notifications page edits do not leak extra state to Home.
                 const v1 = window.localStorage.getItem('notifications_count');
                 if (v1 != null) {
                     const n = parseInt(v1, 10);
@@ -5325,7 +5368,7 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
                 if (v2) {
                     try {
                         const arr = JSON.parse(v2);
-                        if (Array.isArray(arr)) { setNotifCount(arr.length); return; }
+                        if (Array.isArray(arr)) { setNotifCount(getUnreadCount(arr)); return; }
                     } catch (e) { }
                 }
             } catch (e) { }

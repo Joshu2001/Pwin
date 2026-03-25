@@ -548,6 +548,26 @@ const ClaimStatusPanel = ({
         }
     };
 
+    const normalizeInputThumbnailUrl = (raw) => {
+        if (!raw || typeof raw !== 'string') return '';
+        const trimmed = raw.trim();
+        if (!trimmed) return '';
+
+        // First pass: use shared media resolver (supports uploaded:, /uploads, legacy persisted filenames).
+        const resolved = resolveMediaUrl(trimmed);
+        if (resolved) return resolved;
+
+        // Fallback: treat plain domains as https links.
+        const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+        try {
+            const parsed = new URL(withProtocol);
+            if (!/^https?:$/i.test(parsed.protocol)) return '';
+            return parsed.toString();
+        } catch {
+            return '';
+        }
+    };
+
     // Initialize Details button hint visibility (show only for first 2 views)
     useEffect(() => {
         try {
@@ -1688,9 +1708,8 @@ const ClaimStatusPanel = ({
                                                                     setThumbnailPreview(null);
                                                                     return;
                                                                 }
-                                                                const normalized = resolveMediaUrl(url) || url;
-                                                                if (/^https?:\/\/.+/i.test(normalized)) setThumbnailPreview(normalized);
-                                                                else setThumbnailPreview(null);
+                                                                const normalized = normalizeInputThumbnailUrl(url);
+                                                                setThumbnailPreview(normalized || null);
                                                             }}
                                                             placeholder="https://example.com/thumbnail.jpg"
                                                             className="w-full rounded-lg px-4 py-3 text-sm"
@@ -2165,12 +2184,18 @@ const ClaimStatusPanel = ({
                                                 setValidationError('');
                                                 // basic validation (same as before)
                                                 const normalizedVideoLink = normalizeInputVideoUrl(videoLinkInput);
+                                                const normalizedThumbnailLink = normalizeInputThumbnailUrl(thumbnailLinkInput);
                                                 if (videoInputMode === 'link') {
                                                     if (!normalizedVideoLink) { setValidationError('Please enter a valid video link before continuing.'); return; }
                                                 } else {
                                                     if (!videoFile) { setValidationError('Please upload a video before continuing.'); return; }
                                                 }
-                                                if (!thumbnailFile && !thumbnailPreview) { setValidationError('Please upload a thumbnail before continuing.'); return; }
+                                                if (thumbnailInputMode === 'link') {
+                                                    if (!normalizedThumbnailLink) { setValidationError('Please paste a valid thumbnail link before continuing.'); return; }
+                                                } else if (!thumbnailFile && !thumbnailPreview) {
+                                                    setValidationError('Please upload a thumbnail before continuing.');
+                                                    return;
+                                                }
                                                 if (!videoTitle || videoTitle.trim().length === 0) { setValidationError(getTranslation('Please add a video title before continuing.', selectedLanguage)); return; }
                                                 if (!category) { setValidationError(getTranslation('Please select a category for your video.', selectedLanguage)); return; }
                                                 // Script type and script file are now optional - no validation needed
@@ -2197,7 +2222,7 @@ const ClaimStatusPanel = ({
                                                     file: videoFile,
                                                     videoLink: normalizedVideoLink || null,
                                                     inputMode: videoInputMode,
-                                                    thumbnail: thumbnailPreview || (thumbnailFile ? (typeof thumbnailFile === 'string' ? thumbnailFile : thumbnailFile.name) : null),
+                                                    thumbnail: normalizedThumbnailLink || thumbnailPreview || (thumbnailFile ? (typeof thumbnailFile === 'string' ? thumbnailFile : thumbnailFile.name) : null),
                                                     time: 'Just now',
                                                     format: videoFormat,
                                                     category,
@@ -2455,6 +2480,7 @@ const ClaimStatusPanel = ({
                                                                 publishedMeta.thumbnail = result.video.imageUrl || publishedMeta.thumbnail;
                                                             }
                                                             try { onPublishedChange(); } catch (e) { }
+                                                            try { window.dispatchEvent(new CustomEvent('videos:updated')); } catch (e) { }
 
                                                             // Show success toast with option to view
                                                             setToastMessage(getTranslation('Video published! Refresh home page to see it.', selectedLanguage));
@@ -2581,7 +2607,7 @@ const ClaimStatusPanel = ({
                                                             });
                                                             setLastPublished(publishedMeta);
                                                             setToastMessage(getTranslation('Updated published video', selectedLanguage));
-                                                            try { onUpdateProgress(Math.min(steps.length, currentStep + 1), `Re-uploaded video:${publishedMeta.fileName} thumb:${publishedMeta.thumbnail || ''}`); } catch (e) { }
+                                                            try { onUpdateProgress(Math.min(steps.length, currentStep + 1), `Updated video: ${publishedMeta.title || 'Untitled'}`); } catch (e) { }
                                                             if (requestData?.sourceTab === 'Published') {
                                                                 closeClaimModal(true);
                                                             }
@@ -2590,7 +2616,7 @@ const ClaimStatusPanel = ({
                                                             setPublishedCount(newCount);
                                                             setPublishedItems((arr) => [...arr, publishedMeta]);
                                                             setLastPublished(publishedMeta);
-                                                            try { onUpdateProgress(Math.min(steps.length, currentStep + 1), `Uploaded video:${publishedMeta.fileName} thumb:${publishedMeta.thumbnail || ''}`); } catch (e) { }
+                                                            try { onUpdateProgress(Math.min(steps.length, currentStep + 1), `Uploaded video: ${publishedMeta.title || 'Untitled'}`); } catch (e) { }
                                                         }
                                                         // keep modal open to show preview — user can close when ready
                                                         setPublishStep('form');
@@ -3325,21 +3351,10 @@ const App = () => {
         // Edit now uses the same publish/reupload modal flow to keep behavior identical.
     };
 
-    // Re-upload flow: set `pendingReuploadItem` and switch to Claims
+    // Re-upload flow from Published tab: keep user in Published and open publish modal directly.
     const openReupload = (item, asEdit = false) => {
-        const newId = 'reupload-' + Date.now();
-        const newClaim = {
-            id: newId,
-            title: item?.title || getTranslation('Untitled', selectedLanguage),
-            requesterName: item?.requesterName || getTranslation('Requester', selectedLanguage),
-            requesterAvatar: item?.requesterAvatar || null,
-            currentStep: 5,
-            isReupload: true,
-            sourceTab: 'Published' // Track that this re-upload came from Published tab
-        };
-        setClaimedRequests(prev => [newClaim, ...prev]);
-        setPendingReuploadItem({ ...item, targetClaimId: newId, sourceTab: 'Published', isReupload: true, openInForm: true, editMode: !!asEdit });
-        setActiveTopTab('Claims');
+        setPendingReuploadItem({ ...item, sourceTab: 'Published', isReupload: true, openInForm: true, editMode: !!asEdit });
+        setActiveTopTab('Published');
         setEditPublishedItem(null);
     };
 
@@ -4225,6 +4240,34 @@ const App = () => {
                 </div>
             ) : activeTopTab === 'Published' ? (
                 <div className="px-6 mt-7">
+                    {pendingReuploadItem && pendingReuploadItem.sourceTab === 'Published' && (
+                        <div
+                            aria-hidden="true"
+                            style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: 1, height: 1, overflow: 'hidden' }}
+                        >
+                            <ClaimStatusPanel
+                                key={`published-reupload-${pendingReuploadItem.id || 'new'}`}
+                                title={pendingReuploadItem.title || getTranslation('Untitled', selectedLanguage)}
+                                requesterName={pendingReuploadItem.requesterName || getTranslation('Requester', selectedLanguage)}
+                                requesterAvatar={pendingReuploadItem.requesterAvatar || null}
+                                currentStep={5}
+                                requestId={pendingReuploadItem.requestId || pendingReuploadItem.id || null}
+                                requestData={{ ...pendingReuploadItem, sourceTab: 'Published' }}
+                                onClose={() => {
+                                    setPendingReuploadItem(null);
+                                    setActiveTopTab('Published');
+                                }}
+                                onUpdateProgress={() => true}
+                                onUnclaim={() => { }}
+                                onPublishedChange={() => {
+                                    fetchPublishedVideos();
+                                    try { window.dispatchEvent(new CustomEvent('videos:updated')); } catch (e) { }
+                                }}
+                                pendingReuploadItem={pendingReuploadItem}
+                                clearPendingReupload={() => setPendingReuploadItem(null)}
+                            />
+                        </div>
+                    )}
                     <div className="mb-4 flex items-center justify-between">
                         <h3 className="text-[18px] font-semibold text-gray-900">{getTranslation('Published', selectedLanguage)}</h3>
                         <button onClick={() => { setActiveTopTab('Upload'); }} className="text-[var(--color-gold)] font-medium">{getTranslation('Upload New', selectedLanguage)}</button>
@@ -4255,8 +4298,20 @@ const App = () => {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <button onClick={() => openReupload(item, true)} className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700">{getTranslation('Edit', selectedLanguage)}</button>
-                                        <button onClick={() => openReupload(item)} className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700">{getTranslation('Re-upload', selectedLanguage)}</button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); openReupload(item, true); }}
+                                            className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700"
+                                        >
+                                            {getTranslation('Edit', selectedLanguage)}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); openReupload(item); }}
+                                            className="px-3 py-1 rounded-md border border-gray-200 text-sm text-gray-700"
+                                        >
+                                            {getTranslation('Re-upload', selectedLanguage)}
+                                        </button>
                                         <button
                                             onClick={() => setDeleteCandidate(item)}
                                             onMouseDown={() => handleDeletePressStart(item.id)}

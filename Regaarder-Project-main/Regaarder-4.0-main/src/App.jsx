@@ -10,7 +10,7 @@ import { CurrencyProvider } from './CurrencyContext.jsx';
 const Home = lazy(() => import('./home.jsx'));
 const Ideas = lazy(() => import('./ideas.jsx'));
 const Requests = lazy(() => import('./requests.jsx'));
-const Notifications = lazy(() => import('./notifications.jsx'));
+const Notifications = lazy(() => import('./notifications.jsx').then((m) => ({ default: m.default || m.NotificationsPage })));
 const More = lazy(() => import('./more.jsx'));
 const WatchHistory = lazy(() => import('./watchhistory.jsx'));
 const WatchTogether = lazy(() => import('./watchtogether.jsx'));

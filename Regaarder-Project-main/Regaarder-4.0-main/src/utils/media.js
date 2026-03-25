@@ -23,30 +23,57 @@ export const resolveMediaUrl = (input) => {
   }
 
   if (raw.startsWith('uploaded:')) {
-    const filename = raw.split(':')[1] || raw.slice('uploaded:'.length);
-    if (!backend) return raw;
+    const suffix = raw.slice('uploaded:'.length).trim();
+    const normalized = String(suffix || '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '')
+      .split(/[?#]/)[0];
+    const filename = normalized.split('/').filter(Boolean).pop() || '';
+    if (!filename) return '';
+    if (!backend) return `/uploads/${filename}`;
     return `${backend}/uploads/${filename}`;
+  }
+
+  // Handle plain device-uploaded filenames persisted without prefix/path.
+  if (!/^https?:\/\//i.test(raw) && !raw.startsWith('/') && !raw.includes('://') && !raw.includes('/')) {
+    const looksLikeMediaFile = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv)$/i.test(raw);
+    if (looksLikeMediaFile) {
+      return backend ? `${backend}/uploads/${raw}` : `/uploads/${raw}`;
+    }
+
+    // Legacy persisted names can include a UUID suffix after extension, e.g. image.jpg-<uuid>.
+    const hasEmbeddedMediaExt = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv)(?:[-_].+)?$/i.test(raw);
+    if (hasEmbeddedMediaExt) {
+      return backend ? `${backend}/uploads/${raw}` : `/uploads/${raw}`;
+    }
+  }
+
+  // Handle relative uploads paths emitted by backend/client code.
+  if (/^uploads\//i.test(raw)) {
+    return backend ? `${backend}/${raw.replace(/^\/+/, '')}` : `/${raw.replace(/^\/+/, '')}`;
   }
 
   try {
     if (/^https?:\/\//i.test(raw)) {
-      if (raw.startsWith('http://')) {
-        try {
-          const backendUrl = backend ? new URL(backend) : null;
-          const mediaUrl = new URL(raw);
-          if (backendUrl && mediaUrl.hostname === backendUrl.hostname) {
-            mediaUrl.protocol = backendUrl.protocol;
-            return mediaUrl.toString();
-          }
-          if (backendUrl && backendUrl.protocol === 'https:' && /onrender\.com$/i.test(mediaUrl.hostname)) {
-            mediaUrl.protocol = 'https:';
-            return mediaUrl.toString();
-          }
-        } catch {
-          // fall through
+      const backendUrl = backend ? new URL(backend) : null;
+      const mediaUrl = new URL(raw);
+      const host = String(mediaUrl.hostname || '').toLowerCase();
+      const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+
+      if (backendUrl) {
+        // Keep backend media on backend host/protocol and rewrite localhost artifacts.
+        if (mediaUrl.hostname === backendUrl.hostname || isLocalhost) {
+          mediaUrl.protocol = backendUrl.protocol;
+          mediaUrl.host = backendUrl.host;
+          return mediaUrl.toString();
+        }
+        if (backendUrl.protocol === 'https:' && raw.startsWith('http://') && /onrender\.com$/i.test(mediaUrl.hostname)) {
+          mediaUrl.protocol = 'https:';
+          return mediaUrl.toString();
         }
       }
-      return raw;
+
+      return mediaUrl.toString();
     }
 
     if (raw.startsWith('/')) {

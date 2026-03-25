@@ -85,22 +85,58 @@ const MorePage = () => {
 
     // Notification badge: read count from localStorage (kept by home.jsx) and poll periodically so the More page shows it
     const [notifCount, setNotifCount] = useState(() => {
-      try { return parseInt(localStorage.getItem('notifications_count') || '0', 10) || 0; } catch (e) { return 0; }
+      const getUnreadCount = (list) => (Array.isArray(list) ? list.filter((n) => n && !n.read && !n.isRead).length : 0);
+      try {
+        const v1 = localStorage.getItem('notifications_count');
+        if (v1 != null) {
+          const n = parseInt(v1, 10);
+          if (!isNaN(n)) return n;
+        }
+        const v2 = localStorage.getItem('notifications');
+        if (v2) {
+          const arr = JSON.parse(v2);
+          if (Array.isArray(arr)) return getUnreadCount(arr);
+        }
+      } catch (e) { }
+      return 0;
     });
 
     React.useEffect(() => {
       let mounted = true;
+      const getUnreadCount = (list) => (Array.isArray(list) ? list.filter((n) => n && !n.read && !n.isRead).length : 0);
       const read = () => {
         try {
-          const v = parseInt(localStorage.getItem('notifications_count') || '0', 10) || 0;
-          if (mounted) setNotifCount(v);
+          const v1 = localStorage.getItem('notifications_count');
+          if (v1 != null) {
+            const n = parseInt(v1, 10);
+            if (!isNaN(n)) {
+              if (mounted) setNotifCount(n);
+              return;
+            }
+          }
+          const v2 = localStorage.getItem('notifications');
+          if (v2) {
+            const arr = JSON.parse(v2);
+            if (Array.isArray(arr)) {
+              if (mounted) setNotifCount(getUnreadCount(arr));
+              return;
+            }
+          }
         } catch (e) { }
+        if (mounted) setNotifCount(0);
       };
       read();
-      const iv = setInterval(read, 3000);
-      const onStorage = (e) => { if (e.key === 'notifications_count') read(); };
+      const onStorage = (e) => {
+        if (!e || !e.key || e.key === 'notifications_count' || e.key === 'notifications') read();
+      };
+      const onNotificationsUpdated = () => read();
       window.addEventListener('storage', onStorage);
-      return () => { mounted = false; clearInterval(iv); window.removeEventListener('storage', onStorage); };
+      window.addEventListener('notifications:updated', onNotificationsUpdated);
+      return () => {
+        mounted = false;
+        window.removeEventListener('storage', onStorage);
+        window.removeEventListener('notifications:updated', onNotificationsUpdated);
+      };
     }, []);
 
     const menuItems = [
@@ -261,7 +297,9 @@ const MorePage = () => {
             <ChevronLeft
               className="w-6 h-6 text-gray-700 cursor-pointer transition hover:text-gray-900"
               style={{ minWidth: 44, minHeight: 44, padding: 9 }}
-              onClick={() => { try { navigate(-1); } catch(e) { navigate('/home'); } }}
+              onClick={() => {
+                try { navigate('/home'); } catch (e) { navigate('/'); }
+              }}
             />
             <h1 className="text-2xl font-semibold text-gray-800">{getTranslation('More', selectedLanguage)}</h1>
           </div>
