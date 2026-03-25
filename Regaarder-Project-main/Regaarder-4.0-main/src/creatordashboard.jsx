@@ -421,20 +421,32 @@ const ClaimStatusPanel = ({
         }
     });
     const [message, setMessage] = useState('');
+    const [statusUpdating, setStatusUpdating] = useState(false);
+    const [modalMode, setModalMode] = useState('status');
     const [videoFile, setVideoFile] = useState(null);
     const [videoPreview, setVideoPreview] = useState(null);
     const [videoInputMode, setVideoInputMode] = useState('link');
     const [videoLinkInput, setVideoLinkInput] = useState('');
+    const [youtubePreviewReady, setYoutubePreviewReady] = useState(false);
     const [thumbnailFile, setThumbnailFile] = useState(null);
     const [thumbnailPreview, setThumbnailPreview] = useState(null);
     const [thumbnailInputMode, setThumbnailInputMode] = useState('file');
     const [thumbnailLinkInput, setThumbnailLinkInput] = useState('');
     const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
-    const resolvedRequesterAvatar = !avatarLoadFailed ? resolveMediaUrl(requesterAvatar) : '';
+    const requesterAvatarCandidate = (() => {
+        const direct = requesterAvatar || requestData?.requesterAvatar || requestData?.requester?.image || requestData?.requesterImage || requestData?.requester_image || '';
+        const secondary = requestData?.createdByUser?.image || requestData?.requester?.avatar || '';
+        return direct || secondary || '';
+    })();
+    const resolvedRequesterAvatar = !avatarLoadFailed ? resolveMediaUrl(requesterAvatarCandidate) : '';
 
     useEffect(() => {
         setAvatarLoadFailed(false);
     }, [requesterAvatar]);
+
+    useEffect(() => {
+        setYoutubePreviewReady(false);
+    }, [videoLinkInput]);
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [validationError, setValidationError] = useState('');
@@ -656,6 +668,15 @@ const ClaimStatusPanel = ({
     const [isReuploading, setIsReuploading] = useState(false);
     const [publishStep, setPublishStep] = useState('form');
     const [previewData, setPreviewData] = useState(null);
+
+    const closeClaimModal = () => {
+        if (statusUpdating || uploading) return;
+        setShowModal(false);
+        setModalMode('status');
+        setMessage('');
+        setValidationError('');
+        setPublishStep('form');
+    };
 
     // Status steps for the claim workflow (used to render the tracker and labels)
     const steps = [
@@ -992,6 +1013,7 @@ const ClaimStatusPanel = ({
                 setPreviewData(null);
                 setPublishStep('form');
                 setIsReuploading(Boolean(item.isReupload));
+                setModalMode('publish');
                 setShowModal(true);
             } else {
                 // Default behaviour: open preview mode for re-uploads
@@ -1005,6 +1027,7 @@ const ClaimStatusPanel = ({
                 });
                 setPublishStep('preview');
                 setIsReuploading(true);
+                setModalMode('publish');
                 setShowModal(true);
             }
         } catch (e) {
@@ -1229,8 +1252,13 @@ const ClaimStatusPanel = ({
                 <>
                     <div className="mt-4 flex items-center gap-4">
                         <div className="w-12 h-12 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center">
-                            {requesterAvatar ? (
-                                <img src={requesterAvatar} alt={requesterName} className="w-full h-full object-cover" />
+                            {resolvedRequesterAvatar ? (
+                                <img
+                                    src={resolvedRequesterAvatar}
+                                    alt={requesterName}
+                                    className="w-full h-full object-cover"
+                                    onError={() => setAvatarLoadFailed(true)}
+                                />
                             ) : (
                                 <div className="text-sm text-gray-500">{requesterName.charAt(0)}</div>
                             )}
@@ -1276,7 +1304,15 @@ const ClaimStatusPanel = ({
                     const publishStage = steps.findIndex((s) => s === 'Preview Ready') + 1; // step number for 'Preview Ready' -> show 'Publish Video'
                     const isPublishStage = currentStep === publishStage;
                     return (
-                        <button onClick={() => setShowModal(true)} className="bg-[var(--color-gold)] text-white px-4 py-2 rounded-lg shadow-sm flex items-center gap-2">
+                        <button
+                            onClick={() => {
+                                setMessage('');
+                                setModalMode(isPublishStage ? 'publish' : 'status');
+                                setPublishStep('form');
+                                setShowModal(true);
+                            }}
+                            className="bg-[var(--color-gold)] text-white px-4 py-2 rounded-lg shadow-sm flex items-center gap-2"
+                        >
                             {isPublishStage ? (
                                 <React.Fragment>
                                     <Star size={14} className="mr-1" />
@@ -1344,13 +1380,13 @@ const ClaimStatusPanel = ({
             {/* Modal: Advance Request Status */}
             {showModal && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center">
-                    <div className="absolute inset-0 bg-black opacity-60" onClick={() => setShowModal(false)} />
+                    <div className="absolute inset-0 bg-black opacity-60" onClick={closeClaimModal} />
 
                     {/* Modal container */}
                     <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 z-10 max-h-[80vh] flex flex-col overflow-hidden">
                         {/* Scrollable content area - user asked this modal be scrollable */}
                         <div className="p-6 overflow-y-auto flex-1">
-                            {(currentStep === 5 || isReuploading) ? (
+                            {(modalMode === 'publish' || isReuploading) ? (
                                 <React.Fragment>
                                     <div className="flex items-start justify-between mb-4">
                                         <div>
@@ -1360,7 +1396,7 @@ const ClaimStatusPanel = ({
                                             </div>
                                             <div className="text-sm text-gray-400 mt-2">{getTranslation('Upload your video, add interactive elements, and publish to the community', selectedLanguage)}</div>
                                         </div>
-                                        <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                                        <button onClick={closeClaimModal} className="text-gray-400 hover:text-gray-600">✕</button>
                                     </div>
 
                                     {publishStep !== 'preview' && (
@@ -1566,14 +1602,18 @@ const ClaimStatusPanel = ({
                                                             const ytMatch = videoLinkInput.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
                                                             if (ytMatch && ytMatch[1]) {
                                                                 return (
-                                                                    <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '2px solid #f97316', aspectRatio: '16/9' }}>
+                                                                    <div className="mt-3 rounded-lg overflow-hidden relative" style={{ border: '2px solid #f97316', aspectRatio: '16/9', background: '#000' }}>
                                                                         <iframe
-                                                                            src={`https://www.youtube-nocookie.com/embed/${ytMatch[1]}`}
+                                                                            src={`https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&loop=1&playlist=${ytMatch[1]}`}
                                                                             className="w-full h-full border-0"
-                                                                            allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
-                                                                            allowFullScreen
+                                                                            allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                                                                            allowFullScreen={false}
                                                                             title="YouTube preview"
+                                                                            style={{ position: 'absolute', top: '-35%', left: '-35%', width: '170%', height: '170%', border: 0, background: '#000', pointerEvents: 'none' }}
+                                                                            onLoad={() => setYoutubePreviewReady(true)}
                                                                         />
+                                                                        {!youtubePreviewReady && <div style={{ position: 'absolute', inset: 0, zIndex: 2, background: '#000' }} />}
+                                                                        <div style={{ position: 'absolute', inset: 0, zIndex: 3 }} />
                                                                     </div>
                                                                 );
                                                             }
@@ -2026,7 +2066,7 @@ const ClaimStatusPanel = ({
                                             <h3 className="text-[20px] font-semibold text-gray-900">{getTranslation('Advance Request Status', selectedLanguage)}</h3>
                                             <div className="text-sm text-gray-400">{getTranslation('Update the status and notify the requester', selectedLanguage)}</div>
                                         </div>
-                                        <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                                        <button onClick={closeClaimModal} className="text-gray-400 hover:text-gray-600">✕</button>
                                     </div>
 
                                     <div className="flex items-center justify-center gap-6 my-4">
@@ -2042,8 +2082,14 @@ const ClaimStatusPanel = ({
                                     </div>
 
                                     <div className="mt-4">
-                                        <label className="text-sm font-medium text-gray-700">{getTranslation('Progress Update Message (Optional)', selectedLanguage)}</label>
-                                        <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder={getTranslation('Add a custom message for the requester...', selectedLanguage)} className="w-full mt-2 p-3 border border-gray-200 rounded-lg min-h-[120px] text-sm" />
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">{getTranslation('Add a note (optional)', selectedLanguage)}</label>
+                                        <textarea
+                                            value={message}
+                                            onChange={(e) => setMessage(e.target.value)}
+                                            placeholder={getTranslation('Share a short update for the requester', selectedLanguage)}
+                                            rows={3}
+                                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-gold)]"
+                                        />
                                     </div>
 
                                     <div className="mt-4 p-4 bg-blue-50 rounded-lg flex items-start gap-3">
@@ -2054,49 +2100,37 @@ const ClaimStatusPanel = ({
                                     <div className="mt-6 flex flex-col gap-3">
                                         <button
                                             onClick={async () => {
-                                                // If we're on the final step, treat this as the final Update Progress action
-                                                if (currentStep === steps.length) {
-                                                    try {
-                                                        // inform parent we're finishing
-                                                        const ok = await Promise.resolve(onUpdateProgress(currentStep, message));
-                                                        if (ok === false) {
-                                                            setToastMessage(getTranslation('Failed to update status. Please try again.', selectedLanguage));
-                                                            return;
-                                                        }
-                                                    } catch (e) { }
-                                                    setShowModal(false);
-                                                    setFinished(true);
-                                                    setCelebrate(true);
-                                                    // auto-dismiss celebration after 3s
-                                                    setTimeout(() => { setCelebrate(false); }, 3000);
-                                                    return;
-                                                }
-
-                                                // compute next step (cap at length)
-                                                const next = Math.min(steps.length, currentStep + 1);
+                                                if (statusUpdating) return;
+                                                setStatusUpdating(true);
+                                                const next = Math.min(steps.length, Number(currentStep || 1) + 1);
                                                 try {
-                                                    const ok = await Promise.resolve(onUpdateProgress(next, message));
+                                                    const ok = await Promise.resolve(onUpdateProgress(next, String(message || '').trim()));
                                                     if (ok === false) {
                                                         setToastMessage(getTranslation('Failed to update status. Please try again.', selectedLanguage));
                                                         return;
                                                     }
-                                                } catch (e) { }
-                                                setShowModal(false);
+                                                } catch (e) {
+                                                    setToastMessage(getTranslation('Failed to update status. Please try again.', selectedLanguage));
+                                                    return;
+                                                } finally {
+                                                    setStatusUpdating(false);
+                                                }
+                                                setMessage('');
+                                                closeClaimModal();
                                             }}
-                                            disabled={currentStep > steps.length}
-                                            className={`w-full px-4 py-3 rounded-lg text-white font-semibold ${currentStep > steps.length ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                                            disabled={currentStep >= steps.length || statusUpdating}
+                                            className={`w-full px-4 py-3 rounded-lg text-white font-semibold ${currentStep >= steps.length || statusUpdating ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
                                         >
                                             <span className="mr-2">✔</span>
-                                            {currentStep === steps.length ? getTranslation('Update Progress', selectedLanguage) : (currentStep === steps.length - 1 ? getTranslation('Publish Video', selectedLanguage) : getTranslation('Update Status', selectedLanguage))}
+                                            {statusUpdating ? getTranslation('Updating...', selectedLanguage) : getTranslation('Update Status', selectedLanguage)}
                                         </button>
-                                        <button onClick={() => setShowModal(false)} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
+                                        <button onClick={closeClaimModal} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
                                     </div>
                                 </React.Fragment>
                             )}
                         </div>
-
                         {/* Fixed action area for publish modal (keeps buttons visible while content scrolls) */}
-                        {(currentStep === 5 || isReuploading) && (
+                        {(modalMode === 'publish' || isReuploading) && (
                             <div className="p-4 border-t bg-white">
                                 {validationError && <div className="text-sm text-red-600 mb-3">{getTranslation(validationError, selectedLanguage)}</div>}
                                 {/* Two-step actions: form (Next: Preview) -> preview (Publish) */}
@@ -2158,7 +2192,7 @@ const ClaimStatusPanel = ({
                                         >
                                             {getTranslation('Next: Preview', selectedLanguage)}
                                         </button>
-                                        <button onClick={() => setShowModal(false)} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
+                                        <button onClick={closeClaimModal} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
                                     </>
                                 ) : publishStep === 'overlays' ? (
                                     <>
@@ -2172,7 +2206,7 @@ const ClaimStatusPanel = ({
                                             {getTranslation('Next: Preview', selectedLanguage)}
                                         </button>
                                         <button onClick={() => setPublishStep('form')} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white mb-3">{getTranslation('Back', selectedLanguage)}</button>
-                                        <button onClick={() => setShowModal(false)} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
+                                        <button onClick={closeClaimModal} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white">{getTranslation('Cancel', selectedLanguage)}</button>
                                     </>
                                 ) : (
                                     <>
@@ -2307,7 +2341,7 @@ const ClaimStatusPanel = ({
                                                         }
 
                                                         // Calculate video duration from the video file
-                                                        let videoDuration = /(?:youtube\.com|youtu\.be)/i.test(String(videoUrl || '')) ? '--:--' : '0:00';
+                                                        let videoDuration = '0:00';
                                                         if (videoFile) {
                                                             try {
                                                                 const videoElement = document.createElement('video');
@@ -2939,13 +2973,22 @@ const App = () => {
                 if (!claimedById) return false;
                 return uid ? String(claimedById) === uid : true;
             }).map((r) => {
-                const avatar = resolveMediaUrl(
-                    r?.requesterAvatar ||
-                    r?.creator?.image ||
-                    r?.creator?.avatar ||
-                    r?.creator?.photoURL ||
-                    ''
-                );
+                const avatarCandidates = [
+                    r?.requesterAvatar,
+                    r?.requester?.image,
+                    r?.requesterImage,
+                    r?.requester_image,
+                    r?.meta?.requesterAvatar,
+                    r?.meta?.requesterImage,
+                    r?.createdByUser?.image
+                ];
+                let avatar = '';
+                for (const candidate of avatarCandidates) {
+                    const resolved = resolveMediaUrl(candidate || '');
+                    if (!resolved) continue;
+                    avatar = resolved;
+                    break;
+                }
                 let pinnedStep = latestClaimStepRef.current.get(String(r?.id));
                 if (!Number.isFinite(pinnedStep)) {
                     try {
@@ -4055,7 +4098,7 @@ const App = () => {
                                                 requestData={req}
                                                 onClose={() => { }}
                                                 onUpdateProgress={(step, msg) => {
-                                                    handleUpdateClaimStatus(step, msg, req.id);
+                                                    return handleUpdateClaimStatus(step, msg, req.id);
                                                 }}
                                                 onUnclaim={(requestIdentifier) => {
                                                     // Remove the unclaimed request from claimedRequests using ID

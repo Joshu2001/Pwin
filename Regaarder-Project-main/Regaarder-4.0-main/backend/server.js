@@ -5101,7 +5101,10 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
            WHERE r.created_by = $1
            ORDER BY r.created_at DESC`;
       const { rows } = await dbQuery(sql, [uid]);
-      const mapped = rows.map((row) => applyRequestAmountPresentation({
+      const mapped = rows.map((row) => {
+        const avatarRaw = row.requester_image || (row.meta && (row.meta.requesterAvatar || row.meta.requesterImage || row.meta.requester_image)) || null;
+        const avatarNormalized = normalizeMediaUrl(avatarRaw, req);
+        return applyRequestAmountPresentation({
         id: row.id,
         title: row.title,
         description: row.description,
@@ -5128,8 +5131,9 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
         meta: row.meta,
         hidden: Boolean(row.meta && row.meta.hidden),
         requesterName: row.requester_name || null,
-        requesterAvatar: row.requester_image || null
-      }));
+        requesterAvatar: avatarNormalized || null
+      });
+      });
       return res.json({ requests: mapped });
     }
 
@@ -5152,7 +5156,14 @@ app.get('/requests/my', authMiddleware, async (req, res) => {
         const creatorId = String(copy.creatorId || copy.creator_id || copy.creator?.id || copy.createdBy || copy.created_by || '');
         const creatorUser = usersById.get(creatorId);
         copy.requesterName = copy.requesterName || requesterUser?.name || null;
-        copy.requesterAvatar = copy.requesterAvatar || requesterUser?.image || null;
+        const avatarRaw =
+          copy.requesterAvatar ||
+          copy.requester_image ||
+          (copy.meta && (copy.meta.requesterAvatar || copy.meta.requesterImage || copy.meta.requester_image)) ||
+          requesterUser?.image ||
+          null;
+        const avatarNormalized = normalizeMediaUrl(avatarRaw, req);
+        copy.requesterAvatar = avatarNormalized || null;
         if (copy.creator && !copy.creator.image && creatorUser?.image) {
           copy.creator = { ...copy.creator, image: creatorUser.image };
         }
@@ -5204,21 +5215,31 @@ const normalizeRequestTargeting = (body = {}) => {
 
   const modeRaw = String(source.mode || '').trim().toLowerCase();
   const creatorId = source.creatorId != null ? String(source.creatorId).trim() : (body.selectedCreator != null ? String(body.selectedCreator).trim() : '');
+  const creatorHandle = String(
+    source.creatorHandle
+    || source.selectedCreatorHandle
+    || body.selectedCreatorHandle
+    || body.targetCreatorHandle
+    || ''
+  ).trim().replace(/^@+/, '');
   const category = String(source.category || body.targetCategory || body.category || '').trim();
 
   if (creatorId && creatorId !== '@anycreators') {
-    return { mode: 'specific', creatorId, category: null };
+    return { mode: 'specific', creatorId, creatorHandle: null, category: null };
+  }
+  if (creatorHandle) {
+    return { mode: 'specific', creatorId: null, creatorHandle, category: null };
   }
   if (modeRaw === 'category' && category) {
-    return { mode: 'category', creatorId: null, category };
+    return { mode: 'category', creatorId: null, creatorHandle: null, category };
   }
   if (category) {
-    return { mode: 'category', creatorId: null, category };
+    return { mode: 'category', creatorId: null, creatorHandle: null, category };
   }
   if (modeRaw === 'specific' && creatorId && creatorId !== '@anycreators') {
-    return { mode: 'specific', creatorId, category: null };
+    return { mode: 'specific', creatorId, creatorHandle: null, category: null };
   }
-  return { mode: 'anycreators', creatorId: null, category: null };
+  return { mode: 'anycreators', creatorId: null, creatorHandle: null, category: null };
 };
 
 const loadCreatorsForTargeting = async () => {
@@ -5238,6 +5259,36 @@ const resolveTargetCreatorIds = async (targeting, requesterId) => {
   }
   if (t.mode === 'specific' && t.creatorId && t.creatorId !== '@anycreators') {
     return [String(t.creatorId)];
+  }
+  if (t.mode === 'specific' && t.creatorHandle) {
+    const handle = String(t.creatorHandle || '').trim().toLowerCase();
+    if (!handle) return [];
+    if (DB_ENABLED) {
+      const { rows } = await dbQuery(
+        `SELECT id
+         FROM users
+         WHERE is_creator = true
+           AND (
+             LOWER(COALESCE(handle, '')) = $1
+             OR LOWER(COALESCE(tag, '')) = $1
+             OR LOWER(COALESCE(name, '')) = $1
+           )
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [handle]
+      );
+      const found = rows && rows[0] && rows[0].id != null ? String(rows[0].id) : '';
+      return found ? [found] : [];
+    }
+    const users = readUsers();
+    const foundUser = (Array.isArray(users) ? users : []).find((u) => {
+      if (!u) return false;
+      const isCreator = (u.isCreator === true || u.is_creator === true);
+      if (!isCreator) return false;
+      const cand = String(u.handle || u.tag || u.name || '').trim().toLowerCase();
+      return cand === handle;
+    });
+    return (foundUser && foundUser.id != null) ? [String(foundUser.id)] : [];
   }
 
   const creators = await loadCreatorsForTargeting();
@@ -7352,7 +7403,7 @@ app.delete('/dislikes', authMiddleware, async (req, res) => {
 });
 
 // Unclaim a request - remove creator's claim and revert request to claimable state
-app.delete('/claims', authMiddleware, (req, res) => {
+app.delete('/claims', authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
     const requestId = body.requestId || body.title; // Try to match by ID first, then fall back to title
@@ -7360,6 +7411,44 @@ app.delete('/claims', authMiddleware, (req, res) => {
 
     if (!requestId) {
       return res.status(400).json({ error: 'Missing requestId or title' });
+    }
+
+    if (DB_ENABLED) {
+      let existingRow = null;
+
+      if (body.requestId) {
+        const byId = await dbQuery('SELECT * FROM requests WHERE id = $1 LIMIT 1', [String(body.requestId)]);
+        existingRow = byId.rows[0] || null;
+      }
+
+      if (!existingRow && body.title) {
+        const byTitle = await dbQuery('SELECT * FROM requests WHERE title = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1', [String(body.title)]);
+        existingRow = byTitle.rows[0] || null;
+      }
+
+      if (!existingRow) {
+        return res.status(404).json({ error: 'Request not found' });
+      }
+
+      const request = mapRequestRow(existingRow);
+      const claimedBy = request?.claimedBy || safeParseJson(request?.claimed_by);
+      if (!request.claimed || !claimedBy || String(claimedBy.id) !== String(userId)) {
+        return res.status(403).json({ error: 'You have not claimed this request' });
+      }
+
+      const updated = await dbQuery(
+        'UPDATE requests SET claimed = FALSE, claimed_by = NULL, claimed_at = NULL, updated_at = $1 WHERE id = $2 RETURNING *',
+        [new Date().toISOString(), String(request.id)]
+      );
+      const updatedRequest = mapRequestRow(updated.rows[0]);
+
+      if (Array.isArray(_requestDbCache) && _requestDbCacheReady) {
+        const cacheIdx = _requestDbCache.findIndex((r) => String(r?.id) === String(updatedRequest?.id));
+        if (cacheIdx !== -1) _requestDbCache[cacheIdx] = updatedRequest;
+      }
+
+      console.log(`Request ${updatedRequest.id} (${updatedRequest.title}) unclaimed by user ${userId}`);
+      return res.json({ success: true, request: updatedRequest });
     }
 
     const requests = readRequests();
@@ -7382,7 +7471,8 @@ app.delete('/claims', authMiddleware, (req, res) => {
     const request = requests[idx];
 
     // Verify the request is claimed by the current user
-    if (!request.claimed || !request.claimedBy || request.claimedBy.id !== userId) {
+    const claimedBy = request?.claimedBy || safeParseJson(request?.claimed_by);
+    if (!request.claimed || !claimedBy || String(claimedBy.id) !== String(userId)) {
       return res.status(403).json({ error: 'You have not claimed this request' });
     }
 
