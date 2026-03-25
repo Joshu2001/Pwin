@@ -5960,6 +5960,29 @@ setTimeout(() => fillYoutubeDurations(), 5000);
 app.get('/videos', async (req, res) => {
   try {
     let videos = await loadVideos();
+    let videosTouched = false;
+    videos = (Array.isArray(videos) ? videos : []).map((video) => {
+      const next = { ...(video || {}) };
+      const normalizedVideoUrl = normalizeMediaUrl(next.videoUrl || next.url || next.src || next.videoLink || next.youtubeUrl || next.mediaUrl, req);
+      const normalizedThumb = normalizeMediaUrl(next.imageUrl || next.thumbnail || next.image, req);
+
+      if (normalizedVideoUrl && normalizedVideoUrl !== next.videoUrl) {
+        next.videoUrl = normalizedVideoUrl;
+        videosTouched = true;
+      }
+      if (normalizedThumb && normalizedThumb !== next.imageUrl) {
+        next.imageUrl = normalizedThumb;
+        videosTouched = true;
+      }
+      if (!next.thumbnail && next.imageUrl) {
+        next.thumbnail = next.imageUrl;
+        videosTouched = true;
+      }
+      return next;
+    });
+    if (videosTouched) {
+      await saveVideos(videos);
+    }
     const feed = req.query.feed; // 'trending' | 'recommended' | undefined
     const category = req.query.category;
     const authorIdFilter = req.query.authorId;

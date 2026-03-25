@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Bell, CheckCircle, Rocket, Trophy, ChevronLeft, Settings, ChevronRight, MessageSquare, PlayCircle, Star, CornerUpRight, Send, X, Lightbulb, Trash2, Archive, Filter } from 'lucide-react';
 import { translations, getTranslation } from './translations.js';
 import { resolveMediaUrl } from './utils/media.js';
+import { useCurrency } from './CurrencyContext.jsx';
 
 // Utility for relative time
 const timeAgo = (iso) => {
@@ -69,7 +70,8 @@ const StatusTracker = ({ currentStep, steps }) => {
 };
 
 // Notification Card Component
-const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId, selectedLanguage }) => {
+const NotificationCard = ({ thread, onReply, onDelete, onDismiss, onOpenRequest, currentUserId, selectedLanguage }) => {
+  const { formatUsdPrice } = useCurrency();
   // Use the latest item for display logic, but render the full thread
   const latestItem = thread.items[thread.items.length - 1];
   const items = thread.items || [thread];
@@ -77,6 +79,37 @@ const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId,
   // Determine style and content based on item type
   const isStatusUpdate = items.some(i => i.type === 'status_update');
   const isStaffAction = thread.type === 'staff_action';
+  const isRequestAssigned = thread.type === 'request_assigned' || items.some(i => i.type === 'request_assigned');
+
+  const normalizePricingType = (rawType) => {
+    const type = String(rawType || '').toLowerCase();
+    if (type === 'recurrent') return 'recurring';
+    if (type === 'catalogue') return 'one-time';
+    if (type === 'recurring' || type === 'series') return type;
+    return 'one-time';
+  };
+
+  const getRequestAssignedText = (msg) => {
+    const metadata = (msg && typeof msg.metadata === 'object') ? msg.metadata : {};
+
+    const pricingType = normalizePricingType(
+      metadata.requestType
+      || msg?.requestType
+      || msg?.flow
+      || msg?.deliveryType
+      || msg?.delivery
+      || 'one-time'
+    );
+
+    return `You have a new ${pricingType} request check it out !`;
+  };
+
+  const getDisplayText = (msg) => {
+    if (msg?.type === 'request_assigned' || isRequestAssigned) {
+      return getRequestAssignedText(msg);
+    }
+    return msg?.text || msg?.message || msg?.title || '';
+  };
 
   // Extract current step from metadata if available (default to 1)
   let currentStep = 1;
@@ -181,6 +214,14 @@ const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId,
     );
 
     actionLabel = getTranslation('Reply', selectedLanguage);
+  } else if (isRequestAssigned) {
+    title = getTranslation('New Request', selectedLanguage);
+    Avatar = (
+      <div className="w-10 h-10 rounded-full bg-indigo-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
+        <Bell className="w-5 h-5 text-indigo-600" />
+      </div>
+    );
+    actionLabel = null;
   } else {
     // Generic suggestion or other
     title = getTranslation('New Message', selectedLanguage);
@@ -277,6 +318,10 @@ const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId,
           if (isStaffAction && thread.ctaUrl) {
             const url = thread.ctaUrl.startsWith('http') ? thread.ctaUrl : `https://${thread.ctaUrl}`;
             window.open(url, '_blank', 'noopener,noreferrer');
+            return;
+          }
+          if (isRequestAssigned && thread.requestId && onOpenRequest) {
+            onOpenRequest(thread.requestId);
           }
         }}
       >
@@ -360,7 +405,7 @@ const NotificationCard = ({ thread, onReply, onDelete, onDismiss, currentUserId,
                   return (
                     <div key={idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                       <div className={`text-sm leading-snug px-3 py-2 rounded-lg max-w-[90%] ${isMe ? 'bg-indigo-50 text-indigo-900 rounded-br-none' : 'bg-gray-50 text-gray-800 rounded-bl-none'}`}>
-                        {msg.text}
+                        {getDisplayText(msg)}
                       </div>
                     </div>
                   );
@@ -516,6 +561,15 @@ const App = ({ onClose }) => {
   });
   const [filteredSuggestions, setFilteredSuggestions] = React.useState([]);
 
+  const syncNotificationCache = React.useCallback((notifications) => {
+    try {
+      const safe = Array.isArray(notifications) ? notifications : [];
+      localStorage.setItem('notifications', JSON.stringify(safe));
+      localStorage.setItem('notifications_count', String(safe.length));
+      window.dispatchEvent(new CustomEvent('notifications:updated', { detail: { count: safe.length } }));
+    } catch (e) { }
+  }, []);
+
   // Helper to fetch and group notifications
   const fetchNotifications = async () => {
     try {
@@ -528,6 +582,13 @@ const App = ({ onClose }) => {
         const data = await res.json();
         let arr = (data && data.notifications) || [];
         const pendingIds = pendingDeleteIdsRef.current;
+        if (pendingIds && pendingIds.size) {
+          const backendIds = new Set(arr.map((item) => String(item.id)));
+          // Clear pending ids only when backend no longer returns them.
+          pendingIds.forEach((id) => {
+            if (!backendIds.has(String(id))) pendingIds.delete(String(id));
+          });
+        }
         if (pendingIds && pendingIds.size) {
           arr = arr.filter((item) => !pendingIds.has(String(item.id)));
         }
@@ -567,6 +628,7 @@ const App = ({ onClose }) => {
 
         setGroupedSuggestions(sortedThreads);
         setHasNotifications(sortedThreads.length > 0);
+        syncNotificationCache(arr);
       }
     } catch (e) { }
     finally {
@@ -642,72 +704,78 @@ const App = ({ onClose }) => {
 
 
   const [toast, setToast] = React.useState(null);
+  const toastCountdownIntervalRef = React.useRef(null);
   const deleteTimersRef = React.useRef(new Map());
   const deletedThreadSnapshotsRef = React.useRef(new Map());
   const pendingDeleteIdsRef = React.useRef(new Set());
 
   React.useEffect(() => {
     return () => {
-      deleteTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+      // On unmount, fire any pending backend deletes immediately instead of dropping them
+      const token = localStorage.getItem('regaarder_token');
+      const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
+      deleteTimersRef.current.forEach((timerId, threadKey) => {
+        clearTimeout(timerId);
+        // Fire the delete now for all pending items
+        const snapshot = deletedThreadSnapshotsRef.current.get(threadKey);
+        if (snapshot && token) {
+          const itemsToDelete = snapshot.items || [snapshot];
+          itemsToDelete.forEach((item) => {
+            if (item && item.id != null) {
+              fetch(`${BACKEND}/notifications/${item.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+              }).catch(() => {});
+            }
+          });
+        }
+      });
       deleteTimersRef.current.clear();
       deletedThreadSnapshotsRef.current.clear();
+      if (toastCountdownIntervalRef.current) {
+        clearInterval(toastCountdownIntervalRef.current);
+        toastCountdownIntervalRef.current = null;
+      }
     };
   }, []);
 
   // Handler for dismissing (local hide, reappear on refresh)
   const handleDismiss = (thread) => {
-    setGroupedSuggestions(prev => prev.filter(t => t.id !== thread.id));
+    setGroupedSuggestions(prev => {
+      const next = prev.filter(t => t.id !== thread.id);
+      const flattened = next.flatMap((t) => Array.isArray(t.items) ? t.items : [t]);
+      syncNotificationCache(flattened);
+      return next;
+    });
   };
 
-  // Handler for deletion (persistent delete with undo)
+  // Handler for deletion (persistent and immediate)
   const handleDelete = (thread) => {
     const threadKey = String(thread.id);
     deletedThreadSnapshotsRef.current.set(threadKey, thread);
 
     // 1. Remove from UI immediately
-    setGroupedSuggestions(prev => prev.filter(t => t.id !== thread.id));
+    setGroupedSuggestions(prev => {
+      const next = prev.filter(t => t.id !== thread.id);
+      const flattened = next.flatMap((t) => Array.isArray(t.items) ? t.items : [t]);
+      syncNotificationCache(flattened);
+      return next;
+    });
 
     const itemsToDelete = thread.items || [thread];
     itemsToDelete.forEach((item) => {
       if (item && item.id != null) pendingDeleteIdsRef.current.add(String(item.id));
     });
 
-    // 2. Show Toast with Undo
-    const existingTimer = deleteTimersRef.current.get(threadKey);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-      deleteTimersRef.current.delete(threadKey);
-    }
+    setToast({ message: 'Conversation deleted' });
 
-    setToast({
-      message: 'Conversation deleted',
-      onUndo: () => {
-        const snapshot = deletedThreadSnapshotsRef.current.get(threadKey) || thread;
-        itemsToDelete.forEach((item) => {
-          if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
-        });
-        // Restore
-        setGroupedSuggestions(prev => {
-          if (prev.some(t => String(t.id) === threadKey)) return prev;
-          const arr = [...prev, snapshot];
-          // re-sort
-          return arr.sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
-        });
-        deletedThreadSnapshotsRef.current.delete(threadKey);
-        setToast(null);
-        const timerId = deleteTimersRef.current.get(threadKey);
-        if (timerId) {
-          clearTimeout(timerId);
-          deleteTimersRef.current.delete(threadKey);
-        }
-      }
-    });
-
-    // 3. Set timer to actually delete from backend
-    const timerId = setTimeout(async () => {
-      // Perform backend delete for all items in thread
+    // Perform backend delete immediately
+    (async () => {
       const token = localStorage.getItem('regaarder_token');
-      if (!token) return;
+      if (!token) {
+        setToast(null);
+        return;
+      }
       const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
 
       const results = await Promise.all((itemsToDelete || []).map((item) => {
@@ -721,7 +789,7 @@ const App = ({ onClose }) => {
       const allOk = results.length ? results.every(Boolean) : true;
 
       if (!allOk) {
-        // Backend delete failed - restore notification and clear pending IDs
+        // Backend delete failed - restore notification and clear pending IDs.
         itemsToDelete.forEach((item) => {
           if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
         });
@@ -729,23 +797,29 @@ const App = ({ onClose }) => {
         setGroupedSuggestions(prev => {
           if (prev.some(t => String(t.id) === threadKey)) return prev;
           const arr = [...prev, snapshot];
+          const flattened = arr.flatMap((t) => Array.isArray(t.items) ? t.items : [t]);
+          syncNotificationCache(flattened);
           return arr.sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
         });
+        setToast({ message: 'Delete failed. Restored notification.' });
       } else {
-        // Backend delete succeeded - keep pending IDs until next fetch confirms deletion
-        // Schedule clearing pending IDs after a brief delay to let next poll cycle complete
-        setTimeout(() => {
-          itemsToDelete.forEach((item) => {
-            if (item && item.id != null) pendingDeleteIdsRef.current.delete(String(item.id));
-          });
-        }, 6000);
+        // Keep pending IDs until fetchNotifications confirms IDs are absent.
+        setToast(null);
       }
 
       deleteTimersRef.current.delete(threadKey);
       deletedThreadSnapshotsRef.current.delete(threadKey);
-      setToast(null);
-    }, 4000); // 4 seconds undo window
-    deleteTimersRef.current.set(threadKey, timerId);
+      if (toastCountdownIntervalRef.current) {
+        clearInterval(toastCountdownIntervalRef.current);
+        toastCountdownIntervalRef.current = null;
+      }
+    })();
+  };
+
+  const handleOpenRequestFromNotification = (requestId) => {
+    if (!requestId) return;
+    const target = String(requestId);
+    navigate(`/requests?focus=${encodeURIComponent(target)}`);
   };
 
   // Handler for sending a reply
@@ -1101,6 +1175,7 @@ const App = ({ onClose }) => {
                       onReply={handleReply}
                       onDelete={handleDelete}
                       onDismiss={handleDismiss}
+                      onOpenRequest={handleOpenRequestFromNotification}
                       currentUserId={userId}
                       selectedLanguage={selectedLanguage}
                     />
@@ -1164,12 +1239,14 @@ const App = ({ onClose }) => {
                 className="bg-gray-900 text-white p-3 mx-4 rounded-xl shadow-2xl flex items-center justify-between space-x-4 transition-all duration-300 max-w-sm w-full pointer-events-auto"
               >
                 <span className="text-sm font-medium">{toast.message}</span>
-                <button
-                  onClick={toast.onUndo}
-                  className="text-sm font-bold text-[var(--color-gold)] hover:underline"
-                >
-                  UNDO
-                </button>
+                {typeof toast.onUndo === 'function' && (
+                  <button
+                    onClick={toast.onUndo}
+                    className="text-sm font-bold text-[var(--color-gold)] hover:underline"
+                  >
+                    UNDO
+                  </button>
+                )}
               </div>
             </div>
           )}

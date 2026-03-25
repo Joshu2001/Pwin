@@ -3154,7 +3154,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                     // Update localStorage so badge in TopHeader updates
                     localStorage.setItem('notifications_count', String(count));
                     localStorage.setItem('notifications', JSON.stringify(list));
-                    window.dispatchEvent(new Event('storage'));
+                    window.dispatchEvent(new CustomEvent('notifications:updated', { detail: { count } }));
                 }
             } catch (e) {
                 // silent fail on poll error 
@@ -3487,6 +3487,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     const videoData = [];
 
     const [videos, setVideos] = useState(videoData);
+    const [videosHydrated, setVideosHydrated] = useState(false);
 
     useEffect(() => {
         const toSafeCount = (value) => {
@@ -3596,6 +3597,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     // Fetch videos from backend on component mount or tab change
     useEffect(() => {
         setVideos([]); // Reset videos on tab change
+        setVideosHydrated(false);
         const fetchVideos = async () => {
             try {
                 const BACKEND = (window && window.__BACKEND_URL__) || 'https://pwin-copy-production.up.railway.app';
@@ -3684,6 +3686,10 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 const normalizeMediaUrl = (rawUrl) => {
                                     if (!rawUrl || rawUrl.startsWith('blob:')) return null;
                                     try {
+                                        const resolvedByHelper = resolveMediaUrl(rawUrl);
+                                        if (resolvedByHelper && /^https?:\/\//i.test(String(resolvedByHelper))) {
+                                            return resolvedByHelper;
+                                        }
                                         const u = new URL(rawUrl, BACKEND);
                                         const host = (u.hostname || '').toLowerCase();
                                         const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
@@ -3749,7 +3755,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                         const cached = readCachedYoutubeTime(videoUrl);
                                         if (cached) return cached;
                                     }
-                                    return isYouTubeUrl ? '--:--' : '0:00';
+                                    return isYouTubeUrl ? '' : '0:00';
                                 })();
 
                                 return {
@@ -3814,6 +3820,8 @@ const App = ({ overrideMiniPlayerData = null }) => {
                 }
             } catch (error) {
                 console.error('Error fetching videos:', error);
+            } finally {
+                setVideosHydrated(true);
             }
         };
 
@@ -3889,6 +3897,7 @@ const App = ({ overrideMiniPlayerData = null }) => {
     }
 
     const isHomeEmptyState = displayedVideos.length === 0 && searchTerm.length === 0;
+    const useEmptyStateTabColors = displayedVideos.length === 0;
 
     const scrollableHeightStyle = {
         height: 'calc(100vh - 160px)',
@@ -4115,10 +4124,14 @@ const App = ({ overrideMiniPlayerData = null }) => {
             {/* Main scrollable content area */}
             <div className="overflow-y-auto" style={scrollableHeightStyle}>
                 <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} navigate={navigate} onFocusChange={setIsSearchActive} selectedLanguage={selectedLanguage} />
-                <TabPills activeTab={selectedTab} setActiveTab={setSelectedTab} selectedLanguage={selectedLanguage} emptyStateMode={isHomeEmptyState} />
+                <TabPills activeTab={selectedTab} setActiveTab={setSelectedTab} selectedLanguage={selectedLanguage} emptyStateMode={useEmptyStateTabColors} />
 
-                {/* Conditional Rendering: Videos, 404 (search no results), or empty state */}
-                {displayedVideos.length > 0 ? (
+                {/* Conditional Rendering: Videos, 404 (search no results), loading skeleton, or empty state */}
+                {!videosHydrated ? (
+                    <div className="px-4 pt-3 pb-6">
+                        <div className="mx-2 h-[420px] rounded-2xl bg-gray-100 animate-pulse" />
+                    </div>
+                ) : displayedVideos.length > 0 ? (
                     displayedVideos.map(video => (
                         <ContentCard
                             key={video.id}
@@ -4277,32 +4290,20 @@ const App = ({ overrideMiniPlayerData = null }) => {
 
                         <div className="w-full flex justify-center">
                             <button
-                                className="w-full max-w-[260px] py-2 rounded-full text-base font-semibold text-black transition-shadow duration-300"
+                                className="w-full max-w-[260px] py-2 rounded-full text-base font-semibold text-white transition-all duration-200 hover:shadow-lg active:scale-95"
                                 style={{
-                                    background: 'linear-gradient(180deg, #fafbf9 0%, #f3f6f1 100%)',
-                                    border: '1px solid rgba(0,0,0,0.06)',
-                                    boxShadow: '0 10px 24px rgba(34,197,94,0.06), 0 2px 6px rgba(0,0,0,0.06)',
-                                    backgroundImage: 'linear-gradient(90deg, rgba(34,197,94,0.06), rgba(124,58,237,0.04))'
+                                    background: 'var(--color-final, #7C3AED)',
+                                    boxShadow: '0 4px 12px rgba(124,58,237,0.3)'
                                 }}
-                                onMouseDown={(e) => {
-                                    try { if (e && e.preventDefault) e.preventDefault(); } catch (err) { }
+                                onClick={() => {
                                     try {
                                         const url = '/ideas' + (searchTerm ? `?q=${encodeURIComponent(searchTerm)}` : '');
+                                        try { if (window.setFooterTab) window.setFooterTab('ideas'); } catch (err) { }
                                         navigate(url);
                                     } catch (e) {
                                         console.warn('Redirect failed', e);
                                     }
                                 }}
-                                onTouchStart={(e) => {
-                                    try { if (e && e.preventDefault) e.preventDefault(); } catch (err) { }
-                                    try {
-                                        const url = '/ideas' + (searchTerm ? `?q=${encodeURIComponent(searchTerm)}` : '');
-                                        navigate(url);
-                                    } catch (e) {
-                                        console.warn('Redirect failed', e);
-                                    }
-                                }}
-                                onClick={(e) => { if (e && e.preventDefault) e.preventDefault(); }}
                             >
                                 Request This Video
                             </button>
@@ -4353,11 +4354,11 @@ const App = ({ overrideMiniPlayerData = null }) => {
                                 }}
                                 onClick={() => {
                                     try {
-                                        if (window.setFooterTab) window.setFooterTab('requests');
-                                        navigate('/requests');
+                                        if (window.setFooterTab) window.setFooterTab('ideas');
+                                        navigate('/ideas');
                                     } catch (e) {
-                                        try { if (window.setFooterTab) window.setFooterTab('requests'); } catch (_) { }
-                                        try { window.location.href = '/requests'; } catch (_) { }
+                                        try { if (window.setFooterTab) window.setFooterTab('ideas'); } catch (_) { }
+                                        try { window.location.href = '/ideas'; } catch (_) { }
                                         console.warn('Navigation failed', e);
                                     }
                                 }}
@@ -4879,7 +4880,8 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
         return () => { cancelled = true; clearTimeout(timeout); try { el.src = ''; } catch {} };
     }, [video.id, video.time, video.videoUrl]);
 
-    const displayTime = (detectedTime && String(detectedTime).trim()) ? detectedTime : (video.time || '0:00');
+    const displayTime = (detectedTime && String(detectedTime).trim()) ? detectedTime : (video.time || '');
+    const hasDisplayTime = Boolean(String(displayTime || '').trim()) && String(displayTime).trim() !== '--:--';
 
     const statsData = {
         likes: (video.stats && video.stats.likes) ?? video.likes ?? video.likeCount ?? '0',
@@ -5287,10 +5289,12 @@ const ContentCard = ({ video, onReportVideo, onPinVideo, onOpenProfile, onToggle
 
                     </div>
 
-                    {/* Duration badge – always visible; shows detected time, backend time, or 0:00 */}
-                    <div className="absolute bottom-3 right-3 bg-black bg-opacity-70 rounded-lg px-2 py-1">
-                        <span className="text-sm font-bold text-white">{displayTime || video.time || '0:00'}</span>
-                    </div>
+                    {/* Duration badge - hide until duration is known */}
+                    {hasDisplayTime && (
+                        <div className="absolute bottom-3 right-3 bg-black bg-opacity-70 rounded-lg px-2 py-1">
+                            <span className="text-sm font-bold text-white">{displayTime}</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* This content render is where the dialog button lives */}
@@ -5335,9 +5339,18 @@ const TopHeader = ({ setIsDrawerOpen, navigate, selectedLanguage, onLanguageSele
             setNotifCount(0);
         };
         readCount();
-        const onStorage = (e) => { if (e.key && (e.key === 'notifications_count' || e.key === 'notifications')) readCount(); };
+        const onStorage = (e) => {
+            if (!e || !e.key || e.key === 'notifications_count' || e.key === 'notifications') {
+                readCount();
+            }
+        };
+        const onNotificationsUpdated = () => readCount();
         window.addEventListener('storage', onStorage);
-        return () => window.removeEventListener('storage', onStorage);
+        window.addEventListener('notifications:updated', onNotificationsUpdated);
+        return () => {
+            window.removeEventListener('storage', onStorage);
+            window.removeEventListener('notifications:updated', onNotificationsUpdated);
+        };
     }, []);
 
     const goToNotifications = () => {

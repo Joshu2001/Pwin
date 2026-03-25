@@ -4,6 +4,7 @@ import React, { useState, useEffect, useTransition, Suspense, lazy } from 'react
 import PageLoadingSkeleton from './PageLoadingSkeleton.jsx';
 import LaunchScreen from './LaunchScreen.jsx';
 import { LanguageProvider } from './LanguageContext.jsx';
+import { CurrencyProvider } from './CurrencyContext.jsx';
 
 // Lazy load all page components for faster initial load
 const Home = lazy(() => import('./home.jsx'));
@@ -152,6 +153,26 @@ function App() {
   const [isPending, startTransition] = useTransition();
   const [showLaunchScreen, setShowLaunchScreen] = useState(true);
   const [globalToast, setGlobalToast] = useState(null);
+
+  useEffect(() => {
+    const clearStaleAuthUnavailable = () => {
+      try {
+        const token = localStorage.getItem('regaarder_token');
+        if (token) sessionStorage.removeItem('regaarder_auth_unavailable');
+      } catch (e) { }
+    };
+
+    clearStaleAuthUnavailable();
+    const interval = setInterval(clearStaleAuthUnavailable, 2000);
+    window.addEventListener('focus', clearStaleAuthUnavailable);
+    window.addEventListener('storage', clearStaleAuthUnavailable);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', clearStaleAuthUnavailable);
+      window.removeEventListener('storage', clearStaleAuthUnavailable);
+    };
+  }, []);
 
   // Store launch screen state in window so FAB can access it
   useEffect(() => {
@@ -320,6 +341,7 @@ function App() {
 
   return (
     <LanguageProvider>
+      <CurrencyProvider>
       <BrowserRouter>
         {showLaunchScreen && (
           <LaunchScreen onLoadComplete={() => setShowLaunchScreen(false)} />
@@ -395,6 +417,7 @@ function App() {
       )
       }
     </BrowserRouter>
+    </CurrencyProvider>
     </LanguageProvider>
   );
 }

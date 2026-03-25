@@ -998,8 +998,17 @@ const ClaimStatusPanel = ({
         if (!pendingReuploadItem) return;
         try {
             const item = pendingReuploadItem;
+            const thumbnailSource = item.thumbnail || item.imageUrl || item.thumbnailUrl || null;
+            const resolvedThumbnail = (() => {
+                if (!thumbnailSource) return null;
+                if (typeof thumbnailSource === 'string' && (thumbnailSource.startsWith('blob:') || thumbnailSource.startsWith('data:'))) {
+                    return thumbnailSource;
+                }
+                return resolveMediaUrl(thumbnailSource) || thumbnailSource;
+            })();
             setVideoTitle(item.title || '');
-            setThumbnailPreview(item.thumbnail || null);
+            setThumbnailPreview(resolvedThumbnail);
+            setThumbnailLinkInput(typeof resolvedThumbnail === 'string' && /^https?:\/\//i.test(resolvedThumbnail) ? resolvedThumbnail : '');
             setCategory(item.category || category || '');
             setScriptType(item.scriptType || scriptType || '');
             const existingVideoUrl = item.videoUrl || item.url || item.src || item.videoLink || item.youtubeUrl || '';
@@ -1020,7 +1029,7 @@ const ClaimStatusPanel = ({
                 // Default behaviour: open preview mode for re-uploads
                 setPreviewData({
                     title: item.title || '',
-                    thumbnail: item.thumbnail || null,
+                    thumbnail: resolvedThumbnail,
                     time: null,
                     format: item.format || videoFormat,
                     category: item.category || category,
@@ -1666,7 +1675,12 @@ const ClaimStatusPanel = ({
                                                             onChange={(e) => {
                                                                 setThumbnailLinkInput(e.target.value);
                                                                 const url = e.target.value.trim();
-                                                                if (url && /^https?:\/\/.+/i.test(url)) setThumbnailPreview(url);
+                                                                if (!url) {
+                                                                    setThumbnailPreview(null);
+                                                                    return;
+                                                                }
+                                                                const normalized = resolveMediaUrl(url) || url;
+                                                                if (/^https?:\/\/.+/i.test(normalized)) setThumbnailPreview(normalized);
                                                                 else setThumbnailPreview(null);
                                                             }}
                                                             placeholder="https://example.com/thumbnail.jpg"
@@ -1678,7 +1692,7 @@ const ClaimStatusPanel = ({
                                                         />
                                                         {thumbnailPreview && (
                                                             <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '2px solid #f97316', maxHeight: 180 }}>
-                                                                <img src={thumbnailPreview} alt="Thumbnail preview" className="object-cover w-full h-full" style={{ maxHeight: 180 }} />
+                                                                <img src={(typeof thumbnailPreview === 'string' && (thumbnailPreview.startsWith('blob:') || thumbnailPreview.startsWith('data:'))) ? thumbnailPreview : (resolveMediaUrl(thumbnailPreview) || thumbnailPreview)} alt="Thumbnail preview" className="object-cover w-full h-full" style={{ maxHeight: 180 }} />
                                                             </div>
                                                         )}
                                                     </>
@@ -1686,7 +1700,7 @@ const ClaimStatusPanel = ({
                                                     <>
                                                         <div onClick={() => thumbInputRef.current && thumbInputRef.current.click()} className="w-full rounded-lg border-2 border-dashed border-gray-200 h-32 flex items-center justify-center cursor-pointer overflow-hidden bg-white">
                                                             {thumbnailPreview ? (
-                                                                <img src={thumbnailPreview} alt="Video thumbnail preview" className="object-cover w-full h-full" loading="lazy" />
+                                                                <img src={(typeof thumbnailPreview === 'string' && (thumbnailPreview.startsWith('blob:') || thumbnailPreview.startsWith('data:'))) ? thumbnailPreview : (resolveMediaUrl(thumbnailPreview) || thumbnailPreview)} alt="Video thumbnail preview" className="object-cover w-full h-full" loading="lazy" />
                                                             ) : (
                                                                 <div className="text-gray-400 flex flex-col items-center justify-center">
                                                                     <Image size={36} className="text-gray-300 mb-2" />
@@ -3213,7 +3227,12 @@ const App = () => {
             const mapped = list.map((v) => ({
                 id: v.id,
                 title: v.title || getTranslation('Untitled', selectedLanguage),
-                thumbnail: v.imageUrl || null,
+                thumbnail: (() => {
+                    const candidate = v.imageUrl || v.thumbnail || v.image || null;
+                    if (!candidate) return null;
+                    const resolved = resolveMediaUrl(candidate);
+                    return resolved || candidate;
+                })(),
                 videoUrl: v.videoUrl || null,
                 category: v.category || 'General',
                 format: v.format || 'one-time',
