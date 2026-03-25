@@ -4275,7 +4275,8 @@ const App = () => {
                                     try { window.dispatchEvent(new CustomEvent('videos:updated')); } catch (e) { }
                                 }}
                                 pendingReuploadItem={pendingReuploadItem}
-                                clearPendingReupload={() => setPendingReuploadItem(null)}
+                                // Keep item mounted while opening modal; it will be cleared on onClose.
+                                clearPendingReupload={() => { }}
                             />
                         </div>
                     )}
